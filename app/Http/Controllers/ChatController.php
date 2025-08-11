@@ -56,7 +56,7 @@ class ChatController extends Controller
             'receiver_id' => $request->receiver_id,
             'message' => $request->message
         ]);
-        event(new \App\Events\MessageSent($message));
+        // event(new \App\Events\MessageSent($message));
 
         return response()->json(['status' => 'success']);
     }

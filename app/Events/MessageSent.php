@@ -22,11 +22,12 @@ class MessageSent implements ShouldBroadcast
     public $receiver_id;
     public $created_at;
 
-    public function __construct(Message $message)
+    public function __construct(ChatMessage $message)
     {
+        $message->load('sender');
         $this->id = $message->id;
         $this->message = $message->message;
-        $this->sender = $message->sender;
+        $this->sender = $message->sender->name;
         $this->sender_id = $message->sender_id;
         $this->receiver_id = $message->receiver_id;
         $this->created_at = $message->created_at;
