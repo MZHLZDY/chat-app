@@ -10,7 +10,7 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Chat', href: '/dashboard' },
 ];
 
-const currentUserId = 1;
+const currentUserId = ref<number | null>(null);
 
 const contacts = ref<any[]>([]);
 const activeContact = ref<any | null>(null);
@@ -42,6 +42,7 @@ const loadMessages = async (contactId: number) => {
 
 const selectContact = (contact: any) => {
     activeContact.value = contact;
+    messages.value = [];
     loadMessages(contact.id);
 };
 
@@ -67,7 +68,7 @@ const sendMessage = async () => {
     }
 };
 
-onMounted(() => {
+onMounted(async() => {
     loadContacts();
     echo.private(`chat.${currentUserId}`)
     .listen('MessageSent', (e: any) => {

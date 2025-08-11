@@ -22,6 +22,7 @@ class ChatController extends Controller
 
     public function messages(User $user)
     {
+        $authId = auth()->id();
         $messages = Message::where(function($q) use ($user) {
                 $q->where('sender_id', Auth::id())->where('receiver_id', $user->id);
             })
@@ -56,7 +57,7 @@ class ChatController extends Controller
             'receiver_id' => $request->receiver_id,
             'message' => $request->message
         ]);
-        // event(new \App\Events\MessageSent($message));
+        broadcast(new \App\Events\MessageSent($message))->toOthers();
 
         return response()->json(['status' => 'success']);
     }
