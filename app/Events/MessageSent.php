@@ -36,8 +36,8 @@ class MessageSent implements ShouldBroadcast
     public function broadcastOn()
     {
         return [
-            new PrivateChannel('chat.' . $this->receiver_id),
-            new PrivateChannel('chat.' . $this->sender_id),
+            new PrivateChannel('chat.' . $this->sender_id . '.' . $this->receiver_id),
+            new PrivateChannel('chat.' . $this->receiver_id . '.' . $this->sender_id),
         ];
     }
 }

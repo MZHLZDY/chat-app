@@ -5,12 +5,14 @@ import { Head } from '@inertiajs/vue3';
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
+import { usePage } from '@inertiajs/vue3';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Chat', href: '/dashboard' },
 ];
 
-const currentUserId = ref<number | null>(null);
+const page = usePage();
+const currentUserId = ref(page.props.auth.user.id);
 
 const contacts = ref<any[]>([]);
 const activeContact = ref<any | null>(null);
@@ -32,7 +34,7 @@ const loadMessages = async (contactId: number) => {
         messages.value = res.data.map((msg: any) => ({
             id: msg.id,
             sender_id: msg.sender_id,
-            text: msg.message, // backend kirim field "message"
+            text: msg.message,
             time: new Date(msg.created_at).toLocaleTimeString(),
         }));
     } catch (err) {
@@ -68,20 +70,25 @@ const sendMessage = async () => {
     }
 };
 
-onMounted(async() => {
-    loadContacts();
-    echo.private(`chat.${currentUserId}`)
-    .listen('MessageSent', (e: any) => {
-        if (activeContact.value &&
-            (e.message.sender_id === activeContact.value.id || e.message.receiver_id === activeContact.value.id)) {
-            messages.value.push({
-                id: e.message.id,
-                sender_id: e.message.sender_id,
-                text: e.message.message,
-                time: new Date(e.message.created_at).toLocaleTimeString(),
-            });
-        }
-    });
+onMounted(async () => {
+    await loadContacts();
+
+    // isi currentUserId dulu
+    const me = await axios.get('/auth/me');
+    currentUserId.value = me.data.id;
+
+    echo.private(`chat.${currentUserId.value}`)
+        .listen('MessageSent', (e: any) => {
+            if (activeContact.value?.id === e.message.sender_id || 
+                activeContact.value?.id === e.message.receiver_id) {
+                messages.value.push({
+                    id: e.message.id,
+                    sender_id: e.message.sender_id,
+                    text: e.message.message,
+                    time: new Date(e.message.created_at).toLocaleTimeString(),
+                });
+            }
+        });
 });
 </script>
 
