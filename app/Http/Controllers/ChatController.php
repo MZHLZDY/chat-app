@@ -23,7 +23,7 @@ class ChatController extends Controller
     public function messages(User $user)
     {
         $messages = ChatMessage::where(function($q) use ($user) {
-                $q->where('sender_id', auth()->id())
+            $q->where('sender_id', auth()->id())
                 ->where('receiver_id', $user->id);
             })
             ->orWhere(function($q) use ($user) {
