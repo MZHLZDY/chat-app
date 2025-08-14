@@ -7,6 +7,7 @@ import { echo } from '../echo.js';
 
 axios.defaults.withCredentials = true;
 
+const drafts = ref<{[key: number]: string}>({});
 const page = usePage();
 const currentUserId = ref(page.props.auth.user.id);
 
@@ -77,8 +78,18 @@ const bindChannel = (contactId:number) => {
 };
 
 const selectContact = (c:{id:number,name:string}) => {
+
+  // Simpan draft untuk contact sebelumnya
+  if(activeContact.value && newMessage.value.trim()) {
+    drafts.value[activeContact.value.id] = newMessage.value;
+  }
+
   activeContact.value = c;
   messages.value = [];
+
+  // Load draft untuk contact baru / kosong klo gaada
+  newMessage.value = drafts.value[c.id] || '';
+
   loadMessages(c.id);
   bindChannel(c.id);
 };
@@ -90,7 +101,8 @@ const sendMessage = async () => {
   newMessage.value = ''; // Clear input immediately
   
   try {
-    const res = await axios.post('/chat/send', {
+    // const res = 
+      await axios.post('/chat/send', {
       receiver_id: activeContact.value.id, 
       message: messageText
     });

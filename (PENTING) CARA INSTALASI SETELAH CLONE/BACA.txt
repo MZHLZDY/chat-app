@@ -1,0 +1,7 @@
+1. cp .env.example .env (gunanya buat bikin env)
+2. copas pusher yang di env mu ke env clone ini, klo ga dicopas terlebih dahulu, bakal error kek "TypeError Pusher/Pusher xxx"
+3. setelah dicopas, bikin key 'php artisan key:generate'
+4. install + upgrade composer 'composer install && composer upgrade'
+5. install + build + run npm 'npm i && npm run build && npm run dev'
+6. migrate db 'php artisan migrate'
+7. (disarankan) install broadcasting nya lagi, takut ada error nanti 'php artisan install:broadcasting'
