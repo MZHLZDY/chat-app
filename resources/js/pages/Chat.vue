@@ -96,15 +96,15 @@ const sendMessage = async () => {
     });
     
     // Hanya tambahkan jika belum ada di array (untuk menghindari duplikasi dari WebSocket)
-    const messageExists = messages.value.some(m => m.id === res.data.message.id);
-    if (!messageExists) {
-      messages.value.push({
-        id: res.data.message.id,
-        sender_id: currentUserId.value,
-        text: messageText,
-        time: formatTime(res.data.message.created_at)
-      });
-    }
+    // const messageExists = messages.value.some(m => m.id === res.data.message.id);
+    // if (!messageExists) {
+    //   messages.value.push({
+    //     id: res.data.message.id,
+    //     sender_id: currentUserId.value,
+    //     text: messageText,
+    //     time: formatTime(res.data.message.created_at)
+    //   });
+    // }
   } catch(e){ 
     console.error('Error sending message:', e);
     // Kembalikan pesan ke input jika gagal
