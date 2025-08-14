@@ -24,28 +24,14 @@ class ChatController extends Controller
     {
         $messages = ChatMessage::where(function($q) use ($user) {
             $q->where('sender_id', auth()->id())
-                ->where('receiver_id', $user->id);
-            })
-            ->orWhere(function($q) use ($user) {
-                $q->where('sender_id', $user->id)
-                ->where('receiver_id', auth()->id());
-            })
-            ->orderBy('created_at')
-            ->get();
+              ->where('receiver_id', $user->id);
+        })->orWhere(function($q) use ($user) {
+            $q->where('sender_id', $user->id)
+              ->where('receiver_id', auth()->id());
+        })->orderBy('created_at')->get();
 
         return response()->json($messages);
     }
-
-
-    // public function send(Request $request)
-    // {
-    //     $message = Message::create([
-    //         'sender_id' => Auth::id(),
-    //         'receiver_id' => $request->receiver_id,
-    //         'message' => $request->message
-    //     ]);
-    //     return response()->json($message);
-    // }
 
     public function sendMessage(Request $request)
     {
@@ -54,14 +40,15 @@ class ChatController extends Controller
             'message' => 'required|string'
         ]);
 
-        $message = \App\Models\ChatMessage::create([
+        $message = ChatMessage::create([
             'sender_id' => auth()->id(),
             'receiver_id' => $request->receiver_id,
             'message' => $request->message
         ]);
 
-        broadcast(new \App\Events\MessageSent($message))->toOthers();
+        // broadcast to others (sender will update UI optimistically)
+        broadcast(new MessageSent($message))->toOthers();
 
-        return response()->json(['status' => 'success', 'message' => $message]);
+        return response()->json($message);
     }
 }

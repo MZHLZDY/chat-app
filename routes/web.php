@@ -2,6 +2,8 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\GroupController;
+use App\Http\Controllers\CallController;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -18,20 +20,20 @@ Route::get('chat', function () {
 })->middleware(['auth', 'verified'])->name('chat');
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('/chat/contacts', [ChatController::class, 'contacts'])->name('chat.contacts');
-    Route::get('/chat/{user}/messages', [ChatController::class, 'messages'])->name('chat.messages');
-    Route::post('/chat/send', [ChatController::class, 'send'])->name('chat.send');
-    Route::post('/chat/send', [ChatController::class, 'sendMessage']);
+    // direct chat (punya kamu)
+    Route::get('/chat/contacts', [\App\Http\Controllers\ChatController::class, 'contacts']);
+    Route::get('/chat/{user}/messages', [\App\Http\Controllers\ChatController::class, 'messages']);
+    Route::post('/chat/send', [\App\Http\Controllers\ChatController::class, 'sendMessage']);
 
+    // groups
+    Route::get('/groups', [GroupController::class, 'index']);
+    Route::post('/groups', [GroupController::class, 'store']);
+    Route::get('/groups/{group}/messages', [GroupController::class, 'messages']);
+    Route::post('/groups/{group}/send', [GroupController::class, 'send']);
+
+    // signaling call
+    Route::post('/call/signal', [CallController::class, 'signal']);
 });
-
-// Route::middleware(['auth', 'verified'])->group(function () {
-//     Route::get('/chat', [ChatController::class, 'index'])->name('chat');
-// //     Route::get('chat/{user}', [ChatController::class, 'chatWith'])->name('chat.with');
-// //     Route::post('chat/send', [ChatController::class, 'sendMessage'])->name('chat.send');
-// //     Route::get('chat/{user}/messages', [ChatController::class, 'getMessages'])->name('chat.messages');
-// // //     Route::get('/users/search', [ChatController::class, 'searchUsers'])->name('users.search');
-// });
 
 
 require __DIR__.'/settings.php';

@@ -2,42 +2,53 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
-use Illuminate\Foundation\Events\Dispatchable;
-use Illuminate\Queue\SerializesModels;
-use App\Models\User;
 use App\Models\ChatMessage;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Broadcasting\InteractsWithSockets;
 
-class MessageSent implements ShouldBroadcast
+class MessageSent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $id;
-    public $message;
-    public $sender;
-    public $sender_id;
-    public $receiver_id;
-    public $created_at;
+    // send a simple, safe payload
+    public array $message;
 
     public function __construct(ChatMessage $message)
     {
-        $message->load('sender');
-        $this->id = $message->id;
-        $this->message = $message->message;
-        $this->sender = $message->sender->name;
-        $this->sender_id = $message->sender_id;
-        $this->receiver_id = $message->receiver_id;
-        $this->created_at = $message->created_at;
+        $message->load('sender'); // make sure sender relation is loaded
+        $this->message = [
+            'id' => $message->id,
+            'message' => $message->message,
+            'sender_id' => $message->sender_id,
+            'receiver_id' => $message->receiver_id,
+            'sender_name' => $message->sender?->name,
+            'created_at' => $message->created_at?->toDateTimeString(),
+        ];
+    }
+
+    // canonical channel name: smallerId.biggerId so both users can subscribe to same channel
+    protected function channelName(): string
+    {
+        $a = (int) $this->message['sender_id'];
+        $b = (int) $this->message['receiver_id'];
+        if ($a <= $b) {
+            return "chat.{$a}.{$b}";
+        }
+        return "chat.{$b}.{$a}";
     }
 
     public function broadcastOn()
     {
         return [
-            new \Illuminate\Broadcasting\PrivateChannel('chat.' . $this->message->sender_id . '.' . $this->message->receiver_id),
-            new \Illuminate\Broadcasting\PrivateChannel('chat.' . $this->message->receiver_id . '.' . $this->message->sender_id),
+            new PrivateChannel($this->channelName()),
         ];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'MessageSent';
     }
 }
