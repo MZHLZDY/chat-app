@@ -8,9 +8,7 @@ Broadcast::channel('chat.{a}.{b}', function ($user, $a, $b) {
 
 // other channels you have...
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {
-    return \App\Models\Group::where('id', $groupId)
-        ->whereHas('members', fn($q) => $q->where('users.id', $user->id))
-        ->exists();
+    return $user->groups()->where('groups.id', $groupId)->exists();
 });
 
 Broadcast::channel('call.{userId}', function ($user, $userId) {

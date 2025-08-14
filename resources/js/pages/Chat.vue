@@ -1,20 +1,34 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 
 axios.defaults.withCredentials = true;
 
-const drafts = ref<{[key: number]: string}>({});
+const drafts = ref<{[key: string]: string}>({});
 const page = usePage();
 const currentUserId = ref(page.props.auth.user.id);
 
+// State management
 const contacts = ref<{id:number,name:string}[]>([]);
-const activeContact = ref<{id:number,name:string}|null>(null);
+const groups = ref<{id:number,name:string,members_count:number,owner_id:number}[]>([]);
+const allUsers = ref<{id:number,name:string}[]>([]);
+const activeContact = ref<{id:number,name:string,type:'user'|'group'}|null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
+
+// Modal states
+const showCreateGroupModal = ref(false);
+const newGroupName = ref('');
+const selectedUsers = ref<number[]>([]);
+
+// Computed properties
+const allChats = computed(() => [
+  ...contacts.value.map(c => ({...c, type: 'user' as const})),
+  ...groups.value.map(g => ({...g, type: 'group' as const}))
+]);
 
 // Helper function untuk format waktu yang aman
 const formatTime = (dateString: string | null | undefined): string => {
@@ -25,13 +39,17 @@ const formatTime = (dateString: string | null | undefined): string => {
     if (isNaN(date.getTime())) {
       return new Date().toLocaleTimeString();
     }
-    return date.toLocaleTimeString();
+    return date.toLocaleTimeString('id-ID', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   } catch (error) {
     console.error('Error formatting time:', error);
     return new Date().toLocaleTimeString();
   }
 };
 
+// Load functions
 const loadContacts = async () => {
   try { 
     contacts.value = (await axios.get('/chat/contacts')).data; 
@@ -40,91 +58,255 @@ const loadContacts = async () => {
   }
 };
 
-const loadMessages = async (contactId:number) => {
+const loadGroups = async () => {
   try {
-    messages.value = (await axios.get(`/chat/${contactId}/messages`)).data.map((m:any) => ({
+    const response = await axios.get('/groups');
+    groups.value = response.data.map((g: any) => ({
+      id: g.id,
+      name: g.name,
+      members_count: g.members?.length || 0,
+      owner_id: g.owner_id
+    }));
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+const loadAllUsers = async () => {
+  try {
+    allUsers.value = (await axios.get('/chat/contacts')).data;
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+const loadMessages = async (contactId: number, type: 'user' | 'group') => {
+  try {
+    const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
+    const response = await axios.get(endpoint);
+    
+    messages.value = response.data.map((m: any) => ({
       id: m.id,
       sender_id: m.sender_id,
+      sender_name: m.sender?.name || 'Unknown',
       text: m.message,
       time: formatTime(m.created_at)
     }));
-  } catch(e){ 
+  } catch(e) { 
     console.error(e); 
   }
 };
 
-// Simplified channel binding
+// WebSocket management
 let boundChannel = '';
-const bindChannel = (contactId:number) => {
-  if(boundChannel) echo.leave(`private-${boundChannel}`);
-  boundChannel = [currentUserId.value, contactId].sort().join('.');
+const bindChannel = (contactId: number, type: 'user' | 'group') => {
+  if (boundChannel) {
+    echo.leave(boundChannel);
+  }
   
-  echo.private(`chat.${boundChannel}`).listen('.MessageSent', (e:any) => {
-    const m = e.message ?? e;
-    
-    // Pastikan pesan untuk kontak yang aktif dan belum ada di array
-    if(activeContact.value && 
-       (m.sender_id === activeContact.value.id || m.receiver_id === activeContact.value.id) &&
-       !messages.value.some(msg => msg.id === m.id)) {
+  if (type === 'group') {
+    boundChannel = `group.${contactId}`;
+    echo.private(boundChannel).listen('GroupMessageSent', (e: any) => {
+      const m = e.message ?? e;
       
-      messages.value.push({
-        id: m.id, 
-        sender_id: m.sender_id, 
-        text: m.message, 
-        time: formatTime(m.created_at)
-      });
-    }
-  });
+      if (activeContact.value && activeContact.value.id === contactId && activeContact.value.type === 'group') {
+        if (!messages.value.some(msg => msg.id === m.id)) {
+          messages.value.push({
+            id: m.id,
+            sender_id: m.sender_id,
+            sender_name: m.sender?.name || 'Unknown',
+            text: m.message,
+            time: formatTime(m.created_at)
+          });
+        }
+      }
+    });
+  } else {
+    boundChannel = `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+    echo.private(boundChannel).listen('.MessageSent', (e: any) => {
+      const m = e.message ?? e;
+      
+      if (activeContact.value && 
+          (m.sender_id === activeContact.value.id || m.receiver_id === activeContact.value.id) &&
+          !messages.value.some(msg => msg.id === m.id)) {
+        
+        messages.value.push({
+          id: m.id, 
+          sender_id: m.sender_id, 
+          sender_name: 'User',
+          text: m.message, 
+          time: formatTime(m.created_at)
+        });
+      }
+    });
+  }
 };
 
-const selectContact = (c:{id:number,name:string}) => {
+// Listen untuk kontak baru dan update
+const setupGlobalListeners = () => {
+  // Listen untuk user baru yang mendaftar
+  echo.channel('users')
+    .listen('.UserRegistered', (e: any) => {
+      const newUser = e.user ?? e;
+      
+      if (!contacts.value.some(c => c.id === newUser.id)) {
+        contacts.value.push({
+          id: newUser.id,
+          name: newUser.name
+        });
+      }
+      
+      if (!allUsers.value.some(u => u.id === newUser.id)) {
+        allUsers.value.push({
+          id: newUser.id,
+          name: newUser.name
+        });
+      }
+    });
 
+  // Listen untuk group baru dan kontak baru
+  echo.private(`user.${currentUserId.value}`)
+    .listen('.GroupCreated', (e: any) => {
+      const newGroup = e.group ?? e;
+      
+      if (!groups.value.some(g => g.id === newGroup.id)) {
+        groups.value.push({
+          id: newGroup.id,
+          name: newGroup.name,
+          members_count: newGroup.members?.length || 0,
+          owner_id: newGroup.owner_id
+        });
+      }
+    })
+    .listen('.NewContact', (e: any) => {
+      const newContact = e.contact ?? e;
+      
+      if (!contacts.value.some(c => c.id === newContact.id)) {
+        contacts.value.push({
+          id: newContact.id,
+          name: newContact.name
+        });
+      }
+    });
+};
+
+// Chat functions
+const selectContact = (contact: {id: number, name: string, type: 'user' | 'group'}) => {
   // Simpan draft untuk contact sebelumnya
-  if(activeContact.value && newMessage.value.trim()) {
-    drafts.value[activeContact.value.id] = newMessage.value;
+  if (activeContact.value && newMessage.value.trim()) {
+    const draftKey = `${activeContact.value.type}-${activeContact.value.id}`;
+    drafts.value[draftKey] = newMessage.value;
   }
 
-  activeContact.value = c;
+  activeContact.value = contact;
   messages.value = [];
 
-  // Load draft untuk contact baru / kosong klo gaada
-  newMessage.value = drafts.value[c.id] || '';
+  // Load draft untuk contact baru / kosong kalau tidak ada
+  const draftKey = `${contact.type}-${contact.id}`;
+  newMessage.value = drafts.value[draftKey] || '';
 
-  loadMessages(c.id);
-  bindChannel(c.id);
+  loadMessages(contact.id, contact.type);
+  bindChannel(contact.id, contact.type);
 };
 
 const sendMessage = async () => {
-  if(!newMessage.value.trim() || !activeContact.value) return;
+  if (!newMessage.value.trim() || !activeContact.value) return;
   
   const messageText = newMessage.value;
-  newMessage.value = ''; // Clear input immediately
+  newMessage.value = '';
+  
+  // Clear draft setelah send
+  const draftKey = `${activeContact.value.type}-${activeContact.value.id}`;
+  delete drafts.value[draftKey];
   
   try {
-    // const res = 
-      await axios.post('/chat/send', {
-      receiver_id: activeContact.value.id, 
-      message: messageText
-    });
+    let endpoint, payload;
     
-    // Hanya tambahkan jika belum ada di array (untuk menghindari duplikasi dari WebSocket)
-    // const messageExists = messages.value.some(m => m.id === res.data.message.id);
-    // if (!messageExists) {
-    //   messages.value.push({
-    //     id: res.data.message.id,
-    //     sender_id: currentUserId.value,
-    //     text: messageText,
-    //     time: formatTime(res.data.message.created_at)
-    //   });
-    // }
-  } catch(e){ 
+    if (activeContact.value.type === 'group') {
+      endpoint = `/groups/${activeContact.value.id}/send`;
+      payload = {
+        message: messageText
+      };
+    } else {
+      endpoint = '/chat/send';
+      payload = {
+        receiver_id: activeContact.value.id,
+        message: messageText
+      };
+    }
+    
+    await axios.post(endpoint, payload);
+    
+    // WebSocket akan handle penambahan pesan, jadi tidak perlu manual add
+  } catch(e) { 
     console.error('Error sending message:', e);
-    // Kembalikan pesan ke input jika gagal
     newMessage.value = messageText;
   }
 };
 
-onMounted(loadContacts);
+// Group functions
+const openCreateGroupModal = () => {
+  showCreateGroupModal.value = true;
+  selectedUsers.value = [];
+  newGroupName.value = '';
+};
+
+const closeCreateGroupModal = () => {
+  showCreateGroupModal.value = false;
+  selectedUsers.value = [];
+  newGroupName.value = '';
+};
+
+const toggleUserSelection = (userId: number) => {
+  const index = selectedUsers.value.indexOf(userId);
+  if (index > -1) {
+    selectedUsers.value.splice(index, 1);
+  } else {
+    selectedUsers.value.push(userId);
+  }
+};
+
+const createGroup = async () => {
+  if (!newGroupName.value.trim() || selectedUsers.value.length === 0) {
+    alert('Nama group dan minimal 1 anggota harus dipilih!');
+    return;
+  }
+  
+  try {
+    const response = await axios.post('/groups', {
+      name: newGroupName.value,
+      member_ids: selectedUsers.value
+    });
+    
+    const newGroup = response.data;
+    groups.value.push({
+      id: newGroup.id,
+      name: newGroup.name,
+      members_count: newGroup.members?.length || selectedUsers.value.length + 1,
+      owner_id: newGroup.owner_id
+    });
+    
+    closeCreateGroupModal();
+    
+    // Otomatis pilih group yang baru dibuat
+    selectContact({
+      id: newGroup.id,
+      name: newGroup.name,
+      type: 'group'
+    });
+  } catch(e) {
+    console.error('Error creating group:', e);
+    alert('Gagal membuat group!');
+  }
+};
+
+// Initialize
+onMounted(() => {
+  loadContacts();
+  loadGroups();
+  loadAllUsers();
+  setupGlobalListeners();
+});
 </script>
 
 <template>
@@ -133,13 +315,31 @@ onMounted(loadContacts);
         <div class="flex h-[90vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white">
             <!-- Sidebar Contacts -->
             <div class="w-1/4 bg-gray-100 border-r overflow-y-auto">
-                <div class="p-4 font-bold text-lg border-b">Kontak</div>
+                <div class="p-4 border-b flex justify-between items-center">
+                    <span class="font-bold text-lg">Chat</span>
+                    <button @click="openCreateGroupModal" 
+                            class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
+                        + Group
+                    </button>
+                </div>
+                
                 <ul>
-                    <li v-for="c in contacts" :key="c.id"
-                        @click="selectContact(c)"
-                        :class="['p-4 border-b hover:bg-gray-200 cursor-pointer', activeContact?.id === c.id ? 'bg-gray-300' : '']">
-                        <div class="font-semibold">{{ c.name }}</div>
-                        <div class="text-sm text-gray-500 truncate">Klik untuk chat</div>
+                    <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
+                        @click="selectContact(chat)"
+                        :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3', 
+                                 activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
+                        <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold'">
+                            {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
+                        </div>
+                        <div class="flex-1">
+                            <div class="font-semibold">{{ chat.name }}</div>
+                            <div class="text-sm text-gray-500 truncate">
+                                {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : 'Personal chat' }}
+                            </div>
+                        </div>
+                        <!-- Draft indicator -->
+                        <div v-if="drafts[`${chat.type}-${chat.id}`]" 
+                             class="w-2 h-2 bg-orange-500 rounded-full"></div>
                     </li>
                 </ul>
             </div>
@@ -147,15 +347,25 @@ onMounted(loadContacts);
             <!-- Chat Window -->
             <div class="flex flex-col flex-1" v-if="activeContact">
                 <!-- Header -->
-                <div class="p-4 border-b font-semibold">
+                <div class="p-4 border-b font-semibold flex items-center gap-3">
+                    <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm'">
+                        {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
+                    </div>
                     {{ activeContact.name }}
+                    <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">
+                        (Group Chat)
+                    </span>
                 </div>
 
                 <!-- Messages -->
                 <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     <div v-for="m in messages" :key="m.id"
                         :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                        <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg' : 'inline-block bg-gray-300 text-black px-4 py-2 rounded-lg'">
+                        <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs' : 'inline-block bg-gray-300 text-black px-4 py-2 rounded-lg max-w-xs'">
+                            <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId" 
+                                 class="text-xs font-semibold mb-1 opacity-75">
+                                {{ m.sender_name }}
+                            </div>
                             {{ m.text }}
                         </div>
                         <div class="text-xs text-gray-500 mt-1">{{ m.time }}</div>
@@ -164,9 +374,10 @@ onMounted(loadContacts);
 
                 <!-- Input -->
                 <div class="p-4 border-t flex gap-2">
-                    <input type="text" v-model="newMessage" placeholder="Ketik sesuatu..."
-                        @keyup.enter="sendMessage"
-                        class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <input type="text" v-model="newMessage" 
+                           :placeholder="`Ketik pesan ${activeContact.type === 'group' ? 'ke group' : 'ke ' + activeContact.name}...`"
+                           @keyup.enter="sendMessage"
+                           class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <button @click="sendMessage" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
                         Kirim
                     </button>
@@ -175,7 +386,45 @@ onMounted(loadContacts);
 
             <!-- Empty state -->
             <div v-else class="flex items-center justify-center flex-1 text-gray-500">
-                Pilih kontak untuk memulai chat
+                Pilih kontak atau group untuk memulai chat
+            </div>
+        </div>
+
+        <!-- Create Group Modal -->
+        <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-96 max-h-96 overflow-y-auto">
+                <h3 class="text-lg font-bold mb-4">Buat Group Baru</h3>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Nama Group</label>
+                    <input type="text" v-model="newGroupName" 
+                           placeholder="Masukkan nama group..."
+                           class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium mb-2">Pilih Anggota</label>
+                    <div class="max-h-32 overflow-y-auto border rounded-lg">
+                        <div v-for="user in allUsers.filter(u => u.id !== currentUserId)" :key="user.id"
+                             @click="toggleUserSelection(user.id)"
+                             :class="['p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2', 
+                                      selectedUsers.includes(user.id) ? 'bg-blue-100' : '']">
+                            <input type="checkbox" :checked="selectedUsers.includes(user.id)" class="pointer-events-none">
+                            <span>{{ user.name }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button @click="createGroup" 
+                            class="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600">
+                        Buat Group
+                    </button>
+                    <button @click="closeCreateGroupModal" 
+                            class="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">
+                        Batal
+                    </button>
+                </div>
             </div>
         </div>
     </AppLayout>
