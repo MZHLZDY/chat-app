@@ -20,7 +20,7 @@ const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } |
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const messageContainer = ref<HTMLElement | null>(null);
-const isSending = ref(false); // Mencegah klik/kirim ganda
+const isSending = ref(false);
 
 // --- Modal States ---
 const showCreateGroupModal = ref(false);
@@ -99,26 +99,37 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
   if (boundChannel) {
     echo.leave(boundChannel);
   }
-
   const handleNewMessage = (eventData: any) => {
-    if (eventData.sender_id === currentUserId.value) return; // Abaikan gema
-    const isChatActive = activeContact.value && activeContact.value.type === type && activeContact.value.id === contactId;
+    const messageData = eventData.message;
+    if (messageData.sender_id === currentUserId.value) return;
+    // 3. Cek apakah chat yang sedang aktif adalah tujuan dari pesan yang masuk.
+    const isChatActive = activeContact.value && (
+        (activeContact.value.type === 'user' && activeContact.value.id === messageData.sender_id) ||
+        // Untuk grup, ID grup ada di receiver_id atau group_id (sesuaikan dengan backend Anda)
+        (activeContact.value.type === 'group' && activeContact.value.id === messageData.receiver_id)
+    );
+
     if (isChatActive) {
+      // 4. Buat objek pesan untuk UI dengan struktur yang benar.
       addMessage({
-        id: eventData.id,
-        sender_id: eventData.sender_id,
-        sender_name: eventData.sender?.name || 'Unknown',
-        text: eventData.message,
-        time: formatTime(eventData.created_at)
+        id: messageData.id,
+        sender_id: messageData.sender_id,
+        sender_name: messageData.sender_name || 'Unknown',
+        text: messageData.message, // INI KUNCINYA: Ambil teks pesan dari `messageData.message`
+        time: formatTime(new Date().toISOString())
       });
     }
   };
-
-  const channelName = type === 'group' ? `group.${contactId}` : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+  
+  const channelName = type === 'group'
+    ? `group.${contactId}`
+    : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+  
   const eventName = type === 'group' ? '.GroupMessageSent' : '.MessageSent';
 
   boundChannel = channelName;
-  echo.private(channelName).listen(eventName, handleNewMessage);
+  echo.private(channelName)
+    .listen(eventName, handleNewMessage);
 };
 
 const setupGlobalListeners = () => {
@@ -146,10 +157,9 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
 };
 
 const sendMessage = async () => {
-  if (isSending.value) return;
-  if (!newMessage.value.trim() || !activeContact.value) return;
-
+  if (!newMessage.value.trim() || !activeContact.value || isSending.value) return;
   isSending.value = true;
+
   const messageText = newMessage.value;
   const activeChat = activeContact.value;
 
@@ -160,7 +170,7 @@ const sendMessage = async () => {
     text: messageText,
     time: formatTime(new Date().toISOString()),
   };
-
+  
   addMessage(optimisticMessage);
   newMessage.value = '';
   delete drafts.value[`${activeChat.type}-${activeChat.id}`];
@@ -291,10 +301,12 @@ onMounted(() => {
                         v-model="newMessage"
                         :placeholder="`Ketik pesan ke ${activeContact.name}...`"
                         @keyup.enter="sendMessage"
+                        :disabled="isSending"
                         class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <button
                         @click="sendMessage"
-                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
+                        :disabled="isSending"
+                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-green-300">
                         Kirim
                     </button>
                 </div>
@@ -315,7 +327,7 @@ onMounted(() => {
                 <div class="mb-4">
                     <label class="block text-sm font-medium mb-2">Pilih Anggota</label>
                     <div class="max-h-48 overflow-y-auto border rounded-lg">
-                        <div v-for="user in allUsers" :key="user.id"
+                        <div v-for="user in allUsers.filter(u => u.id !== currentUserId)" :key="user.id"
                              @click="toggleUserSelection(user.id)"
                              :class="['p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2', selectedUsers.includes(user.id) ? 'bg-blue-100' : '']">
                             <input type="checkbox" :checked="selectedUsers.includes(user.id)" class="pointer-events-none">
