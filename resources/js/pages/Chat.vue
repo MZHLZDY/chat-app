@@ -1,21 +1,22 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 
 axios.defaults.withCredentials = true;
 
-const drafts = ref<{[key: string]: string}>({});
+const drafts = ref<{ [key: string]: string }>({});
 const page = usePage();
-const currentUserId = ref(page.props.auth.user.id);
+const currentUserId = computed(() => page.props.auth.user.id);
+const currentUserName = computed(() => page.props.auth.user.name);
 
 // State management
-const contacts = ref<{id:number,name:string}[]>([]);
-const groups = ref<{id:number,name:string,members_count:number,owner_id:number}[]>([]);
-const allUsers = ref<{id:number,name:string}[]>([]);
-const activeContact = ref<{id:number,name:string,type:'user'|'group'}|null>(null);
+const contacts = ref<{ id: number, name: string }[]>([]);
+const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
+const allUsers = ref<{ id: number, name: string }[]>([]);
+const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 
@@ -26,57 +27,50 @@ const selectedUsers = ref<number[]>([]);
 
 // Computed properties
 const allChats = computed(() => [
-  ...contacts.value.map(c => ({...c, type: 'user' as const})),
-  ...groups.value.map(g => ({...g, type: 'group' as const}))
+  ...contacts.value.map(c => ({ ...c, type: 'user' as const })),
+  ...groups.value.map(g => ({ ...g, type: 'group' as const }))
 ]);
 
 // Helper function untuk format waktu yang aman
 const formatTime = (dateString: string | null | undefined): string => {
-  if (!dateString) return new Date().toLocaleTimeString();
-  
+  if (!dateString) return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   try {
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return new Date().toLocaleTimeString();
-    }
-    return date.toLocaleTimeString('id-ID', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+    if (isNaN(date.getTime())) throw new Error('Invalid date');
+    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   } catch (error) {
-    console.error('Error formatting time:', error);
-    return new Date().toLocaleTimeString();
+    return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   }
 };
 
-// Load functions
-const loadContacts = async () => {
-  try { 
-    contacts.value = (await axios.get('/chat/contacts')).data; 
-  } catch(e){ 
-    console.error(e); 
+const addMessage = (message: any) => {
+  if (!messages.value.some(msg => msg.id === message.id)) {
+    messages.value.push(message);
   }
+};
+
+// --- Load Functions ---
+const loadContacts = async () => {
+  try {
+    contacts.value = (await axios.get('/chat/contacts')).data;
+  } catch (e) { console.error("Gagal memuat kontak:", e); }
 };
 
 const loadGroups = async () => {
   try {
     const response = await axios.get('/groups');
     groups.value = response.data.map((g: any) => ({
-      id: g.id,
-      name: g.name,
-      members_count: g.members?.length || 0,
-      owner_id: g.owner_id
+      id: g.id, name: g.name, members_count: g.members?.length || 0, owner_id: g.owner_id
     }));
-  } catch(e) {
-    console.error(e);
-  }
+  } catch (e) { console.error("Gagal memuat grup:", e); }
 };
 
 const loadAllUsers = async () => {
   try {
-    allUsers.value = (await axios.get('/chat/contacts')).data;
+    // Panggil endpoint /users untuk mendapatkan daftar lengkap
+    allUsers.value = (await axios.get('/users')).data;
   } catch(e) {
-    console.error(e);
+    console.error("Gagal memuat semua user:", e);
   }
 };
 
@@ -84,91 +78,70 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
   try {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
-    
     messages.value = response.data.map((m: any) => ({
-      id: m.id,
-      sender_id: m.sender_id,
-      sender_name: m.sender?.name || 'Unknown',
-      text: m.message,
-      time: formatTime(m.created_at)
+      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at)
     }));
-  } catch(e) { 
-    console.error(e); 
-  }
+  } catch (e) { console.error("Gagal memuat pesan:", e); }
 };
 
-// WebSocket management
+// --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
-  if (boundChannel) {
-    echo.leave(boundChannel);
-  }
-  
-  if (type === 'group') {
-    boundChannel = `group.${contactId}`;
-    echo.private(boundChannel).listen('GroupMessageSent', (e: any) => {
-      const m = e.message ?? e;
-      
-      if (activeContact.value && activeContact.value.id === contactId && activeContact.value.type === 'group') {
-        if (!messages.value.some(msg => msg.id === m.id)) {
-          messages.value.push({
-            id: m.id,
-            sender_id: m.sender_id,
-            sender_name: m.sender?.name || 'Unknown',
-            text: m.message,
-            time: formatTime(m.created_at)
-          });
+  if (boundChannel) {
+    echo.leave(boundChannel);
+  }
+
+  const handleNewMessage = (eventData: any) => {
+    // 1. Abaikan pesan dari diri sendiri untuk mencegah duplikasi.
+    // Ini adalah jaring pengaman jika Anda lupa .toOthers() di backend.
+    if (eventData.sender_id === currentUserId.value) {
+      return; 
+    }
+
+    // 2. Cek apakah pesan ini untuk grup yang sedang aktif dibuka.
+    const isCurrentGroupChat = activeContact.value?.type === 'group' && activeContact.value?.id === eventData.group_id;
+
+    if (isCurrentGroupChat) {
+      console.log('Pesan grup baru diterima dan akan ditampilkan:', eventData);
+      addMessage({
+        id: eventData.id,
+        sender_id: eventData.sender_id,
+        sender_name: eventData.sender?.name || 'Unknown',
+        text: eventData.message,
+        time: formatTime(eventData.created_at)
+      });
+    }
+  };
+
+  if (type === 'group') {
+    boundChannel = `group.${contactId}`;
+    echo.private(boundChannel).listen('.GroupMessageSent', handleNewMessage);
+  } else {
+    // Logika untuk personal chat tidak diubah sesuai permintaan Anda
+    boundChannel = `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+    echo.private(boundChannel).listen('.MessageSent', (e: any) => {
+        const m = e.message ?? e;
+        if (activeContact.value && 
+            (m.sender_id === activeContact.value.id || m.receiver_id === activeContact.value.id) &&
+            !messages.value.some(msg => msg.id === m.id)
+        ) {
+            messages.value.push({
+                id: m.id, 
+                sender_id: m.sender_id, 
+                sender_name: 'User', // Anda mungkin perlu memperbaiki ini nanti
+                text: m.message, 
+                time: formatTime(m.created_at)
+            });
         }
-      }
     });
-  } else {
-    boundChannel = `chat.${[currentUserId.value, contactId].sort().join('.')}`;
-    echo.private(boundChannel).listen('.MessageSent', (e: any) => {
-      const m = e.message ?? e;
-      
-      if (activeContact.value && 
-          (m.sender_id === activeContact.value.id || m.receiver_id === activeContact.value.id) &&
-          !messages.value.some(msg => msg.id === m.id)) {
-        
-        messages.value.push({
-          id: m.id, 
-          sender_id: m.sender_id, 
-          sender_name: 'User',
-          text: m.message, 
-          time: formatTime(m.created_at)
-        });
-      }
-    });
-  }
+  }
 };
 
-// Listen untuk kontak baru dan update
 const setupGlobalListeners = () => {
-  // Listen untuk user baru yang mendaftar
-  echo.channel('users')
-    .listen('.UserRegistered', (e: any) => {
-      const newUser = e.user ?? e;
-      
-      if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({
-          id: newUser.id,
-          name: newUser.name
-        });
-      }
-      
-      if (!allUsers.value.some(u => u.id === newUser.id)) {
-        allUsers.value.push({
-          id: newUser.id,
-          name: newUser.name
-        });
-      }
-    });
-
-  // Listen untuk group baru dan kontak baru
+  // Listener untuk grup baru dan kontak baru
   echo.private(`user.${currentUserId.value}`)
     .listen('.GroupCreated', (e: any) => {
       const newGroup = e.group ?? e;
-      
       if (!groups.value.some(g => g.id === newGroup.id)) {
         groups.value.push({
           id: newGroup.id,
@@ -180,83 +153,65 @@ const setupGlobalListeners = () => {
     })
     .listen('.NewContact', (e: any) => {
       const newContact = e.contact ?? e;
-      
       if (!contacts.value.some(c => c.id === newContact.id)) {
-        contacts.value.push({
-          id: newContact.id,
-          name: newContact.name
-        });
+        contacts.value.push({ id: newContact.id, name: newContact.name });
       }
     });
 };
 
-// Chat functions
-const selectContact = (contact: {id: number, name: string, type: 'user' | 'group'}) => {
-  // Simpan draft untuk contact sebelumnya
+// --- Chat Functions ---
+const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
   if (activeContact.value && newMessage.value.trim()) {
-    const draftKey = `${activeContact.value.type}-${activeContact.value.id}`;
-    drafts.value[draftKey] = newMessage.value;
+    drafts.value[`${activeContact.value.type}-${activeContact.value.id}`] = newMessage.value;
   }
-
   activeContact.value = contact;
   messages.value = [];
-
-  // Load draft untuk contact baru / kosong kalau tidak ada
-  const draftKey = `${contact.type}-${contact.id}`;
-  newMessage.value = drafts.value[draftKey] || '';
-
+  newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
   loadMessages(contact.id, contact.type);
   bindChannel(contact.id, contact.type);
 };
 
 const sendMessage = async () => {
   if (!newMessage.value.trim() || !activeContact.value) return;
-  
+
   const messageText = newMessage.value;
+  const activeChat = activeContact.value;
+
+  const optimisticMessage = {
+    id: Date.now(),
+    sender_id: currentUserId.value,
+    sender_name: currentUserName.value,
+    text: messageText,
+    time: formatTime(new Date().toISOString()),
+  };
+
+  addMessage(optimisticMessage);
   newMessage.value = '';
-  
-  // Clear draft setelah send
-  const draftKey = `${activeContact.value.type}-${activeContact.value.id}`;
-  delete drafts.value[draftKey];
-  
+  delete drafts.value[`${activeChat.type}-${activeChat.id}`];
+
   try {
-    let endpoint, payload;
-    
-    if (activeContact.value.type === 'group') {
-      endpoint = `/groups/${activeContact.value.id}/send`;
-      payload = {
-        message: messageText
-      };
-    } else {
-      endpoint = '/chat/send';
-      payload = {
-        receiver_id: activeContact.value.id,
-        message: messageText
-      };
-    }
-    
+    const endpoint = activeChat.type === 'group' ? `/groups/${activeChat.id}/send` : '/chat/send';
+    const payload = activeChat.type === 'group' ? { message: messageText } : { receiver_id: activeChat.id, message: messageText };
     await axios.post(endpoint, payload);
-    
-    // WebSocket akan handle penambahan pesan, jadi tidak perlu manual add
-  } catch(e) { 
-    console.error('Error sending message:', e);
+  } catch (error) {
+    console.error('Gagal mengirim pesan:', error);
+    messages.value = messages.value.filter(m => m.id !== optimisticMessage.id);
     newMessage.value = messageText;
+    alert('Pesan gagal terkirim.');
   }
 };
 
-// Group functions
+// --- Group Functions ---
 const openCreateGroupModal = () => {
   showCreateGroupModal.value = true;
   selectedUsers.value = [];
   newGroupName.value = '';
 };
-
 const closeCreateGroupModal = () => {
   showCreateGroupModal.value = false;
   selectedUsers.value = [];
   newGroupName.value = '';
 };
-
 const toggleUserSelection = (userId: number) => {
   const index = selectedUsers.value.indexOf(userId);
   if (index > -1) {
@@ -265,19 +220,16 @@ const toggleUserSelection = (userId: number) => {
     selectedUsers.value.push(userId);
   }
 };
-
 const createGroup = async () => {
   if (!newGroupName.value.trim() || selectedUsers.value.length === 0) {
-    alert('Nama group dan minimal 1 anggota harus dipilih!');
+    alert('Nama grup dan minimal 1 anggota harus dipilih!');
     return;
   }
-  
   try {
     const response = await axios.post('/groups', {
       name: newGroupName.value,
       member_ids: selectedUsers.value
     });
-    
     const newGroup = response.data;
     groups.value.push({
       id: newGroup.id,
@@ -285,22 +237,15 @@ const createGroup = async () => {
       members_count: newGroup.members?.length || selectedUsers.value.length + 1,
       owner_id: newGroup.owner_id
     });
-    
     closeCreateGroupModal();
-    
-    // Otomatis pilih group yang baru dibuat
-    selectContact({
-      id: newGroup.id,
-      name: newGroup.name,
-      type: 'group'
-    });
-  } catch(e) {
-    console.error('Error creating group:', e);
-    alert('Gagal membuat group!');
+    selectContact({ id: newGroup.id, name: newGroup.name, type: 'group' });
+  } catch (e) {
+    console.error('Gagal membuat grup:', e);
+    alert('Gagal membuat grup!');
   }
 };
 
-// Initialize
+// --- Initialize ---
 onMounted(() => {
   loadContacts();
   loadGroups();

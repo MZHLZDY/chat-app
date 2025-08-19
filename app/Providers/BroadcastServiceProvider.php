@@ -1,4 +1,5 @@
 <?php
+// File: app/Providers/BroadcastServiceProvider.php
 
 namespace App\Providers;
 
@@ -7,9 +8,12 @@ use Illuminate\Support\ServiceProvider;
 
 class BroadcastServiceProvider extends ServiceProvider
 {
-    public function boot()
+    /**
+     * Bootstrap any application services.
+     */
+    public function boot(): void
     {
-        // Register broadcast auth route with web+auth middleware
+        // PASTIKAN BARIS INI PERSIS SEPERTI INI
         Broadcast::routes(['middleware' => ['web', 'auth']]);
 
         require base_path('routes/channels.php');

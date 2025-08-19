@@ -7,6 +7,7 @@ use App\Models\Group;
 use App\Models\GroupMessage;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class GroupController extends Controller
 {
@@ -52,20 +53,23 @@ class GroupController extends Controller
 
     public function send(Request $request, Group $group)
     {
-        abort_unless($group->members()->where('users.id',auth()->id())->exists(), 403);
+        Log::info('--- LOG #1: Memasuki GroupController@send untuk grup ID: ' . $group->id);
 
-        $data = $request->validate([
-            'message' => 'required|string|max:2000'
-        ]);
+        abort_unless($group->members()->where('users.id', auth()->id())->exists(), 403);
 
-        $msg = GroupMessage::create([
-            'group_id' => $group->id,
+        $request->validate([ 'message' => 'required|string|max:2000' ]);
+
+        $message = $group->messages()->create([
             'sender_id' => auth()->id(),
-            'message' => $data['message']
+            'message' => $request->message,
         ]);
 
-        broadcast(new GroupMessageSent($msg->load('sender:id,name')))->toOthers();
+        Log::info('--- LOG #2: Pesan berhasil disimpan. Mencoba broadcast...');
 
-        return response()->json($msg);
+        broadcast(new GroupMessageSent($message))->toOthers();
+
+        Log::info('--- LOG #3: Perintah broadcast berhasil dijalankan.');
+
+        return response()->json($message);
     }
 }

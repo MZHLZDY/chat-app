@@ -8,6 +8,7 @@ Broadcast::channel('chat.{a}.{b}', function ($user, $a, $b) {
 
 // other channels you have...
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {
+    // KEMBALIKAN KE LOGIKA INI setelah selesai debugging
     return $user->groups()->where('groups.id', $groupId)->exists();
 });
 

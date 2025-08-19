@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\CallController;
+use App\Http\Controllers\UserController;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -35,6 +36,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/call/signal', [CallController::class, 'signal']);
 });
 
+Route::get('/users', [UserController::class, 'index'])->middleware('auth');
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
