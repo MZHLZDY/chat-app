@@ -79,7 +79,7 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
     messages.value = response.data.map((m: any) => ({
-      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at)
+      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name, text: m.message, time: formatTime(m.created_at)
     }));
   } catch (e) { console.error("Gagal memuat pesan:", e); }
 };
@@ -87,54 +87,46 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
 // --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
-  if (boundChannel) {
-    echo.leave(boundChannel);
-  }
+  if (boundChannel) {
+    echo.leave(boundChannel);
+  }
 
-  const handleNewMessage = (eventData: any) => {
-    // 1. Abaikan pesan dari diri sendiri untuk mencegah duplikasi.
-    // Ini adalah jaring pengaman jika Anda lupa .toOthers() di backend.
-    if (eventData.sender_id === currentUserId.value) {
-      return; 
-    }
+  // >>> PERBAIKAN UTAMA ADA DI FUNGSI INI <<<
+  const handleNewMessage = (eventData: any) => {
+    // Tambahkan log ini untuk melihat struktur data asli dari server
+    console.log('Event Real-Time Diterima:', eventData);
 
-    // 2. Cek apakah pesan ini untuk grup yang sedang aktif dibuka.
-    const isCurrentGroupChat = activeContact.value?.type === 'group' && activeContact.value?.id === eventData.group_id;
+    // Gunakan kembali logika aman Anda untuk membaca data, baik yang ter-nesting atau tidak
+    const m = eventData.message ?? eventData;
 
-    if (isCurrentGroupChat) {
-      console.log('Pesan grup baru diterima dan akan ditampilkan:', eventData);
-      addMessage({
-        id: eventData.id,
-        sender_id: eventData.sender_id,
-        sender_name: eventData.sender?.name || 'Unknown',
-        text: eventData.message,
-        time: formatTime(eventData.created_at)
-      });
-    }
-  };
+    // Abaikan event dari diri sendiri untuk mencegah pesan ganda
+    if (m.sender_id === currentUserId.value) {
+      return;
+    }
 
-  if (type === 'group') {
-    boundChannel = `group.${contactId}`;
-    echo.private(boundChannel).listen('.GroupMessageSent', handleNewMessage);
-  } else {
-    // Logika untuk personal chat tidak diubah sesuai permintaan Anda
-    boundChannel = `chat.${[currentUserId.value, contactId].sort().join('.')}`;
-    echo.private(boundChannel).listen('.MessageSent', (e: any) => {
-        const m = e.message ?? e;
-        if (activeContact.value && 
-            (m.sender_id === activeContact.value.id || m.receiver_id === activeContact.value.id) &&
-            !messages.value.some(msg => msg.id === m.id)
-        ) {
-            messages.value.push({
-                id: m.id, 
-                sender_id: m.sender_id, 
-                sender_name: 'User', // Anda mungkin perlu memperbaiki ini nanti
-                text: m.message, 
-                time: formatTime(m.created_at)
-            });
-        }
-    });
-  }
+    // Cek apakah chat yang relevan sedang aktif
+    const isChatActive = activeContact.value &&
+                         activeContact.value.type === type &&
+                         activeContact.value.id === contactId;
+
+    if (isChatActive) {
+      addMessage({
+        id: m.id,
+        sender_id: m.sender_id,
+        sender_name: m.sender?.name,
+        text: m.message,
+        time: formatTime(m.created_at)
+      });
+    }
+  };
+
+  if (type === 'group') {
+    boundChannel = `group.${contactId}`;
+    echo.private(boundChannel).listen('.GroupMessageSent', handleNewMessage);
+  } else {
+    boundChannel = `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+    echo.private(boundChannel).listen('.MessageSent', handleNewMessage);
+  }
 };
 
 const setupGlobalListeners = () => {

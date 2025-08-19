@@ -66,7 +66,7 @@ class GroupController extends Controller
 
         Log::info('--- LOG #2: Pesan berhasil disimpan. Mencoba broadcast...');
 
-        broadcast(new GroupMessageSent($message))->toOthers();
+        broadcast(new GroupMessageSent($message));
 
         Log::info('--- LOG #3: Perintah broadcast berhasil dijalankan.');
 
