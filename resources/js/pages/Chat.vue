@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { ref, onMounted, computed, } from 'vue';
+import { ref, onMounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 
@@ -12,26 +12,36 @@ const page = usePage();
 const currentUserId = computed(() => page.props.auth.user.id);
 const currentUserName = computed(() => page.props.auth.user.name);
 
-// State management
+// --- State Management ---
 const contacts = ref<{ id: number, name: string }[]>([]);
 const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
 const allUsers = ref<{ id: number, name: string }[]>([]);
 const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
+const messageContainer = ref<HTMLElement | null>(null);
+const isSending = ref(false); // Mencegah klik/kirim ganda
 
-// Modal states
+// --- Modal States ---
 const showCreateGroupModal = ref(false);
 const newGroupName = ref('');
 const selectedUsers = ref<number[]>([]);
 
-// Computed properties
+// --- Computed Properties ---
 const allChats = computed(() => [
   ...contacts.value.map(c => ({ ...c, type: 'user' as const })),
   ...groups.value.map(g => ({ ...g, type: 'group' as const }))
 ]);
 
-// Helper function untuk format waktu yang aman
+// --- Helper Functions ---
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (messageContainer.value) {
+      messageContainer.value.scrollTop = messageContainer.value.scrollHeight;
+    }
+  });
+};
+
 const formatTime = (dateString: string | null | undefined): string => {
   if (!dateString) return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   try {
@@ -46,6 +56,7 @@ const formatTime = (dateString: string | null | undefined): string => {
 const addMessage = (message: any) => {
   if (!messages.value.some(msg => msg.id === message.id)) {
     messages.value.push(message);
+    scrollToBottom();
   }
 };
 
@@ -67,11 +78,8 @@ const loadGroups = async () => {
 
 const loadAllUsers = async () => {
   try {
-    // Panggil endpoint /users untuk mendapatkan daftar lengkap
     allUsers.value = (await axios.get('/users')).data;
-  } catch(e) {
-    console.error("Gagal memuat semua user:", e);
-  }
+  } catch (e) { console.error("Gagal memuat semua user:", e); }
 };
 
 const loadMessages = async (contactId: number, type: 'user' | 'group') => {
@@ -79,8 +87,9 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
     messages.value = response.data.map((m: any) => ({
-      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name, text: m.message, time: formatTime(m.created_at)
+      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at)
     }));
+    scrollToBottom();
   } catch (e) { console.error("Gagal memuat pesan:", e); }
 };
 
@@ -91,62 +100,35 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
     echo.leave(boundChannel);
   }
 
-  // >>> PERBAIKAN UTAMA ADA DI FUNGSI INI <<<
   const handleNewMessage = (eventData: any) => {
-    // Tambahkan log ini untuk melihat struktur data asli dari server
-    console.log('Event Real-Time Diterima:', eventData);
-
-    // Gunakan kembali logika aman Anda untuk membaca data, baik yang ter-nesting atau tidak
-    const m = eventData.message ?? eventData;
-
-    // Abaikan event dari diri sendiri untuk mencegah pesan ganda
-    if (m.sender_id === currentUserId.value) {
-      return;
-    }
-
-    // Cek apakah chat yang relevan sedang aktif
-    const isChatActive = activeContact.value &&
-                         activeContact.value.type === type &&
-                         activeContact.value.id === contactId;
-
+    if (eventData.sender_id === currentUserId.value) return; // Abaikan gema
+    const isChatActive = activeContact.value && activeContact.value.type === type && activeContact.value.id === contactId;
     if (isChatActive) {
       addMessage({
-        id: m.id,
-        sender_id: m.sender_id,
-        sender_name: m.sender?.name,
-        text: m.message,
-        time: formatTime(m.created_at)
+        id: eventData.id,
+        sender_id: eventData.sender_id,
+        sender_name: eventData.sender?.name || 'Unknown',
+        text: eventData.message,
+        time: formatTime(eventData.created_at)
       });
     }
   };
 
-  if (type === 'group') {
-    boundChannel = `group.${contactId}`;
-    echo.private(boundChannel).listen('.GroupMessageSent', handleNewMessage);
-  } else {
-    boundChannel = `chat.${[currentUserId.value, contactId].sort().join('.')}`;
-    echo.private(boundChannel).listen('.MessageSent', handleNewMessage);
-  }
+  const channelName = type === 'group' ? `group.${contactId}` : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+  const eventName = type === 'group' ? '.GroupMessageSent' : '.MessageSent';
+
+  boundChannel = channelName;
+  echo.private(channelName).listen(eventName, handleNewMessage);
 };
 
 const setupGlobalListeners = () => {
-  // Listener untuk grup baru dan kontak baru
-  echo.private(`user.${currentUserId.value}`)
-    .listen('.GroupCreated', (e: any) => {
-      const newGroup = e.group ?? e;
-      if (!groups.value.some(g => g.id === newGroup.id)) {
-        groups.value.push({
-          id: newGroup.id,
-          name: newGroup.name,
-          members_count: newGroup.members?.length || 0,
-          owner_id: newGroup.owner_id
-        });
+  echo.channel('users')
+    .listen('.UserRegistered', (newUser: any) => {
+      if (!allUsers.value.some(u => u.id === newUser.id)) {
+        allUsers.value.push({ id: newUser.id, name: newUser.name });
       }
-    })
-    .listen('.NewContact', (e: any) => {
-      const newContact = e.contact ?? e;
-      if (!contacts.value.some(c => c.id === newContact.id)) {
-        contacts.value.push({ id: newContact.id, name: newContact.name });
+      if (!contacts.value.some(c => c.id === newUser.id)) {
+        contacts.value.push({ id: newUser.id, name: newUser.name });
       }
     });
 };
@@ -164,8 +146,10 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
 };
 
 const sendMessage = async () => {
+  if (isSending.value) return;
   if (!newMessage.value.trim() || !activeContact.value) return;
 
+  isSending.value = true;
   const messageText = newMessage.value;
   const activeChat = activeContact.value;
 
@@ -190,6 +174,8 @@ const sendMessage = async () => {
     messages.value = messages.value.filter(m => m.id !== optimisticMessage.id);
     newMessage.value = messageText;
     alert('Pesan gagal terkirim.');
+  } finally {
+    isSending.value = false;
   }
 };
 
@@ -201,8 +187,6 @@ const openCreateGroupModal = () => {
 };
 const closeCreateGroupModal = () => {
   showCreateGroupModal.value = false;
-  selectedUsers.value = [];
-  newGroupName.value = '';
 };
 const toggleUserSelection = (userId: number) => {
   const index = selectedUsers.value.indexOf(userId);
@@ -250,11 +234,10 @@ onMounted(() => {
     <Head title="Chat" />
     <AppLayout>
         <div class="flex h-[90vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white">
-            <!-- Sidebar Contacts -->
             <div class="w-1/4 bg-gray-100 border-r overflow-y-auto">
                 <div class="p-4 border-b flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
-                    <button @click="openCreateGroupModal" 
+                    <button @click="openCreateGroupModal"
                             class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
                         + Group
                     </button>
@@ -263,7 +246,7 @@ onMounted(() => {
                 <ul>
                     <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
-                        :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3', 
+                        :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3',
                                  activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
                         <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold'">
                             {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
@@ -274,32 +257,25 @@ onMounted(() => {
                                 {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : 'Personal chat' }}
                             </div>
                         </div>
-                        <!-- Draft indicator -->
-                        <div v-if="drafts[`${chat.type}-${chat.id}`]" 
-                             class="w-2 h-2 bg-orange-500 rounded-full"></div>
+                        <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
                     </li>
                 </ul>
             </div>
 
-            <!-- Chat Window -->
             <div class="flex flex-col flex-1" v-if="activeContact">
-                <!-- Header -->
                 <div class="p-4 border-b font-semibold flex items-center gap-3">
                     <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm'">
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
                     {{ activeContact.name }}
-                    <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">
-                        (Group Chat)
-                    </span>
+                    <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
                 </div>
 
-                <!-- Messages -->
-                <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     <div v-for="m in messages" :key="m.id"
-                        :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
+                         :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
                         <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs' : 'inline-block bg-gray-300 text-black px-4 py-2 rounded-lg max-w-xs'">
-                            <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId" 
+                            <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
                                  class="text-xs font-semibold mb-1 opacity-75">
                                 {{ m.sender_name }}
                             </div>
@@ -309,58 +285,47 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <!-- Input -->
                 <div class="p-4 border-t flex gap-2">
-                    <input type="text" v-model="newMessage" 
-                           :placeholder="`Ketik pesan ${activeContact.type === 'group' ? 'ke group' : 'ke ' + activeContact.name}...`"
-                           @keyup.enter="sendMessage"
-                           class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                    <button @click="sendMessage" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
+                    <input
+                        type="text"
+                        v-model="newMessage"
+                        :placeholder="`Ketik pesan ke ${activeContact.name}...`"
+                        @keyup.enter="sendMessage"
+                        class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <button
+                        @click="sendMessage"
+                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
                         Kirim
                     </button>
                 </div>
             </div>
 
-            <!-- Empty state -->
             <div v-else class="flex items-center justify-center flex-1 text-gray-500">
                 Pilih kontak atau group untuk memulai chat
             </div>
         </div>
 
-        <!-- Create Group Modal -->
         <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-lg p-6 w-96 max-h-96 overflow-y-auto">
+            <div class="bg-white rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
                 <h3 class="text-lg font-bold mb-4">Buat Group Baru</h3>
-                
                 <div class="mb-4">
                     <label class="block text-sm font-medium mb-2">Nama Group</label>
-                    <input type="text" v-model="newGroupName" 
-                           placeholder="Masukkan nama group..."
-                           class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <input type="text" v-model="newGroupName" placeholder="Masukkan nama group..." class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
-                
                 <div class="mb-4">
                     <label class="block text-sm font-medium mb-2">Pilih Anggota</label>
-                    <div class="max-h-32 overflow-y-auto border rounded-lg">
-                        <div v-for="user in allUsers.filter(u => u.id !== currentUserId)" :key="user.id"
+                    <div class="max-h-48 overflow-y-auto border rounded-lg">
+                        <div v-for="user in allUsers" :key="user.id"
                              @click="toggleUserSelection(user.id)"
-                             :class="['p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2', 
-                                      selectedUsers.includes(user.id) ? 'bg-blue-100' : '']">
+                             :class="['p-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2', selectedUsers.includes(user.id) ? 'bg-blue-100' : '']">
                             <input type="checkbox" :checked="selectedUsers.includes(user.id)" class="pointer-events-none">
                             <span>{{ user.name }}</span>
                         </div>
                     </div>
                 </div>
-                
                 <div class="flex gap-2">
-                    <button @click="createGroup" 
-                            class="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600">
-                        Buat Group
-                    </button>
-                    <button @click="closeCreateGroupModal" 
-                            class="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">
-                        Batal
-                    </button>
+                    <button @click="createGroup" class="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600">Buat Group</button>
+                    <button @click="closeCreateGroupModal" class="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">Batal</button>
                 </div>
             </div>
         </div>
