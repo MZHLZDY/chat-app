@@ -21,20 +21,20 @@ class GroupMessageSent implements ShouldBroadcast
      * Menentukan data spesifik yang akan di-broadcast.
      * Ini akan mengirimkan detail pengirim ke frontend.
      */
-    public function broadcastWith(): array
-    {
-        return [
-            'id' => $this->message->id,
-            'group_id' => $this->message->group_id,
-            'sender_id' => $this->message->sender_id,
-            'message' => $this->message->message,
-            'created_at' => $this->message->created_at->toDateTimeString(),
-            'sender' => [
-                'id' => $this->message->sender->id,
-                'name' => $this->message->sender->name,
-            ],
-        ];
-    }
+    // public function broadcastWith(): array
+    // {
+    //     return [
+    //         'id' => $this->message->id,
+    //         'group_id' => $this->message->group_id,
+    //         'sender_id' => $this->message->sender_id,
+    //         'message' => $this->message->message,
+    //         'created_at' => $this->message->created_at->toDateTimeString(),
+    //         'sender' => [
+    //             'id' => $this->message->sender->id,
+    //             'name' => $this->message->sender->name,
+    //         ],
+    //     ];
+    // }
 
     public function broadcastOn(): PrivateChannel
     {
