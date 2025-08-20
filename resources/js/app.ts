@@ -9,6 +9,11 @@ import { initializeTheme } from './composables/useAppearance';
 import { configureEcho } from '@laravel/echo-vue';
 import { configureEcho } from '@laravel/echo-vue';
 import { configureEcho } from '@laravel/echo-vue';
+import { configureEcho } from '@laravel/echo-vue';
+
+configureEcho({
+    broadcaster: 'pusher',
+});
 
 configureEcho({
     broadcaster: 'pusher',
