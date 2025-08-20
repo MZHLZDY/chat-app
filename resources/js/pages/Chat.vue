@@ -4,6 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
+import { Video } from 'lucide-vue-next';
 
 axios.defaults.withCredentials = true;
 
@@ -21,6 +22,22 @@ const messages = ref<any[]>([]);
 const newMessage = ref('');
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
+
+// State Video Call
+const showVideoCall = ref(false);
+const callPartnerId = ref<number|null>();
+
+const startVideoCall = (UserId: number) => {
+  callPartnerId.value = UserId;
+  showVideoCall.value = true;
+
+  // TODO: Setelah ini selesai, kita init agora
+};
+
+const endVideoCall = () => {
+  showVideoCall.value = false;
+  callPartnerId.value = null;
+};
 
 // --- Modal States ---
 const showCreateGroupModal = ref(false);
@@ -279,6 +296,15 @@ onMounted(() => {
                     </div>
                     {{ activeContact.name }}
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
+
+                    <!-- Tambahkan button video call -->
+                    <button
+                      v-if="activeContact.type === 'user'"
+                      @click="startVideoCall(activeContact.id)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <Video class="w-5 h-5"/>
+                    </button>
                 </div>
 
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
