@@ -11,7 +11,7 @@ class ChatController extends Controller
 {
     public function index()
     {
-        return inertia('Chat/Index');
+        return inertia('Chat');
     }
 
     public function contacts()

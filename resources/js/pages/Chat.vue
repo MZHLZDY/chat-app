@@ -2,6 +2,7 @@
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, computed, } from 'vue';
+import AgoraRTC from 'agora-rtc-sdk-ng';
 import axios from 'axios';
 import { echo } from '../echo.js';
 
@@ -24,6 +25,20 @@ const newMessage = ref('');
 const showCreateGroupModal = ref(false);
 const newGroupName = ref('');
 const selectedUsers = ref<number[]>([]);
+
+// agora
+const isInCall = ref(false);
+const callType = ref<'voice' | 'video' | null>(null);
+const callStatus = ref('');
+const localAudioTrack = ref<any>(null);
+const localVideoTrack = ref<any>(null);
+const remoteAudioTrack = ref<any>(null);
+const remoteVideoTrack = ref<any>(null);
+const client = ref<any>(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
+
+const APP_ID = "f853ee34890a43db9d949d2c5f4dab51"; // dari Agora Console
+const TOKEN = "007eJxTYNh/pzPt8g5+z5cbDkcFhH3aGqckwD1r/idhfkbZ+2fl+A0VGNIsTI1TU41NLCwNEk2MU5IsUyxNLFOMkk3TTFISk0wNU68uzmgIZGR4rHSBiZEBAkF8DgbnjMQS3cSCAgYGALCyIHk=";
+const CHANNEL = "Chat-app";
 
 // Computed properties
 const allChats = computed(() => [
@@ -245,12 +260,128 @@ const createGroup = async () => {
   }
 };
 
+// ---- Telephony by agora ----
+async function joinChannel() {
+  try {
+    const response = await axios.post('/agora-token', {
+      channel: `call-${activeContact.value?.id}`,
+      uid: currentUserId.value
+    });
+    
+    const { token, channel, uid } = response.data;
+
+    // Join the channel
+    await client.value.join(APP_ID, channel, token, uid);
+
+    // Create and publish local track
+    localAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack();
+    
+    if (callType.value === 'video') {
+      localVideoTrack.value = await AgoraRTC.createCameraVideoTrack();
+      // Play local tracks
+      localVideoTrack.value.play('local-video');
+      // Publish tracks to channel
+      await client.value.publish([localAudioTrack.value, localVideoTrack.value]);
+    } else {
+      // Voice call only
+      await client.value.publish([localAudioTrack.value]);
+    }
+
+    // Subscribe to remote users
+    client.value.on('user-published', async (user: any, mediaType: any) => {
+      await client.value.subscribe(user, mediaType);
+
+      if (mediaType === 'video') {
+        remoteVideoTrack.value = user.videoTrack;
+        remoteVideoTrack.value?.play('remote-video');
+      }
+
+      if (mediaType === 'audio') {
+        remoteAudioTrack.value = user.audioTrack;
+        remoteAudioTrack.value?.play();
+      }
+    });
+    
+  } catch (error) {
+    console.error('Join channel error:', error);
+    endCall();
+  }
+}
+
+// Method untuk memulai panggilan
+const startVoiceCall = async () => {
+  if (!activeContact.value) return;
+  
+  try {
+    isInCall.value = true;
+    callType.value = 'voice';
+    callStatus.value = 'Memulai panggilan suara...';
+    
+    await joinChannel();
+    callStatus.value = 'Sedang menelepon...';
+    
+  } catch (error) {
+    console.error('Voice call error:', error);
+    endCall();
+    alert('Gagal memulai panggilan suara');
+  }
+};
+
+const startVideoCall = async () => {
+  if (!activeContact.value) return;
+  
+  try {
+    isInCall.value = true;
+    callType.value = 'video';
+    callStatus.value = 'Memulai panggilan video...';
+    
+    await joinChannel();
+    callStatus.value = 'Sedang melakukan video call...';
+    
+  } catch (error) {
+    console.error('Video call error:', error);
+    endCall();
+    alert('Gagal memulai panggilan video');
+  }
+};
+
+const endCall = async () => {
+  try {
+    // Stop dan unpublish semua track
+    if (localAudioTrack.value) {
+      localAudioTrack.value.stop();
+      localAudioTrack.value.close();
+    }
+    
+    if (localVideoTrack.value) {
+      localVideoTrack.value.stop();
+      localVideoTrack.value.close();
+    }
+    
+    // Leave channel
+    await client.value.leave();
+    
+    // Reset state
+    isInCall.value = false;
+    callType.value = null;
+    callStatus.value = '';
+    localAudioTrack.value = null;
+    localVideoTrack.value = null;
+    remoteAudioTrack.value = null;
+    remoteVideoTrack.value = null;
+    
+  } catch (error) {
+    console.error('Error ending call:', error);
+  }
+};
+
 // --- Initialize ---
 onMounted(() => {
   loadContacts();
   loadGroups();
   loadAllUsers();
   setupGlobalListeners();
+  
 });
 </script>
 
@@ -300,7 +431,46 @@ onMounted(() => {
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">
                         (Group Chat)
                     </span>
+                    <div class="call-actions">
+                  <button 
+            @click="startVoiceCall" 
+            class="btn-call voice-call"
+            :disabled="isInCall"
+            title="Voice Call"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 0 0 2.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 0 1-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 0 0-1.091-.852H4.5A2.25 2.25 0 0 0 2.25 4.5v2.25Z" />
+            </svg>
+        </button>
+                  <button 
+            @click="startVideoCall" 
+            class="btn-call video-call"
+            :disabled="isInCall"
+            title="Video Call"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+        </button>
+                  <button 
+                     v-if="isInCall" 
+                     @click="endCall" 
+                     class="btn-call end-call"
+                  >
+                     <i class="fas fa-phone-slash"></i>
+                  </button>
+                  <span v-if="callStatus" class="text-sm text-gray-600 ml-2">
+            {{ callStatus }}
+        </span>
                 </div>
+                </div>
+
+                <!-- Video Container -->
+                <div v-if="isInCall && callType === 'video'" class="fixed bottom-4 right-4 w-64 h-48 bg-black rounded-lg overflow-hidden z-50">
+                    <div id="remote-video" class="w-full h-full"></div>
+                    <div id="local-video" class="absolute bottom-2 right-2 w-16 h-16 rounded border-2 border-white"></div>
+                </div>
+                
 
                 <!-- Messages -->
                 <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">

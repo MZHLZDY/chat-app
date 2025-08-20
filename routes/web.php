@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AgoraCallController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\CallController;
@@ -34,6 +35,12 @@ Route::middleware(['auth'])->group(function () {
 
     // signaling call
     Route::post('/call/signal', [CallController::class, 'signal']);
+
+    Route::post('/calls/initiate', [AgoraCallController::class, 'initiateCall']);
+    Route::post('/calls/accept', [AgoraCallController::class, 'acceptCall']);
+    Route::post('/calls/reject', [AgoraCallController::class, 'rejectCall']);
+    Route::post('/calls/end', [AgoraCallController::class, 'endCall']);
+    Route::post('/agora-token', [AgoraCallController::class, 'generateToken']);
 });
 
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');
