@@ -53,8 +53,6 @@ class GroupController extends Controller
 
     public function send(Request $request, Group $group)
     {
-        Log::info('--- LOG #1: Memasuki GroupController@send untuk grup ID: ' . $group->id);
-
         abort_unless($group->members()->where('users.id', auth()->id())->exists(), 403);
 
         $request->validate([ 'message' => 'required|string|max:2000' ]);
@@ -64,11 +62,7 @@ class GroupController extends Controller
             'message' => $request->message,
         ]);
 
-        Log::info('--- LOG #2: Pesan berhasil disimpan. Mencoba broadcast...');
-
-        broadcast(new GroupMessageSent($message));
-
-        Log::info('--- LOG #3: Perintah broadcast berhasil dijalankan.');
+        broadcast(new GroupMessageSent($message))->toOthers();
 
         return response()->json($message);
     }
