@@ -20,6 +20,7 @@ const allUsers = ref<{ id: number, name: string }[]>([]);
 const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
+const onlineUsers = ref<number[]>([]); 
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
@@ -111,57 +112,73 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
 };
 
 // --- WebSocket Management ---
+// --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
-  if (boundChannel) {
-    echo.leave(boundChannel);
-  }
-
-  // =================================================================
-  // === FUNGSI HANDLE NEW MESSAGE PALING BENER, PALING FINAL ===
-  // =================================================================
-  const handleNewMessage = (eventData: any) => {
-    const messageData = eventData.message;
-
-    // 1. Validasi dasar: Pastikan data lengkap dan bukan dari diri sendiri.
-    if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
-      return;
+    if (boundChannel) {
+        echo.leave(boundChannel);
     }
 
-    // 2. Cek apakah chat yang relevan sedang aktif.
-    let isChatActive = false;
-    if (activeContact.value) {
-      // Untuk GROUP CHAT: tipe harus 'group' DAN ID grup aktif cocok dengan receiver_id/group_id pesan.
-      const isGroupChat = activeContact.value.type === 'group' && (activeContact.value.id === messageData.receiver_id || activeContact.value.id === messageData.group_id);
-      // Untuk PERSONAL CHAT: tipe harus 'user' DAN ID kontak aktif cocok dengan PENGIRIM pesan.
-      const isPersonalChat = activeContact.value.type === 'user' && activeContact.value.id === messageData.sender_id;
-      isChatActive = isGroupChat || isPersonalChat;
+    // handleNewMessage dipindahin nang njobo ben isok dienggo bareng
+    const handleNewMessage = (eventData: any) => {
+        // Logika cerdas gawe mbedakno payload (amplop vs non-amplop)
+        const messageData = eventData.message ? eventData.message : eventData;
+
+        // Validasi dasar
+        if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
+            return;
+        }
+
+        let isChatActive = false;
+        if (activeContact.value) {
+            const isGroupChat = activeContact.value.type === 'group' && (activeContact.value.id === messageData.receiver_id || activeContact.value.id === messageData.group_id);
+            const isPersonalChat = activeContact.value.type === 'user' && activeContact.value.id === messageData.sender_id;
+            isChatActive = isGroupChat || isPersonalChat;
+        }
+
+        if (isChatActive) {
+            addMessage({
+                id: messageData.id,
+                sender_id: messageData.sender_id,
+                sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
+                text: messageData.message,
+                time: formatTime(new Date().toISOString())
+            });
+        }
+    };
+
+    const channelName = type === 'group' 
+        ? `group.${contactId}` 
+        : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+    
+    const eventName = type === 'group' ? '.GroupMessageSent' : '.MessageSent';
+
+    boundChannel = channelName;
+
+    // =======================================================
+    // === IKI SING DITAMBAHI 'ELSE' ===
+    // =======================================================
+    if (type === 'user') {
+        // Iki gawe personal chat (wes bener)
+        echo.join(channelName)
+            .here((users: Array<{ id: number, name: string }>) => {
+                onlineUsers.value = users.map(u => u.id);
+            })
+            .joining((user: { id: number, name: string }) => {
+                if (!onlineUsers.value.includes(user.id)) {
+                    onlineUsers.value.push(user.id);
+                }
+            })
+            .leaving((user: { id: number, name: string }) => {
+                onlineUsers.value = onlineUsers.value.filter(id => id !== user.id);
+            })
+            .listen(eventName, handleNewMessage);
+    } else { 
+        // IKI 'ELSE' SING ILANG MAENG, GAWE GRUP CHAT
+        echo.private(channelName)
+            .listen(eventName, handleNewMessage);
     }
-
-    if (isChatActive) {
-      addMessage({
-        id: messageData.id,
-        sender_id: messageData.sender_id,
-        sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
-        text: messageData.message,
-        time: formatTime(messageData.created_at)
-      });
-    } else {
-      // Di sini nanti kamu bisa tambahkan notifikasi untuk chat yang tidak aktif
-    }
-  };
-
-  const channelName = type === 'group' 
-    ? `group.${contactId}` 
-    : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
-  
-  const eventName = type === 'group' ? '.GroupMessageSent' : '.MessageSent';
-
-  boundChannel = channelName;
-  echo.private(channelName)
-    .listen(eventName, handleNewMessage);
 };
-
 // --- Chat Functions ---
 const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
   if (activeContact.value && newMessage.value.trim()) {
@@ -169,6 +186,7 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
   }
   activeContact.value = contact;
   messages.value = [];
+  onlineUsers.value = [];
   newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
   loadMessages(contact.id, contact.type);
   bindChannel(contact.id, contact.type);
@@ -218,11 +236,58 @@ const sendMessage = async () => {
 };
 
 // --- Group Functions (tidak diubah) ---
-const openCreateGroupModal = () => { /* ... */ };
-const closeCreateGroupModal = () => { /* ... */ };
-const toggleUserSelection = (userId: number) => { /* ... */ };
-const createGroup = async () => { /* ... */ };
-const setupGlobalListeners = () => { /* ... */ };
+const openCreateGroupModal = () => {
+  showCreateGroupModal.value = true;
+  selectedUsers.value = [];
+  newGroupName.value = '';
+};
+const closeCreateGroupModal = () => {
+  showCreateGroupModal.value = false;
+};
+const toggleUserSelection = (userId: number) => {
+  const index = selectedUsers.value.indexOf(userId);
+  if (index > -1) {
+    selectedUsers.value.splice(index, 1);
+  } else {
+    selectedUsers.value.push(userId);
+  }
+};
+const createGroup = async () => {
+  if (!newGroupName.value.trim() || selectedUsers.value.length === 0) {
+    alert('Nama grup dan minimal 1 anggota harus dipilih!');
+    return;
+  }
+  try {
+    const response = await axios.post('/groups', {
+      name: newGroupName.value,
+      member_ids: selectedUsers.value
+    });
+    const newGroup = response.data;
+    groups.value.push({
+      id: newGroup.id,
+      name: newGroup.name,
+      members_count: newGroup.members?.length || selectedUsers.value.length + 1,
+      owner_id: newGroup.owner_id
+    });
+    closeCreateGroupModal();
+    selectContact({ id: newGroup.id, name: newGroup.name, type: 'group' });
+  } catch (e) {
+    console.error('Gagal membuat grup:', e);
+    alert('Gagal membuat grup!');
+  }
+};
+
+const setupGlobalListeners = () => {
+  echo.channel('users')
+    .listen('.UserRegistered', (newUser: any) => {
+      if (!allUsers.value.some(u => u.id === newUser.id)) {
+        allUsers.value.push({ id: newUser.id, name: newUser.name });
+      }
+      if (!contacts.value.some(c => c.id === newUser.id)) {
+        contacts.value.push({ id: newUser.id, name: newUser.name });
+      }
+    });
+};
 
 // --- Initialize ---
 onMounted(() => {
@@ -272,7 +337,11 @@ onMounted(() => {
                     </div>
                     {{ activeContact.name }}
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
-
+                    <span v-if="activeContact.type === 'user' && onlineUsers.includes(activeContact.id)" 
+                      class="text-green-500 text-xs font-normal flex items-center gap-1 ml-2">
+                    <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                    Online
+                    </span>
                     <!-- Tambahkan button video call -->
                     <button
                       v-if="activeContact.type === 'user'"

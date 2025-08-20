@@ -3,7 +3,7 @@
 namespace App\Events;
 
 use App\Models\ChatMessage;
-use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -43,7 +43,7 @@ class MessageSent implements ShouldBroadcastNow
     public function broadcastOn()
     {
         return [
-            new PrivateChannel($this->channelName()),
+            new PresenceChannel($this->channelName()),
         ];
     }
 

@@ -3,7 +3,10 @@
 use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::channel('chat.{a}.{b}', function ($user, $a, $b) {
-    return (int)$user->id === (int)$a || (int)$user->id === (int)$b;
+    if ((int)$user->id === (int)$a || (int)$user->id === (int)$b) {
+        return ['id' => $user->id, 'name' => $user->name]; // <-- KTP ne user
+    }
+    return false;
 });
 
 // other channels you have...
