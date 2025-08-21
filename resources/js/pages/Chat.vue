@@ -29,6 +29,7 @@ const isSending = ref(false);
 // State Video Call
 const showVideoCall = ref(false);
 const callPartnerId = ref<number|null>();
+const isMinimized = ref(false);
 
 const startVideoCall = (UserId: number) => {
   callPartnerId.value = UserId;
@@ -40,6 +41,16 @@ const startVideoCall = (UserId: number) => {
 const endVideoCall = () => {
   showVideoCall.value = false;
   callPartnerId.value = null;
+};
+
+const minimizeVideoCall = () => {
+  isMinimized.value = true;
+  showVideoCall.value = false;
+};
+
+const restoreVideoCall = () => {
+  isMinimized.value = false;
+  showVideoCall.value = true;
 };
 
 // --- Modal States ---
