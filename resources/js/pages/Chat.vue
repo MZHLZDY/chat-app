@@ -5,6 +5,8 @@ import { ref, onMounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 import { Video } from 'lucide-vue-next';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { id } from 'date-fns/locale'; // Import bahasa Indonesia
 
 axios.defaults.withCredentials = true;
 
@@ -14,7 +16,7 @@ const currentUserId = computed(() => page.props.auth.user.id);
 const currentUserName = computed(() => page.props.auth.user.name);
 
 // --- State Management ---
-const contacts = ref<{ id: number, name: string }[]>([]);
+const contacts = ref<{ id: number, name: string, last_seen: string | null }[]>([]);
 const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
 const allUsers = ref<{ id: number, name: string }[]>([]);
 const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
@@ -71,6 +73,16 @@ const formatTime = (dateString: string | null | undefined): string => {
   }
 };
 
+// format last seen
+const formatLastSeen = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'offline';
+    try {
+        return `terakhir dilihat ${formatDistanceToNowStrict(new Date(dateString), { addSuffix: true, locale: id })}`;
+    } catch (error) {
+        return 'offline';
+    }
+};
+
 const addMessage = (message: any) => {
   if (!messages.value.some(msg => msg.id === message.id)) {
     messages.value.push(message);
@@ -111,7 +123,6 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
   } catch (e) { console.error("Gagal memuat pesan:", e); }
 };
 
-// --- WebSocket Management ---
 // --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
@@ -284,7 +295,7 @@ const setupGlobalListeners = () => {
         allUsers.value.push({ id: newUser.id, name: newUser.name });
       }
       if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({ id: newUser.id, name: newUser.name });
+        contacts.value.push({ id: newUser.id, name: newUser.name,  last_seen: null});
       }
     });
 };
@@ -341,6 +352,13 @@ onMounted(() => {
                       class="text-green-500 text-xs font-normal flex items-center gap-1 ml-2">
                     <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
                     Online
+                    </span>
+                    <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
+                    class="text-gray-400 text-xs font-normal ml-2">
+                    {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                    </span>
+                    <span v-else class="text-gray-400 text-xs font-normal ml-2">
+                        Offline
                     </span>
                     <!-- Tambahkan button video call -->
                     <button
