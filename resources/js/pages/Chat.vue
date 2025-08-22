@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { ref, onMounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 import { Video } from 'lucide-vue-next';
 import { formatDistanceToNowStrict } from 'date-fns';
-import { id } from 'date-fns/locale'; // Import bahasa Indonesia
+import { id } from 'date-fns/locale';
 
 axios.defaults.withCredentials = true;
 
@@ -23,19 +23,19 @@ const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } |
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
+const unreadChats = ref<string[]>([]);
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
-// State Video Call
+// --- Video Call State ---
 const showVideoCall = ref(false);
 const callPartnerId = ref<number|null>();
 const isMinimized = ref(false);
 
-const startVideoCall = (UserId: number) => {
-  callPartnerId.value = UserId;
+const startVideoCall = (userId: number) => {
+  callPartnerId.value = userId;
   showVideoCall.value = true;
-
-  // TODO: Setelah ini selesai, kita init agora
+  // TODO: Init Agora/Video Call Service
 };
 
 const endVideoCall = () => {
@@ -84,7 +84,6 @@ const formatTime = (dateString: string | null | undefined): string => {
   }
 };
 
-// format last seen
 const formatLastSeen = (dateString: string | null | undefined): string => {
     if (!dateString) return 'offline';
     try {
@@ -141,12 +140,9 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
         echo.leave(boundChannel);
     }
 
-    // handleNewMessage dipindahin nang njobo ben isok dienggo bareng
     const handleNewMessage = (eventData: any) => {
-        // Logika cerdas gawe mbedakno payload (amplop vs non-amplop)
         const messageData = eventData.message ? eventData.message : eventData;
 
-        // Validasi dasar
         if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
             return;
         }
@@ -164,24 +160,30 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 sender_id: messageData.sender_id,
                 sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
                 text: messageData.message,
-                time: formatTime(new Date().toISOString())
+                time: formatTime(messageData.created_at)
             });
+        } else {
+            let unreadChatId: string;
+            if (messageData.group_id) {
+                unreadChatId = `group-${messageData.group_id}`;
+            } else {
+                unreadChatId = `user-${messageData.sender_id}`;
+            }
+            if (!unreadChats.value.includes(unreadChatId)) {
+                unreadChats.value.push(unreadChatId);
+            }
         }
     };
 
-    const channelName = type === 'group' 
-        ? `group.${contactId}` 
+    const channelName = type === 'group'
+        ? `group.${contactId}`
         : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
     
     const eventName = type === 'group' ? '.GroupMessageSent' : '.MessageSent';
 
     boundChannel = channelName;
 
-    // =======================================================
-    // === IKI SING DITAMBAHI 'ELSE' ===
-    // =======================================================
     if (type === 'user') {
-        // Iki gawe personal chat (wes bener)
         echo.join(channelName)
             .here((users: Array<{ id: number, name: string }>) => {
                 onlineUsers.value = users.map(u => u.id);
@@ -195,69 +197,75 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 onlineUsers.value = onlineUsers.value.filter(id => id !== user.id);
             })
             .listen(eventName, handleNewMessage);
-    } else { 
-        // IKI 'ELSE' SING ILANG MAENG, GAWE GRUP CHAT
+    } else {
         echo.private(channelName)
             .listen(eventName, handleNewMessage);
     }
 };
+
 // --- Chat Functions ---
 const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
-  if (activeContact.value && newMessage.value.trim()) {
-    drafts.value[`${activeContact.value.type}-${activeContact.value.id}`] = newMessage.value;
-  }
-  activeContact.value = contact;
-  messages.value = [];
-  onlineUsers.value = [];
-  newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
-  loadMessages(contact.id, contact.type);
-  bindChannel(contact.id, contact.type);
+    if (activeContact.value && newMessage.value.trim()) {
+        drafts.value[`${activeContact.value.type}-${activeContact.value.id}`] = newMessage.value;
+    }
+    
+    const chatIdentifier = `${contact.type}-${contact.id}`;
+    // Hapus ID chat iki teko daftar "durung diwoco"
+    unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
+    // =======================================================
+
+    activeContact.value = contact;
+    messages.value = [];
+    onlineUsers.value = [];
+    newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
+    loadMessages(contact.id, contact.type);
+    bindChannel(contact.id, contact.type);
 };
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || !activeContact.value || isSending.value) return;
-  isSending.value = true;
+    if (!newMessage.value.trim() || !activeContact.value || isSending.value) return;
+    isSending.value = true;
 
-  const messageText = newMessage.value;
-  const activeChat = activeContact.value;
-  const tempId = Date.now();
+    const messageText = newMessage.value;
+    const activeChat = activeContact.value;
+    const tempId = Date.now();
 
-  const optimisticMessage = {
-    id: tempId,
-    sender_id: currentUserId.value,
-    sender_name: currentUserName.value,
-    text: messageText,
-    time: formatTime(new Date().toISOString()),
-  };
-  
-  addMessage(optimisticMessage);
-  newMessage.value = '';
-  delete drafts.value[`${activeChat.type}-${activeChat.id}`];
-
-  try {
-    const endpoint = activeChat.type === 'group' ? `/groups/${activeChat.id}/send` : '/chat/send';
-    const payload = activeChat.type === 'group' ? { message: messageText } : { receiver_id: activeChat.id, message: messageText };
+    const optimisticMessage = {
+        id: tempId,
+        sender_id: currentUserId.value,
+        sender_name: currentUserName.value,
+        text: messageText,
+        time: formatTime(new Date().toISOString()),
+    };
     
-    const response = await axios.post(endpoint, payload);
-    const savedMessage = response.data;
+    addMessage(optimisticMessage);
+    newMessage.value = '';
+    delete drafts.value[`${activeChat.type}-${activeChat.id}`];
 
-    const messageIndex = messages.value.findIndex(m => m.id === tempId);
+    try {
+        const endpoint = activeChat.type === 'group' ? `/groups/${activeChat.id}/send` : '/chat/send';
+        const payload = activeChat.type === 'group' ? { message: messageText } : { receiver_id: activeChat.id, message: messageText };
+        
+        const response = await axios.post(endpoint, payload);
+        const savedMessage = response.data;
 
-    if (messageIndex !== -1) {
-      messages.value[messageIndex].id = savedMessage.id;
-      messages.value[messageIndex].time = formatTime(savedMessage.created_at);
+        const messageIndex = messages.value.findIndex(m => m.id === tempId);
+
+        if (messageIndex !== -1) {
+            messages.value[messageIndex].id = savedMessage.id;
+            messages.value[messageIndex].time = formatTime(savedMessage.created_at);
+        }
+    } catch (error) {
+        console.error('Gagal mengirim pesan:', error);
+        messages.value = messages.value.filter(m => m.id !== tempId);
+        newMessage.value = messageText;
+        alert('Pesan gagal terkirim.');
+    } finally {
+        isSending.value = false;
     }
-  } catch (error) {
-    console.error('Gagal mengirim pesan:', error);
-    messages.value = messages.value.filter(m => m.id !== tempId);
-    newMessage.value = messageText;
-    alert('Pesan gagal terkirim.');
-  } finally {
-    isSending.value = false;
-  }
 };
 
-// --- Group Functions (tidak diubah) ---
+// --- Group Functions ---
 const openCreateGroupModal = () => {
   showCreateGroupModal.value = true;
   selectedUsers.value = [];
@@ -306,8 +314,18 @@ const setupGlobalListeners = () => {
         allUsers.value.push({ id: newUser.id, name: newUser.name });
       }
       if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({ id: newUser.id, name: newUser.name,  last_seen: null});
+        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
       }
+    });
+
+  // Listener iki opsional lek awakmu nggawe sistem logout event
+  echo.channel('users-status')
+    .listen('.UserStatusChanged', (event: any) => {
+        const updatedUser = event.user;
+        const contactIndex = contacts.value.findIndex(c => c.id === updatedUser.id);
+        if (contactIndex !== -1) {
+            contacts.value[contactIndex].last_seen = updatedUser.last_seen;
+        }
     });
 };
 
@@ -317,6 +335,15 @@ onMounted(() => {
   loadGroups();
   loadAllUsers();
   setupGlobalListeners();
+
+  // Polling gawe update 'last_seen'
+  const pollingInterval = setInterval(() => {
+    loadContacts();
+  }, 30000); // 30 detik
+
+  onUnmounted(() => {
+    clearInterval(pollingInterval);
+  });
 });
 </script>
 
@@ -334,7 +361,7 @@ onMounted(() => {
                 </div>
                 
                 <ul>
-                    <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
+                   <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
                         :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3',
                                  activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
@@ -347,6 +374,7 @@ onMounted(() => {
                                 {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : 'Personal chat' }}
                             </div>
                         </div>
+                        <div v-if="unreadChats.includes(`${chat.type}-${chat.id}`)" class="w-3 h-3 bg-green-500 rounded-full ml-auto mr-2 animate-pulse"></div>
                         <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
                     </li>
                 </ul>
@@ -359,17 +387,20 @@ onMounted(() => {
                     </div>
                     {{ activeContact.name }}
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
-                    <span v-if="activeContact.type === 'user' && onlineUsers.includes(activeContact.id)" 
-                      class="text-green-500 text-xs font-normal flex items-center gap-1 ml-2">
-                    <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
-                    Online
-                    </span>
-                    <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
-                    class="text-gray-400 text-xs font-normal ml-2">
-                    {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
-                    </span>
-                    <span v-else class="text-gray-400 text-xs font-normal ml-2">
+                    <!-- last seen method -->
+                      <span v-if="activeContact.type === 'user'" class="ml-2">
+                        <span v-if="onlineUsers.includes(activeContact.id)" 
+                          class="text-green-500 text-xs font-normal flex items-center gap-1">
+                        <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                            Online
+                        </span>
+                      <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
+                          class="text-gray-400 text-xs font-normal">
+                          {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                      </span>
+                      <span v-else class="text-gray-400 text-xs font-normal">
                         Offline
+                      </span>
                     </span>
                     <!-- Tambahkan button video call -->
                     <button
@@ -379,30 +410,6 @@ onMounted(() => {
                       >
                         <Video class="w-5 h-5"/>
                     </button>
-                </div>
-
-                <!-- Video Call UI -->
-                <div v-if="showVideoCall" class="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-50">
-                    <div class="text-white text-lg mb-4">
-                      Video Call dengan {{ activeContact?.name }}
-                    </div>
-                    
-                    <div class="w-[600px] h-[400px] bg-gray-800 rounded-xl flex items-center justify-center">
-                      <!-- nanti disini stream agora -->
-                      <span class="text-gray-400">[ Video Stream Area ]</span>
-                    </div>
-
-                    <button
-                      @click="endVideoCall"
-                      class="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                      >
-                        End Call
-                    </button>
-
-                    <!-- Notifikasi Incomming call -->
-                    <div
-                      v-if="incommingCall">
-                    </div>
                 </div>
 
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
