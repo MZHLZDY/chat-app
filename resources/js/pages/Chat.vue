@@ -28,6 +28,7 @@ const unreadChats = ref<string[]>([]);
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
+<<<<<<< HEAD
 // --- Agora Call State ---
 const isInCall = ref(false);
 const callType = ref<'voice' | 'video' | null>(null);
@@ -39,13 +40,15 @@ const remoteVideoTrack = ref<any>(null);
 const client = ref<any>(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
 const APP_ID = "f853ee34890a43db9d949d2c5f4dab51";
 
-
+=======
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
 // --- Video Call State ---
 const showVideoCall = ref(false);
 const callPartnerId = ref<number|null>();
 const isMinimized = ref(false);
 
-
+<<<<<<< HEAD
+=======
 const startVideoCall = (userId: number) => {
   callPartnerId.value = userId;
   showVideoCall.value = true;
@@ -256,7 +259,7 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
     }
 };
 
-
+<<<<<<< HEAD
 // --- Setup Global Listeners ---
 const setupGlobalListeners = () => {
   echo.channel('users')
@@ -316,7 +319,8 @@ const setupCallListeners = () => {
     });
 };
 
-
+=======
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
 // --- Chat Functions ---
 const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
     if (activeContact.value && newMessage.value.trim()) {
@@ -324,10 +328,13 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
     }
     
     const chatIdentifier = `${contact.type}-${contact.id}`;
+<<<<<<< HEAD
     unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
+=======
     // Hapus ID chat iki teko daftar "durung diwoco"
     unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
     // =======================================================
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
 
     activeContact.value = contact;
     messages.value = [];
@@ -381,9 +388,11 @@ const sendMessage = async () => {
 };
 
 // --- Group Functions ---
-
+<<<<<<< HEAD
 const openCreateGroupModal = async () => {
+=======
 const openCreateGroupModal = () => {
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
   showCreateGroupModal.value = true;
   selectedUsers.value = [];
   newGroupName.value = '';
@@ -601,6 +610,7 @@ const minimizeVideoCall = () => {
 const restoreVideoCall = () => {
   isMinimized.value = false;
   showVideoCall.value = true;
+=======
       if (!contacts.value.some(c => c.id === newUser.id)) {
         contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
       }
@@ -624,6 +634,7 @@ onMounted(() => {
   loadGroups();
   loadAllUsers();
   setupGlobalListeners();
+<<<<<<< HEAD
   setupCallListeners();
   
   echo.connector.pusher.connection.bind('connected', () => {
@@ -633,6 +644,7 @@ onMounted(() => {
   const pollingInterval = setInterval(() => {
     loadContacts();
   }, 30000);
+=======
 
   // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
@@ -688,7 +700,7 @@ onMounted(() => {
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
                     {{ activeContact.name }}
-
+<<<<<<< HEAD
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">
                         (Group Chat)
                     </span>
