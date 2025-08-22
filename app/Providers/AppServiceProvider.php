@@ -17,8 +17,14 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void
-    {
-        //
-    }
+    public function boot()
+{
+    \Illuminate\Support\Facades\Event::listen('*', function ($eventName, array $data) {
+        if (str_contains($eventName, 'IncomingCall')) {
+            \Illuminate\Support\Facades\Log::info("Event fired: {$eventName}", [
+                'data' => $data
+            ]);
+        }
+    });
+}
 }

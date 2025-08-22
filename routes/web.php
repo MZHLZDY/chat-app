@@ -36,11 +36,40 @@ Route::middleware(['auth'])->group(function () {
     // signaling call
     Route::post('/call/signal', [CallController::class, 'signal']);
 
-    Route::post('/calls/initiate', [AgoraCallController::class, 'initiateCall']);
-    Route::post('/calls/accept', [AgoraCallController::class, 'acceptCall']);
-    Route::post('/calls/reject', [AgoraCallController::class, 'rejectCall']);
-    Route::post('/calls/end', [AgoraCallController::class, 'endCall']);
-    Route::post('/agora-token', [AgoraCallController::class, 'generateToken']);
+    Route::prefix('call')->group(function () {
+        Route::post('/invite', [AgoraCallController::class, 'inviteCall']);
+        Route::post('/answer', [AgoraCallController::class, 'answerCall']);
+        Route::post('/end', [AgoraCallController::class, 'endCall']);
+        Route::post('/token', [AgoraCallController::class, 'generateToken']);
+    });
+
+Route::get('/test-broadcast/{userId}', function($userId) {
+    try {
+        $caller = auth()->user();
+        $callee = \App\Models\User::find($userId);
+        
+        event(new \App\Events\IncomingCall(
+            caller: $caller,
+            callee: $callee,
+            callType: 'voice',
+            channel: 'call-test-'.time()
+        ));
+        
+        return response()->json([
+            'status' => 'Broadcast sent to user '.$userId,
+            'caller' => $caller->name,
+            'callee' => $callee->name
+        ]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+})->middleware('auth');
+
+    // Route::post('/calls/initiate', [AgoraCallController::class, 'initiateCall']);
+    // Route::post('/calls/accept', [AgoraCallController::class, 'acceptCall']);
+    // Route::post('/calls/reject', [AgoraCallController::class, 'rejectCall']);
+    // Route::post('/calls/end', [AgoraCallController::class, 'endCall']);
+    // Route::post('/agora-token', [AgoraCallController::class, 'generateToken']);
 });
 
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');

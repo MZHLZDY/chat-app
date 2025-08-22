@@ -14,36 +14,31 @@ class CallEnded implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $channel;
-    public $participantIds;
-    public $endedBy;
+    public function __construct(
+        public string $channel,
+        public array $participantIds,
+        public int $endedBy
+    ) {}
 
-    public function __construct(string $channel, array $participantIds, int $endedBy = null)
+    public function broadcastOn(): array
     {
-        $this->channel = $channel;
-        $this->participantIds = $participantIds;
-        $this->endedBy = $endedBy;
-    }
-
-    public function broadcastOn()
-    {
-        // Broadcast ke semua peserta panggilan
         return array_map(function ($userId) {
-            return new Channel('user.' . $userId);
+            return new PrivateChannel('user.' . $userId);
         }, $this->participantIds);
     }
 
-    public function broadcastWith()
+    public function broadcastAs(): string
+    {
+        return 'call-ended';
+    }
+
+    public function broadcastWith(): array
     {
         return [
             'channel' => $this->channel,
+            'participant_ids' => $this->participantIds,
             'ended_by' => $this->endedBy,
-            'timestamp' => now()->toDateTimeString()
+            'reason' => 'Call ended by user',
         ];
-    }
-
-    public function broadcastAs()
-    {
-        return 'call-ended';
     }
 }

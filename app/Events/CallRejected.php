@@ -14,30 +14,28 @@ class CallRejected implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $callerId;
-    public $reason;
+    public function __construct(
+        public int $callerId,
+        public string $reason
+    ) {}
 
-    public function __construct(int $callerId, string $reason)
-    {
-        $this->callerId = $callerId;
-        $this->reason = $reason;
-    }
-
-    public function broadcastOn()
-    {
-        return new Channel('user.' . $this->callerId);
-    }
-
-    public function broadcastWith()
+    public function broadcastOn(): array
     {
         return [
-            'reason' => $this->reason,
-            'timestamp' => now()->toDateTimeString()
+            new PrivateChannel('user.' . $this->callerId),
         ];
     }
 
-    public function broadcastAs()
+    public function broadcastAs(): string
     {
         return 'call-rejected';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'caller_id' => $this->callerId,
+            'reason' => $this->reason,
+        ];
     }
 }
