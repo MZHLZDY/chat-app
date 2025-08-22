@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { ref, onMounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
+<<<<<<< HEAD
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { Video, Phone } from 'lucide-vue-next';
+=======
+import { Video } from 'lucide-vue-next';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { id } from 'date-fns/locale';
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
 
 axios.defaults.withCredentials = true;
 
@@ -15,15 +21,18 @@ const currentUserId = computed(() => page.props.auth.user.id);
 const currentUserName = computed(() => page.props.auth.user.name);
 
 // --- State Management ---
-const contacts = ref<{ id: number, name: string }[]>([]);
+const contacts = ref<{ id: number, name: string, last_seen: string | null }[]>([]);
 const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
 const allUsers = ref<{ id: number, name: string }[]>([]);
 const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
+const onlineUsers = ref<number[]>([]); 
+const unreadChats = ref<string[]>([]);
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
+<<<<<<< HEAD
 // --- Agora Call State ---
 const isInCall = ref(false);
 const callType = ref<'voice' | 'video' | null>(null);
@@ -34,6 +43,38 @@ const remoteAudioTrack = ref<any>(null);
 const remoteVideoTrack = ref<any>(null);
 const client = ref<any>(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
 const APP_ID = "f853ee34890a43db9d949d2c5f4dab51";
+=======
+// --- Video Call State ---
+const showVideoCall = ref(false);
+const callPartnerId = ref<number|null>();
+const isMinimized = ref(false);
+
+const startVideoCall = (userId: number) => {
+  callPartnerId.value = userId;
+  showVideoCall.value = true;
+  // TODO: Init Agora/Video Call Service
+};
+
+const endVideoCall = () => {
+  showVideoCall.value = false;
+  callPartnerId.value = null;
+};
+
+const minimizeVideoCall = () => {
+  isMinimized.value = true;
+  showVideoCall.value = false;
+};
+
+const restoreVideoCall = () => {
+  isMinimized.value = false;
+  showVideoCall.value = true;
+};
+
+// --- Modal States ---
+const showCreateGroupModal = ref(false);
+const newGroupName = ref('');
+const selectedUsers = ref<number[]>([]);
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
 
 // --- Computed Properties ---
 const allChats = computed(() => [
@@ -59,6 +100,15 @@ const formatTime = (dateString: string | null | undefined): string => {
   } catch (error) {
     return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   }
+};
+
+const formatLastSeen = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'offline';
+    try {
+        return `terakhir dilihat ${formatDistanceToNowStrict(new Date(dateString), { addSuffix: true, locale: id })}`;
+    } catch (error) {
+        return 'offline';
+    }
 };
 
 const addMessage = (message: any) => {
@@ -125,6 +175,7 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
 // --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
+<<<<<<< HEAD
   if (boundChannel) {
     echo.leave(boundChannel);
   }
@@ -198,10 +249,78 @@ const setupGlobalListeners = () => {
         contacts.value.push({ id: newContact.id, name: newContact.name });
       }
     });
+=======
+    if (boundChannel) {
+        echo.leave(boundChannel);
+    }
+
+    const handleNewMessage = (eventData: any) => {
+        const messageData = eventData.message ? eventData.message : eventData;
+
+        if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
+            return;
+        }
+
+        let isChatActive = false;
+        if (activeContact.value) {
+            const isGroupChat = activeContact.value.type === 'group' && (activeContact.value.id === messageData.receiver_id || activeContact.value.id === messageData.group_id);
+            const isPersonalChat = activeContact.value.type === 'user' && activeContact.value.id === messageData.sender_id;
+            isChatActive = isGroupChat || isPersonalChat;
+        }
+
+        if (isChatActive) {
+            addMessage({
+                id: messageData.id,
+                sender_id: messageData.sender_id,
+                sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
+                text: messageData.message,
+                time: formatTime(messageData.created_at)
+            });
+        } else {
+            let unreadChatId: string;
+            if (messageData.group_id) {
+                unreadChatId = `group-${messageData.group_id}`;
+            } else {
+                unreadChatId = `user-${messageData.sender_id}`;
+            }
+            if (!unreadChats.value.includes(unreadChatId)) {
+                unreadChats.value.push(unreadChatId);
+            }
+        }
+    };
+
+    const channelName = type === 'group'
+        ? `group.${contactId}`
+        : `chat.${[currentUserId.value, contactId].sort().join('.')}`;
+    
+    const eventName = type === 'group' ? '.GroupMessageSent' : '.MessageSent';
+
+    boundChannel = channelName;
+
+    if (type === 'user') {
+        echo.join(channelName)
+            .here((users: Array<{ id: number, name: string }>) => {
+                onlineUsers.value = users.map(u => u.id);
+            })
+            .joining((user: { id: number, name: string }) => {
+                if (!onlineUsers.value.includes(user.id)) {
+                    onlineUsers.value.push(user.id);
+                }
+            })
+            .leaving((user: { id: number, name: string }) => {
+                onlineUsers.value = onlineUsers.value.filter(id => id !== user.id);
+            })
+            .listen(eventName, handleNewMessage);
+    } else {
+        echo.private(channelName)
+            .listen(eventName, handleNewMessage);
+    }
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
 };
 
 // --- Chat Functions ---
 const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
+<<<<<<< HEAD
   console.log('Selecting contact:', contact);
   
   if (activeContact.value && newMessage.value.trim()) {
@@ -213,16 +332,34 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
   newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
   loadMessages(contact.id, contact.type);
   bindChannel(contact.id, contact.type);
+=======
+    if (activeContact.value && newMessage.value.trim()) {
+        drafts.value[`${activeContact.value.type}-${activeContact.value.id}`] = newMessage.value;
+    }
+    
+    const chatIdentifier = `${contact.type}-${contact.id}`;
+    // Hapus ID chat iki teko daftar "durung diwoco"
+    unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
+    // =======================================================
+
+    activeContact.value = contact;
+    messages.value = [];
+    onlineUsers.value = [];
+    newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
+    loadMessages(contact.id, contact.type);
+    bindChannel(contact.id, contact.type);
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
 };
 
 const sendMessage = async () => {
-  if (!newMessage.value.trim() || !activeContact.value || isSending.value) return;
-  isSending.value = true;
+    if (!newMessage.value.trim() || !activeContact.value || isSending.value) return;
+    isSending.value = true;
 
-  const messageText = newMessage.value;
-  const activeChat = activeContact.value;
-  const tempId = Date.now();
+    const messageText = newMessage.value;
+    const activeChat = activeContact.value;
+    const tempId = Date.now();
 
+<<<<<<< HEAD
   const optimisticMessage = {
     id: tempId,
     sender_id: currentUserId.value,
@@ -240,11 +377,21 @@ const sendMessage = async () => {
     const payload = activeChat.type === 'group' ? { message: messageText } : { 
       receiver_id: activeChat.id, 
       message: messageText 
+=======
+    const optimisticMessage = {
+        id: tempId,
+        sender_id: currentUserId.value,
+        sender_name: currentUserName.value,
+        text: messageText,
+        time: formatTime(new Date().toISOString()),
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
     };
     
-    const response = await axios.post(endpoint, payload);
-    const savedMessage = response.data;
+    addMessage(optimisticMessage);
+    newMessage.value = '';
+    delete drafts.value[`${activeChat.type}-${activeChat.id}`];
 
+<<<<<<< HEAD
     // Replace optimistic message with real message
     const messageIndex = messages.value.findIndex(m => m.id === tempId);
     if (messageIndex !== -1) {
@@ -531,6 +678,92 @@ const setupCallListeners = () => {
     .listen('call-ended', (data: any) => { // HAPUS TITIK DI DEPAN
       console.log('CallEnded event received:', data);
       endCallWithReason(data.reason || 'Panggilan diakhiri');
+=======
+    try {
+        const endpoint = activeChat.type === 'group' ? `/groups/${activeChat.id}/send` : '/chat/send';
+        const payload = activeChat.type === 'group' ? { message: messageText } : { receiver_id: activeChat.id, message: messageText };
+        
+        const response = await axios.post(endpoint, payload);
+        const savedMessage = response.data;
+
+        const messageIndex = messages.value.findIndex(m => m.id === tempId);
+
+        if (messageIndex !== -1) {
+            messages.value[messageIndex].id = savedMessage.id;
+            messages.value[messageIndex].time = formatTime(savedMessage.created_at);
+        }
+    } catch (error) {
+        console.error('Gagal mengirim pesan:', error);
+        messages.value = messages.value.filter(m => m.id !== tempId);
+        newMessage.value = messageText;
+        alert('Pesan gagal terkirim.');
+    } finally {
+        isSending.value = false;
+    }
+};
+
+// --- Group Functions ---
+const openCreateGroupModal = () => {
+  showCreateGroupModal.value = true;
+  selectedUsers.value = [];
+  newGroupName.value = '';
+};
+const closeCreateGroupModal = () => {
+  showCreateGroupModal.value = false;
+};
+const toggleUserSelection = (userId: number) => {
+  const index = selectedUsers.value.indexOf(userId);
+  if (index > -1) {
+    selectedUsers.value.splice(index, 1);
+  } else {
+    selectedUsers.value.push(userId);
+  }
+};
+const createGroup = async () => {
+  if (!newGroupName.value.trim() || selectedUsers.value.length === 0) {
+    alert('Nama grup dan minimal 1 anggota harus dipilih!');
+    return;
+  }
+  try {
+    const response = await axios.post('/groups', {
+      name: newGroupName.value,
+      member_ids: selectedUsers.value
+    });
+    const newGroup = response.data;
+    groups.value.push({
+      id: newGroup.id,
+      name: newGroup.name,
+      members_count: newGroup.members?.length || selectedUsers.value.length + 1,
+      owner_id: newGroup.owner_id
+    });
+    closeCreateGroupModal();
+    selectContact({ id: newGroup.id, name: newGroup.name, type: 'group' });
+  } catch (e) {
+    console.error('Gagal membuat grup:', e);
+    alert('Gagal membuat grup!');
+  }
+};
+
+const setupGlobalListeners = () => {
+  echo.channel('users')
+    .listen('.UserRegistered', (newUser: any) => {
+      if (!allUsers.value.some(u => u.id === newUser.id)) {
+        allUsers.value.push({ id: newUser.id, name: newUser.name });
+      }
+      if (!contacts.value.some(c => c.id === newUser.id)) {
+        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
+      }
+    });
+
+  // Listener iki opsional lek awakmu nggawe sistem logout event
+  echo.channel('users-status')
+    .listen('.UserStatusChanged', (event: any) => {
+        const updatedUser = event.user;
+        const contactIndex = contacts.value.findIndex(c => c.id === updatedUser.id);
+        if (contactIndex !== -1) {
+            contacts.value[contactIndex].last_seen = updatedUser.last_seen;
+        }
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
     });
 };
 
@@ -540,6 +773,7 @@ onMounted(() => {
   loadGroups();
   loadAllUsers();
   setupGlobalListeners();
+<<<<<<< HEAD
   setupCallListeners();
 
   echo.connector.pusher.connection.bind('connected', () => {
@@ -558,6 +792,17 @@ onMounted(() => {
   
   console.log('🔔 Listening on channel:', `user.${currentUserId.value}`);
   console.log('Chat component mounted');
+=======
+
+  // Polling gawe update 'last_seen'
+  const pollingInterval = setInterval(() => {
+    loadContacts();
+  }, 30000); // 30 detik
+
+  onUnmounted(() => {
+    clearInterval(pollingInterval);
+  });
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
 });
 </script>
 
@@ -576,7 +821,7 @@ onMounted(() => {
                 </div>
                 
                 <ul>
-                    <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
+                   <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
                         :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3',
                                  activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
@@ -589,6 +834,7 @@ onMounted(() => {
                                 {{ chat.type === 'group' ? `${chat.members_count} anggota` : 'Personal chat' }}
                             </div>
                         </div>
+                        <div v-if="unreadChats.includes(`${chat.type}-${chat.id}`)" class="w-3 h-3 bg-green-500 rounded-full ml-auto mr-2 animate-pulse"></div>
                         <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
                     </li>
                 </ul>
@@ -602,6 +848,7 @@ onMounted(() => {
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
                     {{ activeContact.name }}
+<<<<<<< HEAD
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">
                         (Group Chat)
                     </span>
@@ -626,6 +873,32 @@ onMounted(() => {
                             <Video class="w-5 h-5"/>
                         </button>
                     </div>
+=======
+                    <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
+                    <!-- last seen method -->
+                      <span v-if="activeContact.type === 'user'" class="ml-2">
+                        <span v-if="onlineUsers.includes(activeContact.id)" 
+                          class="text-green-500 text-xs font-normal flex items-center gap-1">
+                        <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                            Online
+                        </span>
+                      <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
+                          class="text-gray-400 text-xs font-normal">
+                          {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                      </span>
+                      <span v-else class="text-gray-400 text-xs font-normal">
+                        Offline
+                      </span>
+                    </span>
+                    <!-- Tambahkan button video call -->
+                    <button
+                      v-if="activeContact.type === 'user'"
+                      @click="startVideoCall(activeContact.id)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <Video class="w-5 h-5"/>
+                    </button>
+>>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
                 </div>
 
                 <!-- Messages -->

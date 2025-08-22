@@ -16,7 +16,7 @@ class ChatController extends Controller
 
     public function contacts()
     {
-        $contacts = User::where('id', '!=', Auth::id())->get(['id', 'name']);
+        $contacts = User::where('id', '!=', Auth::id())->get(['id', 'name', 'last_seen']);
         return response()->json($contacts);
     }
 
