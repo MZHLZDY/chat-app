@@ -901,7 +901,34 @@ onMounted(() => {
 >>>>>>> 24fac5088e7cf99bca65b35a413364192ec0ddd0
                 </div>
 
+<<<<<<< HEAD
                 <!-- Messages -->
+=======
+                <!-- Video Call UI -->
+                <div v-if="showVideoCall" class="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-50">
+                    <div class="text-white text-lg mb-4">
+                      Video Call dengan {{ activeContact?.name }}
+                    </div>
+                    
+                    <div class="w-[600px] h-[400px] bg-gray-800 rounded-xl flex items-center justify-center">
+                      <!-- nanti disini stream agora -->
+                      <span class="text-gray-400">[ Video Stream Area ]</span>
+                    </div>
+
+                    <button
+                      @click="endVideoCall"
+                      class="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                      >
+                        End Call
+                    </button>
+
+                    <!-- Notifikasi Incomming call -->
+                    <div
+                      v-if="incommingCall">
+                    </div>
+                </div>
+
+>>>>>>> e909dc7 (progress percobaan tolak / terima telepon)
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     <div v-for="m in messages" :key="m.id"
                          :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
