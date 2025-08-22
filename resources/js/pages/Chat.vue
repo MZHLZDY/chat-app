@@ -39,11 +39,35 @@ const remoteVideoTrack = ref<any>(null);
 const client = ref<any>(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
 const APP_ID = "f853ee34890a43db9d949d2c5f4dab51";
 
+
 // --- Video Call State ---
 const showVideoCall = ref(false);
 const callPartnerId = ref<number|null>();
 const isMinimized = ref(false);
 
+
+const startVideoCall = (userId: number) => {
+  callPartnerId.value = userId;
+  showVideoCall.value = true;
+  // TODO: Init Agora/Video Call Service
+};
+
+const endVideoCall = () => {
+  showVideoCall.value = false;
+  callPartnerId.value = null;
+};
+
+const minimizeVideoCall = () => {
+  isMinimized.value = true;
+  showVideoCall.value = false;
+};
+
+const restoreVideoCall = () => {
+  isMinimized.value = false;
+  showVideoCall.value = true;
+};
+
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
 // --- Modal States ---
 const showCreateGroupModal = ref(false);
 const newGroupName = ref('');
@@ -232,6 +256,7 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
     }
 };
 
+
 // --- Setup Global Listeners ---
 const setupGlobalListeners = () => {
   echo.channel('users')
@@ -291,6 +316,7 @@ const setupCallListeners = () => {
     });
 };
 
+
 // --- Chat Functions ---
 const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
     if (activeContact.value && newMessage.value.trim()) {
@@ -299,6 +325,9 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
     
     const chatIdentifier = `${contact.type}-${contact.id}`;
     unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
+    // Hapus ID chat iki teko daftar "durung diwoco"
+    unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
+    // =======================================================
 
     activeContact.value = contact;
     messages.value = [];
@@ -352,7 +381,9 @@ const sendMessage = async () => {
 };
 
 // --- Group Functions ---
+
 const openCreateGroupModal = async () => {
+const openCreateGroupModal = () => {
   showCreateGroupModal.value = true;
   selectedUsers.value = [];
   newGroupName.value = '';
@@ -429,6 +460,7 @@ async function joinChannel(channelName?: string) {
         remoteVideoTrack.value = user.videoTrack;
         remoteVideoTrack.value?.play('remote-video');
       }
+<<<<<<< HEAD
 
       if (mediaType === 'audio') {
         remoteAudioTrack.value = user.audioTrack;
@@ -569,6 +601,21 @@ const minimizeVideoCall = () => {
 const restoreVideoCall = () => {
   isMinimized.value = false;
   showVideoCall.value = true;
+      if (!contacts.value.some(c => c.id === newUser.id)) {
+        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
+      }
+    });
+
+  // Listener iki opsional lek awakmu nggawe sistem logout event
+  echo.channel('users-status')
+    .listen('.UserStatusChanged', (event: any) => {
+        const updatedUser = event.user;
+        const contactIndex = contacts.value.findIndex(c => c.id === updatedUser.id);
+        if (contactIndex !== -1) {
+            contacts.value[contactIndex].last_seen = updatedUser.last_seen;
+        }
+    });
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
 };
 
 // --- Initialize ---
@@ -586,6 +633,12 @@ onMounted(() => {
   const pollingInterval = setInterval(() => {
     loadContacts();
   }, 30000);
+
+  // Polling gawe update 'last_seen'
+  const pollingInterval = setInterval(() => {
+    loadContacts();
+  }, 30000); // 30 detik
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
 
   onUnmounted(() => {
     clearInterval(pollingInterval);
@@ -608,7 +661,7 @@ onMounted(() => {
                 </div>
                 
                 <ul>
-                    <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
+                   <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
                         :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3',
                                  activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
@@ -635,6 +688,7 @@ onMounted(() => {
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
                     {{ activeContact.name }}
+
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">
                         (Group Chat)
                     </span>
@@ -676,6 +730,34 @@ onMounted(() => {
                 </div>
 
                 <!-- Messages -->
+=======
+                    <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
+                    <!-- last seen method -->
+                      <span v-if="activeContact.type === 'user'" class="ml-2">
+                        <span v-if="onlineUsers.includes(activeContact.id)" 
+                          class="text-green-500 text-xs font-normal flex items-center gap-1">
+                        <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                            Online
+                        </span>
+                      <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
+                          class="text-gray-400 text-xs font-normal">
+                          {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                      </span>
+                      <span v-else class="text-gray-400 text-xs font-normal">
+                        Offline
+                      </span>
+                    </span>
+                    <!-- Tambahkan button video call -->
+                    <button
+                      v-if="activeContact.type === 'user'"
+                      @click="startVideoCall(activeContact.id)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <Video class="w-5 h-5"/>
+                    </button>
+                </div>
+
+>>>>>>> 7009d905a6f84e758436a14b6ea80a71bc24e666
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     <div v-for="m in messages" :key="m.id"
                          :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
