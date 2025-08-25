@@ -21,11 +21,64 @@ Route::get('chat', function () {
     return Inertia::render('Chat');
 })->middleware(['auth', 'verified'])->name('chat');
 
+// Route testing di luar middleware group untuk avoid conflict
+Route::get('/test-call-broadcast/{userId}', function($userId) {
+    try {
+        $caller = auth()->user();
+        $callee = \App\Models\User::find($userId);
+        
+        if (!$callee) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        $callId = uniqid();
+        $channel = 'call-' . $callId;
+
+        event(new \App\Events\IncomingCall(
+            caller: $caller,
+            callee: $callee,
+            callType: 'voice',
+            channel: $channel
+        ));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Broadcast sent to user ' . $userId,
+            'caller' => $caller->name,
+            'callee' => $callee->name,
+            'channel' => $channel,
+            'call_id' => $callId
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+})->middleware('auth');
+
+Route::get('/test-channel-auth', function() {
+    try {
+        $user = auth()->user();
+        $channelName = 'private-user.' . $user->id;
+        
+        return response()->json([
+            'channel' => $channelName,
+            'user_id' => $user->id,
+            'authenticated' => true
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+})->middleware('auth');
+
 Route::middleware(['auth'])->group(function () {
-    // direct chat (punya kamu)
-    Route::get('/chat/contacts', [\App\Http\Controllers\ChatController::class, 'contacts']);
-    Route::get('/chat/{user}/messages', [\App\Http\Controllers\ChatController::class, 'messages']);
-    Route::post('/chat/send', [\App\Http\Controllers\ChatController::class, 'sendMessage']);
+    // direct chat
+    Route::get('/chat/contacts', [ChatController::class, 'contacts']);
+    Route::get('/chat/{user}/messages', [ChatController::class, 'messages']);
+    Route::post('/chat/send', [ChatController::class, 'sendMessage']);
 
     // groups
     Route::get('/groups', [GroupController::class, 'index']);
@@ -36,40 +89,13 @@ Route::middleware(['auth'])->group(function () {
     // signaling call
     Route::post('/call/signal', [CallController::class, 'signal']);
 
+    // call routes
     Route::prefix('call')->group(function () {
         Route::post('/invite', [AgoraCallController::class, 'inviteCall']);
         Route::post('/answer', [AgoraCallController::class, 'answerCall']);
         Route::post('/end', [AgoraCallController::class, 'endCall']);
         Route::post('/token', [AgoraCallController::class, 'generateToken']);
     });
-
-Route::get('/test-broadcast/{userId}', function($userId) {
-    try {
-        $caller = auth()->user();
-        $callee = \App\Models\User::find($userId);
-        
-        event(new \App\Events\IncomingCall(
-            caller: $caller,
-            callee: $callee,
-            callType: 'voice',
-            channel: 'call-test-'.time()
-        ));
-        
-        return response()->json([
-            'status' => 'Broadcast sent to user '.$userId,
-            'caller' => $caller->name,
-            'callee' => $callee->name
-        ]);
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
-    }
-})->middleware('auth');
-
-    // Route::post('/calls/initiate', [AgoraCallController::class, 'initiateCall']);
-    // Route::post('/calls/accept', [AgoraCallController::class, 'acceptCall']);
-    // Route::post('/calls/reject', [AgoraCallController::class, 'rejectCall']);
-    // Route::post('/calls/end', [AgoraCallController::class, 'endCall']);
-    // Route::post('/agora-token', [AgoraCallController::class, 'generateToken']);
 });
 
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');

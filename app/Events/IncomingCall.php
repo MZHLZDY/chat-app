@@ -9,56 +9,60 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User; // PASTIKAN IMPORT MODEL USER YANG BENAR
+use App\Models\User;
 
 class IncomingCall implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    /**
-     * Create a new event instance.
-     */
-    public function __construct(
-        public User $caller, // Gunakan App\Models\User
-        public User $callee,  // Gunakan App\Models\User
-        public string $callType,
-        public string $channel
-    ) {}
+    public $caller;
+    public $callee;
+    public $callType;
+    public $channel;
 
-    /**
-     * Get the channels the event should broadcast on.
-     *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
-     */
+    // PERBAIKAN: Gunakan type hint yang lebih flexible
+    public function __construct($caller, $callee, string $callType, string $channel)
+    {
+        \Log::info('IncomingCall constructor', [
+            'caller_id' => $caller->id,
+            'callee_id' => $callee->id,
+            'call_type' => $callType,
+            'channel' => $channel
+        ]);
+
+        $this->caller = $caller;
+        $this->callee = $callee;
+        $this->callType = $callType;
+        $this->channel = $channel;
+    }
+
     public function broadcastOn(): array
     {
+        \Log::info('Broadcasting to channel: user.' . $this->callee->id);
+        
         return [
             new PrivateChannel('user.' . $this->callee->id),
         ];
     }
 
-    /**
-     * The event's broadcast name.
-     */
     public function broadcastAs(): string
     {
         return 'incoming-call';
     }
 
-    /**
-     * Get the data to broadcast.
-     */
     public function broadcastWith(): array
     {
         return [
             'caller' => [
                 'id' => $this->caller->id,
                 'name' => $this->caller->name,
+                'email' => $this->caller->email
             ],
             'callee_id' => $this->callee->id,
             'call_type' => $this->callType,
             'channel' => $this->channel,
             'call_id' => str_replace('call-', '', $this->channel),
+            'timestamp' => now()->toISOString()
         ];
     }
 }
