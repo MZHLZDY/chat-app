@@ -468,7 +468,7 @@ onMounted(() => {
                 </div>
 
                 <!-- Video Call UI -->
-                <!-- z<div v-if="showVideoCall" class="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-50">
+                <!-- <div v-if="showVideoCall" class="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-50">
                   <div class="text-white text-lg mb-4">
                     Video Call With {{ activeContact?.name }}
                   </div> -->
