@@ -8,6 +8,8 @@ import AgoraRTC from 'agora-rtc-sdk-ng';
 import { Video, Phone } from 'lucide-vue-next';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { id } from 'date-fns/locale';
+import VideoCallModal from './VideoCallModal.vue';
+import IncomingCallModal from './IncomingCallModal.vue';
 
 axios.defaults.withCredentials = true;
 
@@ -43,6 +45,68 @@ const APP_ID = "f853ee34890a43db9d949d2c5f4dab51";
 const showVideoCallModal = ref(false);
 const videoCallPartner = ref<{ id: number; name: string } | null>(null);
 const isVideoCallMinimized = ref(false);
+const showVideoCall = ref(false);
+const callPartnerId = ref<number|null>(null);
+const callStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
+const incomingCall = ref<{ from: any, to: { id: number, name: string } } | null>(null);
+const isMinimized = ref(false);
+
+let callTimer : any = null;
+
+const startVideoCall = (userId: number) => {
+  callPartnerId.value = userId;
+  showVideoCall.value = true;
+  callStatus.value = 'ringing';
+
+  // set timeout 60dtk, klo ga diangkat dianggap "missed"
+  callTimer = setTimeout(() => {
+    if (callStatus.value === 'ringing') {
+      callStatus.value = 'missed';
+    }
+  }, 60000);
+
+  // TODO: Init Agora/Video Call Service
+};
+
+// Trigger klo ada panggilan masuk
+const receiveIncomingCall = (fromUser: any) => {
+  incomingCall.value = {
+    from: fromUser,
+    to: { id: currentUserId.value, name: currentUserName.value }
+  }
+}
+
+const acceptIncomingCall = () => {
+  callStatus.value = 'connected';
+  incomingCall.value = null;
+  showVideoCall.value = true;
+}
+
+const rejectIncomingCall = () => {
+  callStatus.value = 'rejected';
+  incomingCall.value = null;
+  setTimeout(() => {
+    callStatus.value = 'idle';
+  }, 2000);
+
+}
+
+const endVideoCall = () => {
+  clearTimeout(callTimer)
+  showVideoCall.value = false;
+  callPartnerId.value = null;
+  callStatus.value = 'idle';
+};
+
+const minimizeVideoCall = () => {
+  isMinimized.value = true;
+  showVideoCall.value = false;
+};
+
+const restoreVideoCall = () => {
+  isMinimized.value = false;
+  showVideoCall.value = true;
+};
 
 // --- Modal States ---
 const showCreateGroupModal = ref(false);
@@ -670,7 +734,42 @@ onMounted(() => {
                             <Video class="w-5 h-5"/>
                         </button>
                     </div>
+=======
+                    <!-- Tambahkan button video call -->
+                    <button
+                      v-if="activeContact.type === 'user'"
+                      @click="startVideoCall(activeContact.id)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <Video class="w-5 h-5"/>
+                    </button>
+
+                    <VideoCallModal
+                        :show="showVideoCall"
+                        :contactName="activeContact.name"
+                        :status="callStatus"
+                        @end="endVideoCall"
+                    />
                 </div>
+
+                <!-- Video Call UI -->
+                <!-- <div v-if="showVideoCall" class="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-50">
+                  <div class="text-white text-lg mb-4">
+                    Video Call With {{ activeContact?.name }}
+                  </div> -->
+
+                  <!-- <div class="w-[600px] h-[400px] bg-gray-800 rounded-xl flex items-center justify-center"> -->
+                    <!-- nanti di sini stream agora -->
+                     <!-- <span class="text-gray-400">[ Video Stream Area ]</span>
+                  </div> -->
+
+                  <!-- <button
+                    @click="endVideoCall" 
+                    class="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+                    >
+                      End Call
+                  </button>
+                </div> -->
 
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     <div v-for="m in messages" :key="m.id"
