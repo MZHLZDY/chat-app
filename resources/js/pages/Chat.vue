@@ -4,8 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import AgoraRTC from 'agora-rtc-sdk-ng';
-import { Video, Phone } from 'lucide-vue-next';
+import { Video } from 'lucide-vue-next';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
@@ -30,21 +29,7 @@ const unreadChats = ref<string[]>([]);
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
-// --- Agora Call State ---
-const isInCall = ref(false);
-const callType = ref<'voice' | 'video' | null>(null);
-const callStatus = ref('');
-const localAudioTrack = ref<any>(null);
-const localVideoTrack = ref<any>(null);
-const remoteAudioTrack = ref<any>(null);
-const remoteVideoTrack = ref<any>(null);
-const client = ref<any>(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));
-const APP_ID = "f853ee34890a43db9d949d2c5f4dab51";
-
 // --- Video Call State ---
-const showVideoCallModal = ref(false);
-const videoCallPartner = ref<{ id: number; name: string } | null>(null);
-const isVideoCallMinimized = ref(false);
 const showVideoCall = ref(false);
 const callPartnerId = ref<number|null>(null);
 const callStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
@@ -112,23 +97,6 @@ const restoreVideoCall = () => {
 const showCreateGroupModal = ref(false);
 const newGroupName = ref('');
 const selectedUsers = ref<number[]>([]);
-
-// --- Call States ---
-const incomingCall = ref<{
-  callId: string;
-  caller: any;
-  callType: 'voice' | 'video';
-  channel: string;
-} | null>(null);
-
-const outgoingCall = ref<{
-  callId: string;
-  callee: any;
-  callType: 'voice' | 'video';
-  channel: string;
-  status: 'calling' | 'ringing' | 'accepted' | 'rejected' | 'ended';
-  reason?: string;
-} | null>(null);
 
 // --- Computed Properties ---
 const allChats = computed(() => [
@@ -275,65 +243,6 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
     }
 };
 
-// --- Setup Global Listeners ---
-const setupGlobalListeners = () => {
-  echo.channel('users')
-    .listen('.UserRegistered', (newUser: any) => {
-      if (!allUsers.value.some(u => u.id === newUser.id)) {
-        allUsers.value.push({ id: newUser.id, name: newUser.name });
-      }
-      if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
-      }
-    });
-
-  echo.channel('users-status')
-    .listen('.UserStatusChanged', (event: any) => {
-        const updatedUser = event.user;
-        const contactIndex = contacts.value.findIndex(c => c.id === updatedUser.id);
-        if (contactIndex !== -1) {
-            contacts.value[contactIndex].last_seen = updatedUser.last_seen;
-        }
-    });
-};
-
-// --- Setup Call Listeners ---
-const setupCallListeners = () => {
-  echo.private(`user.${currentUserId.value}`)
-    .listen('incoming-call', (data: any) => {
-      console.log('IncomingCall event received:', data);
-      incomingCall.value = {
-        callId: data.call_id || data.channel?.replace('call-', ''),
-        caller: data.caller,
-        callType: data.call_type || data.callType,
-        channel: data.channel
-      };
-    })
-    .listen('call-accepted', (data: any) => {
-      console.log('CallAccepted event received:', data);
-      if (outgoingCall.value) {
-        outgoingCall.value.status = 'accepted';
-        isInCall.value = true;
-        callType.value = outgoingCall.value.callType;
-        joinChannel(outgoingCall.value.channel);
-      }
-    })
-    .listen('call-rejected', (data: any) => {
-      console.log('CallRejected event received:', data);
-      if (outgoingCall.value) {
-        outgoingCall.value.status = 'rejected';
-        outgoingCall.value.reason = data.reason || 'Ditolak';
-        setTimeout(() => {
-          outgoingCall.value = null;
-        }, 3000);
-      }
-    })
-    .listen('call-ended', (data: any) => {
-      console.log('CallEnded event received:', data);
-      endCallWithReason(data.reason || 'Panggilan diakhiri');
-    });
-};
-
 // --- Chat Functions ---
 const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
     if (activeContact.value && newMessage.value.trim()) {
@@ -341,7 +250,9 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
     }
     
     const chatIdentifier = `${contact.type}-${contact.id}`;
+    // Hapus ID chat iki teko daftar "durung diwoco"
     unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
+    // =======================================================
 
     activeContact.value = contact;
     messages.value = [];
@@ -395,19 +306,14 @@ const sendMessage = async () => {
 };
 
 // --- Group Functions ---
-const openCreateGroupModal = async () => {
+const openCreateGroupModal = () => {
   showCreateGroupModal.value = true;
   selectedUsers.value = [];
   newGroupName.value = '';
-  await loadAllUsers();
 };
-
 const closeCreateGroupModal = () => {
   showCreateGroupModal.value = false;
-  selectedUsers.value = [];
-  newGroupName.value = '';
 };
-
 const toggleUserSelection = (userId: number) => {
   const index = selectedUsers.value.indexOf(userId);
   if (index > -1) {
@@ -416,7 +322,6 @@ const toggleUserSelection = (userId: number) => {
     selectedUsers.value.push(userId);
   }
 };
-
 const createGroup = async () => {
   if (!newGroupName.value.trim() || selectedUsers.value.length === 0) {
     alert('Nama grup dan minimal 1 anggota harus dipilih!');
@@ -442,180 +347,26 @@ const createGroup = async () => {
   }
 };
 
-// --- Call Functions by Agora ---
-async function joinChannel(channelName?: string) {
-  try {
-    const channel = channelName || `call-${activeContact.value?.id}`;
-    
-    const response = await axios.post('/call/token', {
-      channel: channel,
-      uid: currentUserId.value
-    });
-    
-    const { token, app_id, channel: responseChannel, uid } = response.data;
-
-    await client.value.join(app_id, responseChannel, token, uid);
-
-    localAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack();
-    await client.value.publish([localAudioTrack.value]);
-    
-    if (callType.value === 'video') {
-      localVideoTrack.value = await AgoraRTC.createCameraVideoTrack();
-      localVideoTrack.value.play('local-video');
-      await client.value.publish([localVideoTrack.value]);
-    }
-
-    client.value.on('user-published', async (user: any, mediaType: any) => {
-      await client.value.subscribe(user, mediaType);
-
-      if (mediaType === 'video') {
-        remoteVideoTrack.value = user.videoTrack;
-        remoteVideoTrack.value?.play('remote-video');
+const setupGlobalListeners = () => {
+  echo.channel('users')
+    .listen('.UserRegistered', (newUser: any) => {
+      if (!allUsers.value.some(u => u.id === newUser.id)) {
+        allUsers.value.push({ id: newUser.id, name: newUser.name });
       }
-
-      if (mediaType === 'audio') {
-        remoteAudioTrack.value = user.audioTrack;
-        remoteAudioTrack.value?.play();
+      if (!contacts.value.some(c => c.id === newUser.id)) {
+        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
       }
     });
-    
-    client.value.on('user-left', (user: any) => {
-      console.log('User left:', user);
-      endCallWithReason('User left the call');
+
+  // Listener iki opsional lek awakmu nggawe sistem logout event
+  echo.channel('users-status')
+    .listen('.UserStatusChanged', (event: any) => {
+        const updatedUser = event.user;
+        const contactIndex = contacts.value.findIndex(c => c.id === updatedUser.id);
+        if (contactIndex !== -1) {
+            contacts.value[contactIndex].last_seen = updatedUser.last_seen;
+        }
     });
-    
-  } catch (error) {
-    console.error('Join channel error:', error);
-    endCallWithReason('Error joining channel');
-  }
-}
-
-// State Voice Call
-const startVoiceCall = async () => {
-  if (!activeContact.value || activeContact.value.type !== 'user') return;
-  
-  try {
-    const response = await axios.post('/call/invite', {
-      callee_id: activeContact.value.id,
-      call_type: 'voice'
-    });
-
-    outgoingCall.value = {
-      callId: response.data.call_id,
-      callee: activeContact.value,
-      callType: 'voice',
-      channel: response.data.channel,
-      status: 'calling'
-    };
-
-  } catch (error) {
-    console.error('Failed to start call:', error);
-    alert('Gagal memulai panggilan');
-  }
-};
-
-// Menjawab panggilan
-const answerCall = async (accepted: boolean, reason?: string) => {
-  if (!incomingCall.value) return;
-
-  try {
-    await axios.post('/call/answer', {
-      call_id: incomingCall.value.callId,
-      caller_id: incomingCall.value.caller.id,
-      accepted: accepted,
-      reason: reason
-    });
-
-    if (accepted) {
-      isInCall.value = true;
-      callType.value = incomingCall.value.callType;
-    }
-
-    incomingCall.value = null;
-
-  } catch (error) {
-    console.error('Failed to answer call:', error);
-  }
-};
-
-// Mengakhiri panggilan
-const endCallWithReason = async (reason?: string) => {
-  try {
-    let callId = '';
-    let participantIds = [currentUserId.value];
-
-    if (outgoingCall.value) {
-      callId = outgoingCall.value.callId;
-      participantIds.push(outgoingCall.value.callee.id);
-    } else if (incomingCall.value) {
-      callId = incomingCall.value.callId;
-      participantIds.push(incomingCall.value.caller.id);
-    } else {
-      return;
-    }
-
-    await axios.post('/call/end', {
-      call_id: callId,
-      participant_ids: participantIds,
-      reason: reason || 'Panggilan diakhiri'
-    });
-
-  } catch (error) {
-    console.error('Error ending call:', error);
-  } finally {
-    resetCallState();
-  }
-};
-
-const resetCallState = () => {
-  outgoingCall.value = null;
-  incomingCall.value = null;
-  isInCall.value = false;
-  callType.value = null;
-  callStatus.value = '';
-  
-  if (localAudioTrack.value) {
-    localAudioTrack.value.stop();
-    localAudioTrack.value.close();
-    localAudioTrack.value = null;
-  }
-  if (localVideoTrack.value) {
-    localVideoTrack.value.stop();
-    localVideoTrack.value.close();
-    localVideoTrack.value = null;
-  }
-  if (client.value) {
-    client.value.leave();
-  }
-  
-  remoteAudioTrack.value = null;
-  remoteVideoTrack.value = null;
-};
-
-// --- Agora Video Call Functions ---
-
-
-// Video Call Functions
-const startVideoCall = async (userId: number, userName: string) => {
-  videoCallPartner.value = { id: userId, name: userName };
-  showVideoCallModal.value = true;
-  isVideoCallMinimized.value = false;
-  
-};
-
-const endVideoCall = () => {
-  showVideoCallModal.value = false;
-  videoCallPartner.value = null;
-  isVideoCallMinimized.value = false;
-  resetCallState();
-};
-
-const minimizeVideoCall = () => {
-  isVideoCallMinimized.value = true;
-};
-
-const restoreVideoCall = () => {
-  isVideoCallMinimized.value = false;
 };
 
 // --- Initialize ---
@@ -624,33 +375,11 @@ onMounted(() => {
   loadGroups();
   loadAllUsers();
   setupGlobalListeners();
-  setupCallListeners();
-  
-  echo.connector.pusher.connection.bind('connected', () => {
-    console.log('✅ PUSHER CONNECTED - Socket ID:', echo.connector.pusher.connection.socket_id);
-  });
 
-  echo.connector.pusher.connection.bind('error', (error: any) => {
-    console.error('❌ PUSHER ERROR:', error);
-  });
-
-  // DEBUG: Test event listening dengan type annotation
-  echo.private(`user.${currentUserId.value}`)
-    .listen('incoming-call', (data: any) => {
-      console.log('✅ INCOMING CALL RECEIVED:', data);
-      // Simpan data incoming call untuk testing
-      (window as any).lastIncomingCall = data;
-    })
-    .listen('*', (event: string, data: any) => {
-      console.log('📢 EVENT:', event, data);
-    });
-
-  console.log('🎯 Listening on channel: user.' + currentUserId.value);
-  
-  // PERBAIKAN: Deklarasi pollingInterval
+  // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
     loadContacts();
-  }, 30000);
+  }, 30000); // 30 detik
 
   onUnmounted(() => {
     clearInterval(pollingInterval);
@@ -699,42 +428,20 @@ onMounted(() => {
                     {{ activeContact.name }}
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
                     <!-- last seen method -->
-                    <span v-if="activeContact.type === 'user'" class="ml-2">
+                      <span v-if="activeContact.type === 'user'" class="ml-2">
                         <span v-if="onlineUsers.includes(activeContact.id)" 
-                              class="text-green-500 text-xs font-normal flex items-center gap-1">
-                            <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                          class="text-green-500 text-xs font-normal flex items-center gap-1">
+                        <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
                             Online
                         </span>
-                        <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
-                              class="text-gray-400 text-xs font-normal">
-                            {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
-                        </span>
-                        <span v-else class="text-gray-400 text-xs font-normal">
-                            Offline
-                        </span>
+                      <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
+                          class="text-gray-400 text-xs font-normal">
+                          {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                      </span>
+                      <span v-else class="text-gray-400 text-xs font-normal">
+                        Offline
+                      </span>
                     </span>
-
-                    <!-- Tombol Call hanya untuk personal chat -->
-                    <div v-if="activeContact.type === 'user'" class="ml-auto flex gap-2">
-                        <!-- Voice Call Button -->
-                        <button
-                          @click="startVoiceCall"
-                          title="Voice Call"
-                          class="flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
-                        >
-                         <Phone class="w-5 h-5"/>
-                        </button>
-
-                        <!-- Video Call Button -->
-                        <button
-                            @click="startVideoCall(activeContact.id, activeContact.name)"
-                            class="flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
-                            title="Video Call"
-                        >
-                            <Video class="w-5 h-5"/>
-                        </button>
-                    </div>
-=======
                     <!-- Tambahkan button video call -->
                     <button
                       v-if="activeContact.type === 'user'"
@@ -802,9 +509,8 @@ onMounted(() => {
                         class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     <button
                         @click="sendMessage"
-                        :disabled="isSending"
-                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:opacity-50">
-                        {{ isSending ? 'Mengirim...' : 'Kirim' }}
+                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
+                        Kirim
                     </button>
                 </div>
             </div>
@@ -838,124 +544,5 @@ onMounted(() => {
                 </div>
             </div>
         </div>
-
-        <!-- Incoming Call Modal -->
-        <div v-if="incomingCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div class="bg-white rounded-lg p-6 w-96 text-center">
-            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-              {{ incomingCall.caller.name.charAt(0).toUpperCase() }}
-            </div>
-            <h3 class="text-xl font-bold mb-2">Panggilan {{ incomingCall.callType === 'video' ? 'Video' : 'Suara' }}</h3>
-            <p class="text-gray-600 mb-4">{{ incomingCall.caller.name }} sedang menelpon...</p>
-            
-            <div class="flex justify-center gap-4">
-              <button @click="answerCall(false, 'Ditolak')" 
-                      class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-                Tolak
-              </button>
-              <button @click="answerCall(true)" 
-                      class="bg-green-500 text-white px-6 py-2 rounded-full hover:bg-green-600">
-                Terima
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Outgoing Call Modal -->
-        <div v-if="outgoingCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div class="bg-white rounded-lg p-6 w-96 text-center">
-            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-              {{ outgoingCall.callee.name.charAt(0).toUpperCase() }}
-            </div>
-            
-            <h3 class="text-xl font-bold mb-2" v-if="outgoingCall.status === 'calling'">Memanggil...</h3>
-            <h3 class="text-xl font-bold mb-2" v-else-if="outgoingCall.status === 'accepted'">Terhubung</h3>
-            <h3 class="text-xl font-bold mb-2" v-else-if="outgoingCall.status === 'rejected'">Panggilan Ditolak</h3>
-            <h3 class="text-xl font-bold mb-2" v-else-if="outgoingCall.status === 'ended'">Panggilan Berakhir</h3>
-            
-            <p class="text-gray-600 mb-4">{{ outgoingCall.callee.name }}</p>
-            
-            <div v-if="outgoingCall.status === 'calling'" class="animate-pulse text-blue-500 mb-4">
-              🎵 Berdering...
-            </div>
-            
-            <div v-if="outgoingCall.status === 'rejected' && outgoingCall.reason" class="text-red-500 mb-4">
-              ❌ {{ outgoingCall.reason }}
-            </div>
-            
-            <div v-if="outgoingCall.status === 'ended' && outgoingCall.reason" class="text-gray-500 mb-4">
-              📞 {{ outgoingCall.reason }}
-            </div>
-            
-            <button v-if="outgoingCall.status === 'calling'" 
-                    @click="endCallWithReason('Dibatalkan')" 
-                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-              Batalkan
-            </button>
-            
-            <button v-if="outgoingCall.status === 'accepted'" 
-                    @click="endCallWithReason('Diakhiri')" 
-                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-              Akhiri Panggilan
-            </button>
-          </div>
-        </div>
-
-        <!-- Active Call UI -->
-        <div v-if="isInCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div class="bg-white rounded-lg p-6 w-96 text-center">
-            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-              {{ outgoingCall?.callee?.name?.charAt(0).toUpperCase() || incomingCall?.caller?.name?.charAt(0).toUpperCase() || '?' }}
-            </div>
-            <h3 class="text-xl font-bold mb-2">Sedang Berbicara</h3>
-            <p class="text-gray-600 mb-4">
-              Dengan {{ outgoingCall?.callee?.name || incomingCall?.caller?.name || 'Unknown' }}
-            </p>
-            
-            <button @click="endCallWithReason('Diakhiri')" 
-                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-              Akhiri Panggilan
-            </button>
-          </div>
-        </div>
     </AppLayout>
 </template>
-
-<style scoped>
-.btn-call {
-    padding: 8px;
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    transition: all 0.3s;
-}
-
-.btn-call:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.btn-call.voice-call {
-    background: #4CAF50;
-    color: white;
-}
-
-.btn-call.video-call {
-    background: #2196F3;
-    color: white;
-}
-
-.btn-call.end-call {
-    background: #F44336;
-    color: white;
-}
-
-.btn-call:hover:not(:disabled) {
-    transform: scale(1.1);
-}
-</style>
