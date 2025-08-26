@@ -77,6 +77,7 @@ const receiveIncomingCall = (fromUser: any) => {
 }
 
 const acceptIncomingCall = () => {
+  clearTimeout(callTimer)
   callStatus.value = 'connected';
   incomingCall.value = null;
   showVideoCall.value = true;
@@ -92,7 +93,6 @@ const rejectIncomingCall = () => {
 }
 
 const endVideoCall = () => {
-  clearTimeout(callTimer)
   showVideoCall.value = false;
   callPartnerId.value = null;
   callStatus.value = 'idle';
@@ -749,6 +749,14 @@ onMounted(() => {
                         :contactName="activeContact.name"
                         :status="callStatus"
                         @end="endVideoCall"
+                    />
+
+                    <IncomingCallModal
+                        :show="! ! incomingCall"
+                        v-if="incomingCall"
+                        :fromName="incomingCall.from.name"
+                        @accept="acceptIncomingCall"
+                        @reject="rejectIncomingCall"
                     />
                 </div>
 
