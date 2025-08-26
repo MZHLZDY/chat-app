@@ -597,7 +597,7 @@ onMounted(() => {
 <template>
     <Head title="Chat" />
     <AppLayout>
-        <div class="flex h-[90vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white">
+        <div class="flex h-[89vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white">
             <div class="w-1/4 bg-gray-100 border-r overflow-y-auto">
                 <div class="p-4 border-b flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
