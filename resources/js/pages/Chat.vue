@@ -31,6 +31,7 @@ const isSending = ref(false);
 
 // --- Personal Video Call State ---
 const showVideoCall = ref(false);
+const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
 const callStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
 const incomingCall = ref<{ from: any, to: { id: number, name: string } } | null>(null);
@@ -96,12 +97,11 @@ const restoreVideoCall = () => {
 // Group Video Call State
 const showGroupCall = ref(false);
 const groupCallStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
-const activeGroupCall = ref<{ groupId: number, name: string, members: any[] } | null>(null);
-const joinedMembers = ref<any[]>([]);
+const activeGroupCall = ref<null | { groupId: number; name: string; participants: { id: number; name: string }[] }>(null);const joinedMembers = ref<any[]>([]);
 
 // Start Group Video Call
 const startGroupCall = (groupId: number, groupName: string) => {
-  activeGroupCall.value = { groupId, name: groupName, members: [] };
+  activeGroupCall.value = { groupId, name: groupName, participants: [] };
   groupCallStatus.value = 'ringing';
   showGroupCall.value = true;
 
@@ -526,6 +526,15 @@ onMounted(() => {
                         :contactName="activeContact.name"
                         :status="callStatus"
                         @end="endVideoCall"
+                    />
+
+                    <VideoCallModal
+                        :show="showGroupCall"
+                        :isGroup="true"
+                        :groupName="activeGroupCall?.name"
+                        :participants="activeGroupCall?.participants"
+                        :status="callStatus"
+                        @end="leaveGroupCall"
                     />
 
                     <IncomingCallModal

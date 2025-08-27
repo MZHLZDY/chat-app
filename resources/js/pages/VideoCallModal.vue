@@ -101,10 +101,7 @@ watch(
             </div>
 
             <!-- Video area -->
-            <div
-                class="flex-1 relative bg-black"
-                :class="isGroup ? 'grid grid-cols-2 md:grid-cols-3 gap-2 p-2' : ''"
-            >
+            <div class="flex-1 relative bg-black">
                 <!-- Remote Video (full screen) -->
                 <video
                     ref="remoteVideo"
