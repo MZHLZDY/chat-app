@@ -383,6 +383,22 @@ const setupGlobalListeners = () => {
             contacts.value[contactIndex].last_seen = updatedUser.last_seen;
         }
     });
+
+    echo.private(`notifications.${currentUserId.value}`)
+        .listen('.MessageSent', (eventData: any) => {
+            const messageData = eventData.message;
+
+            // Cek disik, opo chat teko pengirim iki lagi aktif dibuka?
+            const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
+
+            // Lek chat e GAK lagi aktif, baru dewe munculno notif unread
+            if (!isChatCurrentlyActive) {
+                const unreadChatId = `user-${messageData.sender_id}`;
+                if (!unreadChats.value.includes(unreadChatId)) {
+                    unreadChats.value.push(unreadChatId);
+                }
+            }
+        });
 };
 
 // --- Initialize ---

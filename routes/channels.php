@@ -15,6 +15,11 @@ Broadcast::channel('chat.{a}.{b}', function ($user, $a, $b) {
     return false;
 });
 
+// channel notif unread
+Broadcast::channel('notifications.{userId}', function ($user, $userId) {
+    return (int) $user->id === (int) $userId;
+});
+
 // Channel untuk group
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {
     if (!$user) {
