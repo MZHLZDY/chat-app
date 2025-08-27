@@ -413,6 +413,20 @@ const setupGlobalListeners = () => {
                     unreadChats.value.push(unreadChatId);
                 }
             }
+        })
+        .listen('.GroupMessageSent', (eventData: any) => { // <-- TAMBAHNO IKI
+            const messageData = eventData.message ? eventData.message : eventData;
+
+            // Cek disik, opo grup e lagi aktif dibuka?
+            const isGroupChatCurrentlyActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;
+
+            // Lek GAK aktif, baru munculno notif unread
+            if (!isGroupChatCurrentlyActive) {
+                const unreadChatId = `group-${messageData.group_id}`;
+                if (!unreadChats.value.includes(unreadChatId)) {
+                    unreadChats.value.push(unreadChatId);
+                }
+            }
         });
 };
 

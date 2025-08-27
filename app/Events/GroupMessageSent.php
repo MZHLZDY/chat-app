@@ -2,50 +2,45 @@
 
 namespace App\Events;
 
-use App\Models\GroupMessage;
+use App\Models\GroupMessage; // Sesuaikan jeneng modelmu lek bedo
+use App\Models\Group; // Import sisan
+use App\Models\User; // Import sisan
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Broadcasting\InteractsWithSockets;
 
 class GroupMessageSent implements ShouldBroadcast
 {
-    use SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public GroupMessage $message) 
+    public $message;
+
+    public function __construct(GroupMessage $message)
     {
-        // Eager load relasi 'sender' agar datanya ikut terkirim
-        $this->message->load('sender');
+        // Ganti dadi objek, guduk array, ben konsisten
+        $this->message = $message->load('sender');
     }
 
     /**
-     * Menentukan data spesifik yang akan di-broadcast.
-     * Ini akan mengirimkan detail pengirim ke frontend.
+     * Nentukno channel-channel sing arep dienggo siaran.
+     * Saiki de'e ngirim array, guduk siji channel tok.
      */
-    // public function broadcastWith(): array
-    // {
-    //     return [
-    //         'id' => $this->message->id,
-    //         'group_id' => $this->message->group_id,
-    //         'sender_id' => $this->message->sender_id,
-    //         'message' => $this->message->message,
-    //         'created_at' => $this->message->created_at->toDateTimeString(),
-    //         'sender' => [
-    //             'id' => $this->message->sender->id,
-    //             'name' => $this->message->sender->name,
-    //         ],
-    //     ];
-    // }
-
-    public function broadcastOn(): PrivateChannel
+    public function broadcastOn(): array
     {
-        return new PrivateChannel('group.' . $this->message->group_id);
+        // Gawe daftar channel "pager" gawe saben anggota grup
+        $memberChannels = $this->message->group->members->map(function (User $member) {
+            return new PrivateChannel('notifications.' . $member->id);
+        })->all(); // ->all() gawe ngubah koleksi dadi array biasa
+
+        // Gabungno channel utama grup karo daftar channel notifikasi anggota
+        return array_merge(
+            [new PrivateChannel('group.' . $this->message->group_id)],
+            $memberChannels
+        );
     }
 
-    /**
-     * Mengubah nama event agar lebih sesuai dengan frontend.
-     * Frontend Anda listen ke '.GroupMessageSent' (dengan titik).
-     * `broadcastAs` yang benar tidak menggunakan titik di depan.
-     */
     public function broadcastAs(): string
     {
         return 'GroupMessageSent';
