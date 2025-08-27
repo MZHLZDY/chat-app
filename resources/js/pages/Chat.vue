@@ -106,8 +106,23 @@ const startGroupCall = (groupId: number, groupName: string) => {
   showGroupCall.value = true;
 
   // TODO: trigger backend untuk broadcast panggilan ke semua anggota
-  
-}
+};
+
+// Accept group call
+const joinGroupCall = (user: any) => {
+  groupCallStatus.value = 'connected';
+  if (!joinedMembers.value.some(m => m.id === user.id)) {
+    joinedMembers.value.push(user);
+  }
+};
+
+// Leave group call
+const leaveGroupCall = () => {
+  showGroupCall.value = false;
+  groupCallStatus.value = 'idle';
+  activeGroupCall.value = null;
+  joinedMembers.value = [];
+};
 
 // --- Modal States ---
 const showCreateGroupModal = ref(false);
@@ -479,6 +494,14 @@ onMounted(() => {
                     <button
                       v-if="activeContact.type === 'user'"
                       @click="startVideoCall(activeContact.id)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      >
+                        <Video class="w-5 h-5"/>
+                    </button>
+
+                    <button
+                      v-if="activeContact.type === 'group'"
+                      @click="startGroupCall(activeContact.id, activeContact.name)"
                       class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
                       >
                         <Video class="w-5 h-5"/>
