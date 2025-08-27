@@ -70,7 +70,6 @@ watch(
 
 <template>
     <!-- Overlay Video Call -->
-     <!-- Personal Video Call -->
     <div
         v-if="show"
         class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
@@ -83,7 +82,15 @@ watch(
                 class="flex justify-between items-center p-4 border-b border-gray-700"
             >
                 <span class="font-bold">
-                    Video Call dengan {{ contactName || "Unknown" }}
+                    <template v-if="!isGroup">
+                        Video Call dengan {{ contactName || "Unknown" }}
+                    </template>
+                    <template v-else>
+                        Grup Call: {{ groupName || "Tanpa Nama" }}
+                        <span class="text-sm text-gray-400">
+                            ({{ participants?.length || 0 }} anggota)
+                        </span>
+                    </template>
                 </span>
                 <button
                 @click="handleEnd"
@@ -94,7 +101,10 @@ watch(
             </div>
 
             <!-- Video area -->
-            <div class="flex-1 relative bg-black">
+            <div
+                class="flex-1 relative bg-black"
+                :class="isGroup ? 'grid grid-cols-2 md:grid-cols-3 gap-2 p-2' : ''"
+            >
                 <!-- Remote Video (full screen) -->
                 <video
                     ref="remoteVideo"
