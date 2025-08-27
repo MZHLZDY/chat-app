@@ -77,7 +77,7 @@ const isMinimized = ref(false);
 const callStatus = ref<CallStatus>('idle');
 const callType = ref< 'none' | 'personal' | 'group'>('none');
 
-let callTimer : any = null;
+let callTimer: any = null;
 
 const startVideoCall = async (contact: Chat) => {
   // cek apakah sedang ada call aktif
@@ -1107,6 +1107,19 @@ onMounted(() => {
   loadAllUsers();
   loadUnreadCounts();
   setupGlobalListeners();
+  setupCallListeners();
+  debugPusherConnection();
+  debugChannelNaming();
+
+  console.log('🔌 Pusher connected dengan Socket ID:', echo.connector.pusher.connection.socket_id)
+
+  setTimeout(() => {
+    testPusherDirectly();
+  }, 2000)
+
+  echo.private(`user.${user_id}`).listen('.incoming-call', (data : any) => {
+  console.log('📞 Panggilan masuk di lawan:', data);
+});
 
   // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
@@ -1607,6 +1620,92 @@ const currentCallContactName = computed(() => {
                     <button @click="closeCreateGroupModal" class="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600">Batal</button>
                 </div>
             </div>
+        </div>
+
+        <!-- Incoming Call Modal -->
+        <div v-if="incomingCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div class="bg-white rounded-lg p-6 w-96 text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+              {{ incomingCall.caller?.name?.charAt(0).toUpperCase() || '?' }}
+            </div>
+            <h3 class="text-xl font-bold mb-2">Panggilan {{ incomingCall.callType === 'video' ? 'Video' : 'Suara' }}</h3>
+            <p class="text-gray-600 mb-4">{{ incomingCall.caller?.name || 'Unknown' }} sedang menelpon...</p>
+            
+            <div class="flex justify-center gap-4">
+              <button @click="answerCall(false, 'Ditolak')" 
+                      class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
+                Tolak
+              </button>
+              <button @click="answerCall(true)" 
+                      class="bg-green-500 text-white px-6 py-2 rounded-full hover:bg-green-600">
+                Terima
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Outgoing Call Modal -->
+        <div v-if="outgoingCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div class="bg-white rounded-lg p-6 w-96 text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+                {{ outgoingCall.callee.name.charAt(0).toUpperCase() }}
+            </div>
+    
+              <p class="text-gray-600 mb-4">{{ outgoingCall.callee.name }}</p>
+      
+              <h3 class="text-xl font-bold mb-2" v-if="outgoingCall.status === 'calling'">Panggilan Suara</h3>
+              <h3 class="text-xl font-bold mb-2" v-else-if="outgoingCall.status === 'accepted'">Terhubung</h3>
+              <h3 class="text-xl font-bold mb-2" v-else-if="outgoingCall.status === 'rejected'">Panggilan Ditolak</h3>
+              <h3 class="text-xl font-bold mb-2" v-else-if="outgoingCall.status === 'ended'">Panggilan Berakhir</h3>
+
+                <!-- Tambahkan countdown timer -->
+              <div v-if="outgoingCall.status === 'calling' && callTimeoutCountdown !== null" 
+               class="text-red-500 font-italic mb-2">
+                Akan berakhir dalam {{ callTimeoutCountdown }} detik
+              </div>
+    
+              <div v-if="outgoingCall.status === 'calling'" class="animate-pulse text-blue-500 mb-4">
+                 🎵 Berdering...
+              </div>
+            
+            <div v-if="outgoingCall.status === 'rejected' && outgoingCall.reason" class="text-red-500 mb-4">
+              ❌ {{ outgoingCall.reason }}
+            </div>
+            
+            <div v-if="outgoingCall.status === 'ended' && outgoingCall.reason" class="text-gray-500 mb-4">
+              📞 {{ outgoingCall.reason }}
+            </div>
+            
+            <button v-if="outgoingCall.status === 'calling'" 
+                    @click="endCallWithReason('Dibatalkan')" 
+                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
+              Batalkan
+            </button>
+            
+            <button v-if="outgoingCall.status === 'accepted'" 
+                    @click="endCallWithReason('Diakhiri')" 
+                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
+              Akhiri Panggilan
+            </button>
+          </div>
+        </div>
+
+        <!-- Active Call UI -->
+        <div v-if="isInCall && !showVideoCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div class="bg-white rounded-lg p-6 w-96 text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+              {{ outgoingCall?.callee?.name?.charAt(0).toUpperCase() || incomingCall?.caller?.name?.charAt(0).toUpperCase() || '?' }}
+            </div>
+            <h3 class="text-xl font-bold mb-2">Sedang Berbicara</h3>
+            <p class="text-gray-600 mb-4">
+              Dengan {{ outgoingCall?.callee?.name || incomingCall?.caller?.name || 'Unknown' }}
+            </p>
+            
+            <button @click="endCallWithReason('Diakhiri')" 
+                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
+              Akhiri Panggilan
+            </button>
+          </div>
         </div>
     </AppLayout>
 </template>
