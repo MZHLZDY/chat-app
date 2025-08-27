@@ -390,6 +390,7 @@ onMounted(() => {
 <template>
     <Head title="Chat" />
     <AppLayout>
+      <!-- section sidebar atas -->
         <div class="flex h-[89vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white">
             <div class="w-1/4 bg-gray-100 border-r overflow-y-auto">
                 <div class="p-4 border-b flex justify-between items-center">
@@ -399,13 +400,13 @@ onMounted(() => {
                         + Group
                     </button>
                 </div>
-                
+                <!-- sidebar contact dan grup -->
                 <ul>
                    <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
                         :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3',
                                  activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
-                        <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold'">
+                        <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
                             {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
                         </div>
                         <div class="flex-1">
@@ -419,10 +420,10 @@ onMounted(() => {
                     </li>
                 </ul>
             </div>
-
+            <!-- section room chat -->
             <div class="flex flex-col flex-1" v-if="activeContact">
                 <div class="p-4 border-b font-semibold flex items-center gap-3">
-                    <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm'">
+                    <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
                     {{ activeContact.name }}
@@ -485,7 +486,7 @@ onMounted(() => {
                       End Call
                   </button>
                 </div> -->
-
+                <!-- input teks -->
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     <div v-for="m in messages" :key="m.id"
                          :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
@@ -519,7 +520,7 @@ onMounted(() => {
                 Pilih kontak atau group untuk memulai chat
             </div>
         </div>
-
+        <!-- create group method -->
         <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
                 <h3 class="text-lg font-bold mb-4">Buat Group Baru</h3>
