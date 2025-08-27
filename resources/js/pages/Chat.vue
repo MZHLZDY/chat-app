@@ -29,7 +29,7 @@ const unreadChats = ref<string[]>([]);
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
-// --- Video Call State ---
+// --- Personal Video Call State ---
 const showVideoCall = ref(false);
 const callPartnerId = ref<number|null>(null);
 const callStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
@@ -92,6 +92,22 @@ const restoreVideoCall = () => {
   isMinimized.value = false;
   showVideoCall.value = true;
 };
+
+// Group Video Call State
+const showGroupCall = ref(false);
+const groupCallStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
+const activeGroupCall = ref<{ groupId: number, name: string, members: any[] } | null>(null);
+const joinedMembers = ref<any[]>([]);
+
+// Start Group Video Call
+const startGroupCall = (groupId: number, groupName: string) => {
+  activeGroupCall.value = { groupId, name: groupName, members: [] };
+  groupCallStatus.value = 'ringing';
+  showGroupCall.value = true;
+
+  // TODO: trigger backend untuk broadcast panggilan ke semua anggota
+  
+}
 
 // --- Modal States ---
 const showCreateGroupModal = ref(false);
