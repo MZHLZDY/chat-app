@@ -25,7 +25,7 @@ const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } |
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
-const unreadChats = ref<string[]>([]);
+const unreadCounts = ref<{ [key: string]: number }>({});
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 
@@ -282,8 +282,11 @@ const selectContact = (contact: { id: number, name: string, type: 'user' | 'grou
     
     const chatIdentifier = `${contact.type}-${contact.id}`;
     // Hapus ID chat iki teko daftar "durung diwoco"
-    unreadChats.value = unreadChats.value.filter(id => id !== chatIdentifier);
-    // =======================================================
+    if (unreadCounts.value[chatIdentifier]) {
+    const newCounts = { ...unreadCounts.value };
+    delete newCounts[chatIdentifier];
+    unreadCounts.value = newCounts;
+}
 
     activeContact.value = contact;
     messages.value = [];
@@ -409,9 +412,11 @@ const setupGlobalListeners = () => {
             // Lek chat e GAK lagi aktif, baru dewe munculno notif unread
             if (!isChatCurrentlyActive) {
                 const unreadChatId = `user-${messageData.sender_id}`;
-                if (!unreadChats.value.includes(unreadChatId)) {
-                    unreadChats.value.push(unreadChatId);
-                }
+                const currentCount = unreadCounts.value[unreadChatId] || 0;
+                unreadCounts.value = {
+                    ...unreadCounts.value,
+                    [unreadChatId]: currentCount + 1
+                };
             }
         })
         .listen('.GroupMessageSent', (eventData: any) => { // <-- TAMBAHNO IKI
@@ -423,9 +428,11 @@ const setupGlobalListeners = () => {
             // Lek GAK aktif, baru munculno notif unread
             if (!isGroupChatCurrentlyActive) {
                 const unreadChatId = `group-${messageData.group_id}`;
-                if (!unreadChats.value.includes(unreadChatId)) {
-                    unreadChats.value.push(unreadChatId);
-                }
+                const currentCount = unreadCounts.value[unreadChatId] || 0;
+                unreadCounts.value = {
+                    ...unreadCounts.value,
+                    [unreadChatId]: currentCount + 1
+                };
             }
         });
 };
@@ -452,9 +459,9 @@ onMounted(() => {
     <Head title="Chat" />
     <AppLayout>
       <!-- section sidebar atas -->
-        <div class="flex h-[89vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white">
-            <div class="w-1/4 bg-gray-100 border-r overflow-y-auto">
-                <div class="p-4 border-b flex justify-between items-center">
+        <div class="flex h-[89vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+            <div class="w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 overflow-y-auto">
+                <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
                             class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
@@ -465,14 +472,14 @@ onMounted(() => {
                 <ul>
                    <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
-                        :class="['p-4 border-b hover:bg-gray-200 cursor-pointer flex items-center gap-3',
-                                 activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300' : '']">
+                        :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',
+                                 activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300 dark:bg-gray-600' : '']">
                         <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
                             {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
                         </div>
                         <div class="flex-1">
                             <div class="font-semibold">{{ chat.name }}</div>
-                            <div class="text-sm text-gray-500 truncate">
+                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
                                 {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : 'Personal chat' }}
                             </div>
                         </div>
@@ -483,7 +490,7 @@ onMounted(() => {
             </div>
             <!-- section room chat -->
             <div class="flex flex-col flex-1" v-if="activeContact">
-                <div class="p-4 border-b font-semibold flex items-center gap-3">
+                <div class="p-4 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
                     <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
@@ -565,10 +572,10 @@ onMounted(() => {
                   </button>
                 </div> -->
                 <!-- input teks -->
-                <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
                     <div v-for="m in messages" :key="m.id"
                          :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                        <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs' : 'inline-block bg-gray-300 text-black px-4 py-2 rounded-lg max-w-xs'">
+                        <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs'">
                             <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
                                  class="text-xs font-semibold mb-1 opacity-75">
                                 {{ m.sender_name }}
@@ -585,7 +592,7 @@ onMounted(() => {
                         v-model="newMessage"
                         :placeholder="`Ketik pesan ke ${activeContact.name}...`"
                         @keyup.enter="sendMessage"
-                        class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400" />
                     <button
                         @click="sendMessage"
                         class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
@@ -600,11 +607,11 @@ onMounted(() => {
         </div>
         <!-- create group method -->
         <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
-                <h3 class="text-lg font-bold mb-4">Buat Group Baru</h3>
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
+                <h3 class="text-lg font-bold mb-4 dark:text-gray-200">Buat Group Baru</h3>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium mb-2">Nama Group</label>
-                    <input type="text" v-model="newGroupName" placeholder="Masukkan nama group..." class="w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <label class="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">Nama Group</label>
+                    <input type="text" v-model="newGroupName" placeholder="Masukkan nama group..." class="w-full border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium mb-2">Pilih Anggota</label>
