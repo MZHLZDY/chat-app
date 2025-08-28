@@ -28,6 +28,7 @@ const onlineUsers = ref<number[]>([]);
 const unreadCounts = ref<{ [key: string]: number }>({});
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
+const searchQuery = ref('');
 
 // --- Personal Video Call State ---
 const showVideoCall = ref(false);
@@ -134,6 +135,18 @@ const allChats = computed(() => [
   ...contacts.value.map(c => ({ ...c, type: 'user' as const })),
   ...groups.value.map(g => ({ ...g, type: 'group' as const }))
 ]);
+
+// search query
+const filteredChats = computed(() => {
+    if (!searchQuery.value) {
+        return allChats.value; // Lek kotak pencarian kosong, tampilno kabeh
+    }
+    // Lek onok isine, saringen berdasarkan jeneng
+    return allChats.value.filter(chat =>
+        chat.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+    );
+});
+
 
 // --- Helper Functions ---
 const scrollToBottom = () => {
@@ -475,9 +488,13 @@ onMounted(() => {
                         + Group
                     </button>
                 </div>
+                <div class="p-2">
+                  <input type="text" v-model="searchQuery" placeholder="Cari kontak atau grup..."
+                        class="w-full px-3 py-2 text-sm border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-lg focus:ring-blue-500 dark:focus:ring-blue-400">
+                </div>
                 <!-- sidebar contact dan grup -->
                 <ul>
-                   <li v-for="chat in allChats" :key="`${chat.type}-${chat.id}`"
+                   <li v-for="chat in filteredChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
                         :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',
                                  activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300 dark:bg-gray-600' : '']">
