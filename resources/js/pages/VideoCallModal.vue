@@ -3,11 +3,16 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, computed, watch} from 'vue';
 import { defineProps, defineEmits } from 'vue';
+import { Mic, Camera, PhoneOff } from 'lucide-vue-next';
 
 const localVideo = ref<HTMLVideoElement | null>(null);
 const remoteVideo = ref<HTMLVideoElement | null>(null);
 
 let peerConnection: RTCPeerConnection | null = null;
+
+// State toggle mic & camera
+const isMuted = ref(false);
+const isCameraOn = ref(true);
 
 const props = defineProps<{
     show: boolean;
@@ -55,6 +60,28 @@ onMounted(async () => {
     }
 });
 
+// Toggle mic
+const toggleMute = () => {
+    if (localVideo.value?.srcObject) {
+        const stream = localVideo.value.srcObject as MediaStream;
+        stream.getAudioTracks().forEach((track) => {
+            track.enabled = isMuted.value; // toggle
+        });
+    }
+    isMuted.value = !isMuted.value;
+};
+
+// Toggle camera
+const toggleCamera = () => {
+    if (localVideo.value?.srcObject) {
+        const stream = localVideo.value.srcObject as MediaStream;
+        stream.getVideoTracks().forEach((track) => {
+            track.enabled = !isCameraOn.value; // toggle
+        });
+    }
+    isCameraOn.value = !isCameraOn.value;
+};
+
 // Cleanup stream ketika modal ditutup
 watch(
     () => props.show,
@@ -63,6 +90,8 @@ watch(
             const stream = localVideo.value.srcObject as MediaStream;
             stream.getTracks().forEach((track) => track.stop());
             peerConnection?.close();
+            isMuted.value = false;
+            isCameraOn.value = true;
         }
     }
 );
@@ -92,12 +121,6 @@ watch(
                         </span>
                     </template>
                 </span>
-                <button
-                @click="handleEnd"
-                class="bg-red-600 px-3 py-1 rounded hover:bg-red-700 transition"
-                >
-                    End
-                </button>
             </div>
 
             <!-- Video area -->
@@ -116,27 +139,40 @@ watch(
                     autoplay
                     muted
                     playsinline
-                    class="absolute bottom-4 right-4 w-40 h-28 rounded-lg border-2 border-white object-cover shadow-lg"
+                    class="absolute bottom-4 right-4 w-40 h-28 rounded-lg border-2 border-white object-cover shadow-lg pointer-events-none"
                 />
             </div>
 
             <!-- Controls -->
-             <div class="p-4 flex justify-center gap-4 border-t border-gray-700">
+             <div class="p-4 flex justify-center gap-4 border-t border-gray-700 relative z-50">
+                <!-- Mic -->
                 <button
-                    class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded transition"
-                >
-                    Mute
+                    @click="toggleMute"
+                    :class="[
+                        'p-3 rounded-full text-white transition',
+                        isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
+                    ]"
+                    >
+                        <Mic class="w-6 h-6"/>
                 </button>
+
+                <!-- Camera -->
                 <button
-                    class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded transition"
-                >
-                    Toggle Camera
+                    @click="toggleCamera"
+                    :class="[
+                        'p-3 rounded-full text-white transition',
+                        isCameraOn ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'
+                    ]"
+                    >
+                        <Camera class="w-6 h-6"/>
                 </button>
+
+                <!-- End Call -->
                 <button
                     @click="handleEnd"
-                    class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded transition"
+                    class="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition"
                 >
-                    End Call
+                    <PhoneOff class="w-6 h-6"/>
                 </button>
              </div>
         </div>
