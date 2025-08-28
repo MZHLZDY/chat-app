@@ -234,16 +234,23 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 time: formatTime(messageData.created_at)
             });
         } else {
-            let unreadChatId: string;
-            if (messageData.group_id) {
-                unreadChatId = `group-${messageData.group_id}`;
-            } else {
-                unreadChatId = `user-${messageData.sender_id}`;
-            }
-            if (!unreadChats.value.includes(unreadChatId)) {
-                unreadChats.value.push(unreadChatId);
-            }
+        // Lek chat e GAK aktif, berarti p  esene durung diwoco
+        let unreadChatId: string;
+        
+        if (messageData.group_id) { // Lek iki pesan grup
+            unreadChatId = `group-${messageData.group_id}`;
+        } else { // Lek iki pesan personal
+            unreadChatId = `user-${messageData.sender_id}`;
         }
+        
+        // GANTI LOGIKA IKI gawe NGITUNG
+        const currentCount = unreadCounts.value[unreadChatId] || 0;
+        unreadCounts.value = {
+            ...unreadCounts.value,
+            [unreadChatId]: currentCount + 1
+        };
+    }
+
     };
 
     const channelName = type === 'group'
@@ -483,7 +490,7 @@ onMounted(() => {
                                 {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : 'Personal chat' }}
                             </div>
                         </div>
-                        <div v-if="unreadChats.includes(`${chat.type}-${chat.id}`)" class="w-3 h-3 bg-green-500 rounded-full ml-auto mr-2 animate-pulse"></div>
+                        <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
                         <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
                     </li>
                 </ul>
