@@ -644,8 +644,8 @@ onMounted(() => {
                     <div class="max-h-48 overflow-y-auto border rounded-lg">
                         <div v-for="user in allUsers" :key="user.id"
                              @click="toggleUserSelection(user.id)"
-                             :class="['p-2 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-2', selectedUsers.includes(user.id) ? 'bg-blue-100' : '']">
-                            <input type="checkbox" :checked="selectedUsers.includes(user.id)" class="pointer-events-none ">
+                             :class="['p-2 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center gap-2']">
+                            <input type="checkbox" :value="user.id" v-model="selectedUsers">
                             <span>{{ user.name }}</span>
                         </div>
                     </div>
