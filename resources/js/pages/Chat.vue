@@ -522,17 +522,19 @@ onMounted(() => {
                     <button
                       v-if="activeContact.type === 'user'"
                       @click="startVideoCall(activeContact.id)"
-                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
+                            hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
-                        <Video class="w-5 h-5"/>
+                        <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
 
                     <button
                       v-if="activeContact.type === 'group'"
                       @click="startGroupCall(activeContact.id, activeContact.name)"
-                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 transition"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
+                            hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
-                        <Video class="w-5 h-5"/>
+                        <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
 
                     <VideoCallModal
