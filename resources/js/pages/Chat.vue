@@ -11,6 +11,7 @@ import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
 import type { CallStatus } from '@/types/CallStatus';
+import type { Contact } from '@/types/Contact';
 
 axios.defaults.withCredentials = true;
 
@@ -20,10 +21,12 @@ const currentUserId = computed(() => page.props.auth.user.id);
 const currentUserName = computed(() => page.props.auth.user.name);
 
 // --- State Management ---
-const contacts = ref<{ id: number, name: string, last_seen: string | null, phone_number: string | null}[]>([]);
+// const contacts = ref<{ id: number, name: string, last_seen: string | null, phone_number: string | null}[]>([]);
+const contacts = ref<Contact[]>([]);
 const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
 const allUsers = ref<{ id: number, name: string }[]>([]);
-const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
+// const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
+const activeContact = ref<Contact | null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
@@ -506,7 +509,10 @@ onMounted(() => {
                         <div class="flex-1">
                             <div class="font-semibold">{{ chat.name }}</div>
                             <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : chat.phone_number }}
+                                <!-- {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : chat.phone_number }} -->
+                                <template v-if="chat.type === 'group'">
+                                    {{ (chat as any).members_count || 0 }} anggota
+                                </template>
                             </div>
                         </div>
                         <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
@@ -522,6 +528,12 @@ onMounted(() => {
                     </div>
                     {{ activeContact.name }}
                     <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
+
+                    <!-- No HP User -->
+                    <span v-if="activeContact.type === 'user'" class="text-xs text-gray-400">
+                      {{ activeContact.phone_number }}
+                    </span>
+
                     <!-- last seen method -->
                       <span v-if="activeContact.type === 'user'" class="ml-2">
                         <span v-if="onlineUsers.includes(activeContact.id)" 
