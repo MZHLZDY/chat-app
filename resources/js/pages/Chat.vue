@@ -4,7 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import { Video, UserPlus} from 'lucide-vue-next';
+import { Video, UserPlus, ChartArea} from 'lucide-vue-next';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
@@ -18,7 +18,7 @@ const currentUserId = computed(() => page.props.auth.user.id);
 const currentUserName = computed(() => page.props.auth.user.name);
 
 // --- State Management ---
-const contacts = ref<{ id: number, name: string, last_seen: string | null }[]>([]);
+const contacts = ref<{ id: number, name: string, last_seen: string | null, phone_number: string | null}[]>([]);
 const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
 const allUsers = ref<{ id: number, name: string }[]>([]);
 const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
@@ -408,7 +408,7 @@ const setupGlobalListeners = () => {
         allUsers.value.push({ id: newUser.id, name: newUser.name });
       }
       if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null });
+        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null, phone_number: null });
       }
     });
 
@@ -504,7 +504,7 @@ onMounted(() => {
                         <div class="flex-1">
                             <div class="font-semibold">{{ chat.name }}</div>
                             <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
-                                {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : 'Personal chat' }}
+                                {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : chat.phone_number }}
                             </div>
                         </div>
                         <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
@@ -514,7 +514,7 @@ onMounted(() => {
             </div>
             <!-- navbar contact -->
             <div class="flex flex-col flex-1" v-if="activeContact">
-                <div class="p-3.5 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
+                <div class="p-4.5 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
                     <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
