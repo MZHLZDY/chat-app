@@ -38,16 +38,16 @@ const submit = () => {
         <form @submit.prevent="submit" class="flex flex-col gap-6">
             <div class="grid gap-6">
                 <div class="grid gap-2">
-                    <Label for="email">Email</Label>
+                    <Label for="login">Masukan email, nama, atau no. telpon</Label>
                     <Input
-                        id="email"
-                        type="email"
+                        id="login  "
+                        type="text"
                         required
                         autofocus
                         :tabindex="1"
                         autocomplete="email"
                         v-model="form.email"
-                        placeholder="email@example.com"
+                        placeholder="Masukan email, nama, atau no. telpon"
                     />
                     <InputError :message="form.errors.email" />
                 </div>
