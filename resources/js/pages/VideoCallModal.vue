@@ -4,6 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, computed, watch} from 'vue';
 import { defineProps, defineEmits } from 'vue';
 import { Mic, Camera, PhoneOff } from 'lucide-vue-next';
+import type { CallStatus } from '@/types/CallStatus';
 
 const localVideo = ref<HTMLVideoElement | null>(null);
 const remoteVideo = ref<HTMLVideoElement | null>(null);
@@ -123,8 +124,48 @@ watch(
                 </span>
             </div>
 
-            <!-- Video area -->
-            <div class="flex-1 relative bg-black">
+            <!-- Status Calling -->
+            <div
+                v-if="status === 'calling'"
+                class="flex-1 flex intems-center justify-center"
+            >
+                <p class="text-gray-300">
+                    🤙Memanggil {{ contactName || "Unknown" }}
+                </p>
+                <button
+                    @click="handleEnd"
+                    class="ml-4 bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg"
+                >
+                    Batalkan
+                </button>
+            </div>
+
+             <!-- Status Incoming -->
+            <div
+                v-else-if="status === 'incoming'"
+                class="flex-1 flex flex-col items-center justify-center space-y-4"
+            >
+                <p class="text-lg font-bold">
+                    📲 Panggilan dari {{ contactName || "Unknown" }}
+                </p>
+                <div class="flex gap-4">
+                    <button
+                        @click="handleAccept"
+                        class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg"
+                    >
+                        Terima
+                    </button>
+                    <button
+                        @click="handleReject"
+                        class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg"
+                    >
+                        Tolak
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Connected (Video area) -->
+            <div v-else-if="status === 'connected'" class="flex-1 relative bg-black">
                 <!-- Remote Video (full screen) -->
                 <video
                     ref="remoteVideo"
@@ -143,8 +184,19 @@ watch(
                 />
             </div>
 
-            <!-- Controls -->
-             <div class="p-4 flex justify-center gap-4 border-t border-gray-700 relative z-50">
+            <!-- Status Ended -->
+            <div
+                v-else-if="status === 'ended'"
+                class="flex-1 flex intems-center justify-center"
+            >
+                <p>☎️ Panggilan Berakhir</p>
+            </div>
+
+            <!-- Controls (hanya muncul waktu connected) -->
+             <div
+                v-if="status === 'connected'"
+                class="p-4 flex justify-center gap-4 border-t border-gray-700 relative z-50"
+             >
                 <!-- Mic -->
                 <button
                     @click="toggleMute"

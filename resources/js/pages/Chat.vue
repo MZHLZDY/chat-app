@@ -9,6 +9,8 @@ import { formatDistanceToNowStrict } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
+import OutgoingCallModal from './OutgoingCallModal.vue';
+import type { CallStatus } from '@/types/CallStatus';
 
 axios.defaults.withCredentials = true;
 
@@ -34,7 +36,7 @@ const searchQuery = ref('');
 const showVideoCall = ref(false);
 const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
-const callStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
+const callStatus = ref<CallStatus>('idle');
 const incomingCall = ref<{ from: any, to: { id: number, name: string } } | null>(null);
 const isMinimized = ref(false);
 
@@ -43,7 +45,7 @@ let callTimer : any = null;
 const startVideoCall = (userId: number) => {
   callPartnerId.value = userId;
   showVideoCall.value = true;
-  callStatus.value = 'ringing';
+  callStatus.value = 'calling';
 
   // set timeout 60dtk, klo ga diangkat dianggap "missed"
   callTimer = setTimeout(() => {

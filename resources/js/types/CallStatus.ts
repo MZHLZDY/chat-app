@@ -1,4 +1,4 @@
-type CallStatus =
+export type CallStatus =
   | "idle"
   | "ringing"
   | "calling"
