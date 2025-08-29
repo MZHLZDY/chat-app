@@ -4,7 +4,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import { Video } from 'lucide-vue-next';
+import { Video, UserPlus} from 'lucide-vue-next';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
@@ -484,8 +484,8 @@ onMounted(() => {
                 <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
-                            class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">
-                        + Group
+                            class="flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded-full text-sm hover:bg-blue-600 transition-colors">
+                        <UserPlus class="w-5 h-5"/>
                     </button>
                 </div>
                 <div class="p-2">
@@ -512,9 +512,9 @@ onMounted(() => {
                     </li>
                 </ul>
             </div>
-            <!-- section room chat -->
+            <!-- navbar contact -->
             <div class="flex flex-col flex-1" v-if="activeContact">
-                <div class="p-4 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
+                <div class="p-3.5 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
                     <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
@@ -597,7 +597,7 @@ onMounted(() => {
                       End Call
                   </button>
                 </div> -->
-                <!-- input teks -->
+                <!-- section room chat -->
                 <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
                     <div v-for="m in messages" :key="m.id"
                          :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
@@ -612,18 +612,22 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <div class="p-4 border-t flex gap-2">
-                    <input
-                        type="text"
-                        v-model="newMessage"
-                        :placeholder="`Ketik pesan ke ${activeContact.name}...`"
-                        @keyup.enter="sendMessage"
-                        class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400" />
-                    <button
-                        @click="sendMessage"
-                        class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">
-                        Kirim
-                    </button>
+                <!-- input teks -->
+                <div class="p-2 md:p-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                    <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
+                        <input
+                            type="text"
+                            v-model="newMessage"
+                            :placeholder="`Ketik pesan ke ${activeContact.name}...`"
+                            @keyup.enter="sendMessage"
+                            class="flex-1 w-full bg-transparent focus:outline-none focus:ring-0 px-3 text-gray-900 dark:text-gray-200"
+                        />
+                        <button
+                            @click="sendMessage"
+                            class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
 
