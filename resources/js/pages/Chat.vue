@@ -60,6 +60,13 @@ const startVideoCall = (userId: number) => {
   // TODO: Init Agora/Video Call Service
 };
 
+const endOutgoingCall = () => {
+  clearTimeout(callTimer);
+  showVideoCall.value = false;
+  callPartnerId.value = null;
+  callStatus.value = "idle"
+}
+
 // Trigger klo ada panggilan masuk
 const receiveIncomingCall = (fromUser: any) => {
   incomingCall.value = {
@@ -612,6 +619,13 @@ onMounted(() => {
                         :fromName="incomingCall.from.name"
                         @accept="acceptIncomingCall"
                         @reject="rejectIncomingCall"
+                    />
+                    
+                    <!-- Outgoing Call Modal -->
+                    <OutgoingCallModal
+                      :show="callStatus === 'calling'"
+                      :calleeName="activeContact?.name"
+                      @cancel="endOutgoingCall"
                     />
                 </div>
 
