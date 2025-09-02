@@ -16,7 +16,19 @@ class ChatController extends Controller
 
     public function contacts()
     {
-        $contacts = User::where('id', '!=', Auth::id())->get(['id', 'name', 'last_seen', 'phone_number']);
+        $contacts = User::where('id', '!=', auth()->id())
+                    ->get(['id', 'name', 'last_seen', 'phone_number']);
+        
+        $contacts->each(function ($contact) {
+            $contact->latest_message = ChatMessage::where(function ($query) use ($contact) {
+                $query->where('sender_id', auth()->id())
+                    ->where('receiver_id', $contact->id);
+            })->orWhere(function ($query) use ($contact) {
+                $query->where('sender_id', $contact->id)
+                    ->where('receiver_id', auth()->id());
+            })->latest()->first();
+        });
+
         return response()->json($contacts);
     }
 

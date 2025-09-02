@@ -14,8 +14,9 @@ class GroupController extends Controller
     public function index()
     {
         $groups = Group::with('members:id,name')
-            ->whereHas('members', fn($q)=>$q->where('users.id', auth()->id()))
-            ->get(['id','name','owner_id']);
+            ->withCount('members')
+            ->whereHas('members', fn($q) => $q->where('users.id', auth()->id()))
+            ->get();
 
         return response()->json($groups);
     }

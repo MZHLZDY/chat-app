@@ -11,7 +11,7 @@ import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
 import type { CallStatus } from '@/types/CallStatus';
-import type { Contact } from '@/types/Contact';
+import type { Contact, Group, User, Chat } from '@/types/index';
 
 axios.defaults.withCredentials = true;
 
@@ -23,10 +23,10 @@ const currentUserName = computed(() => page.props.auth.user.name);
 // --- State Management ---
 // const contacts = ref<{ id: number, name: string, last_seen: string | null, phone_number: string | null}[]>([]);
 const contacts = ref<Contact[]>([]);
-const groups = ref<{ id: number, name: string, members_count: number, owner_id: number }[]>([]);
-const allUsers = ref<{ id: number, name: string }[]>([]);
+const groups = ref<Group[]>([]);
+const allUsers = ref<User[]>([]);
 // const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
-const activeContact = ref<Contact | null>(null);
+const activeContact = ref<Chat | null>(null);
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
@@ -136,7 +136,7 @@ const newGroupName = ref('');
 const selectedUsers = ref<number[]>([]);
 
 // --- Computed Properties ---
-const allChats = computed(() => [
+const allChats = computed((): Chat[] => [
   ...contacts.value.map(c => ({ ...c, type: 'user' as const })),
   ...groups.value.map(g => ({ ...g, type: 'group' as const }))
 ]);
@@ -189,6 +189,16 @@ const addMessage = (message: any) => {
   }
 };
 
+const updateLatestMessage = (contactId: number, message: { text: string, sender_id: number }) => {
+    const contactIndex = contacts.value.findIndex(c => c.id === contactId);
+    if (contactIndex !== -1) {
+        contacts.value[contactIndex].latest_message = {
+            message: message.text,
+            sender_id: message.sender_id
+        };
+    }
+};
+
 // --- Load Functions ---
 const loadContacts = async () => {
   try {
@@ -199,9 +209,7 @@ const loadContacts = async () => {
 const loadGroups = async () => {
   try {
     const response = await axios.get('/groups');
-    groups.value = response.data.map((g: any) => ({
-      id: g.id, name: g.name, members_count: g.members?.length || 0, owner_id: g.owner_id
-    }));
+    groups.value = response.data;
   } catch (e) { console.error("Gagal memuat grup:", e); }
 };
 
@@ -251,6 +259,7 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 text: messageData.message,
                 time: formatTime(messageData.created_at)
             });
+          updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
         } else {
         // Lek chat e GAK aktif, berarti p  esene durung diwoco
         let unreadChatId: string;
@@ -300,7 +309,7 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
 };
 
 // --- Chat Functions ---
-const selectContact = (contact: { id: number, name: string, type: 'user' | 'group' }) => {
+const selectContact = (contact: Chat) => {
     if (activeContact.value && newMessage.value.trim()) {
         drafts.value[`${activeContact.value.type}-${activeContact.value.id}`] = newMessage.value;
     }
@@ -338,6 +347,9 @@ const sendMessage = async () => {
     };
     
     addMessage(optimisticMessage);
+    if (activeChat.type === 'user') {
+    updateLatestMessage(activeChat.id, { text: messageText, sender_id: currentUserId.value });
+  }
     newMessage.value = '';
     delete drafts.value[`${activeChat.type}-${activeChat.id}`];
 
@@ -396,10 +408,11 @@ const createGroup = async () => {
       id: newGroup.id,
       name: newGroup.name,
       members_count: newGroup.members?.length || selectedUsers.value.length + 1,
-      owner_id: newGroup.owner_id
+      owner_id: newGroup.owner_id,
+      members: newGroup.members,
     });
     closeCreateGroupModal();
-    selectContact({ id: newGroup.id, name: newGroup.name, type: 'group' });
+    selectContact({ id: newGroup.id, name: newGroup.name, members_count: newGroup.members_count, owner_id: newGroup.owner_id, members: newGroup.member, type: 'group' });
   } catch (e) {
     console.error('Gagal membuat grup:', e);
     alert('Gagal membuat grup!');
@@ -410,10 +423,10 @@ const setupGlobalListeners = () => {
   echo.channel('users')
     .listen('.UserRegistered', (newUser: any) => {
       if (!allUsers.value.some(u => u.id === newUser.id)) {
-        allUsers.value.push({ id: newUser.id, name: newUser.name });
+        allUsers.value.push({ id: newUser.id, name: newUser.name, });
       }
       if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null, phone_number: null });
+        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null, phone_number: null, latest_message: null});
       }
     });
 
@@ -442,6 +455,7 @@ const setupGlobalListeners = () => {
                     ...unreadCounts.value,
                     [unreadChatId]: currentCount + 1
                 };
+              updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
             }
         })
         .listen('.GroupMessageSent', (eventData: any) => { // <-- TAMBAHNO IKI
@@ -501,13 +515,18 @@ onMounted(() => {
                 <ul>
                    <li v-for="chat in filteredChats" :key="`${chat.type}-${chat.id}`"
                         @click="selectContact(chat)"
-                        :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',
-                                 activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-300 dark:bg-gray-600' : '']">
+                        :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-dark:bg-gray-600' : '']">
                         <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
                             {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
                         </div>
                         <div class="flex-1">
                             <div class="font-semibold">{{ chat.name }}</div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                              <span v-if="chat.type === 'user' && (chat as Contact).latest_message">
+                                  <span v-if="(chat as Contact).latest_message?.sender_id === currentUserId">Anda: </span>
+                                  {{ (chat as Contact).latest_message?.message }}
+                              </span>
+                            </div>
                             <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
                                 <!-- {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : chat.phone_number }} -->
                                 <template v-if="chat.type === 'group'">
@@ -526,13 +545,16 @@ onMounted(() => {
                     <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                         {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                     </div>
-                    {{ activeContact.name }}
-                    <span v-if="activeContact.type === 'group'" class="text-sm text-gray-500">(Group Chat)</span>
+                    <div class="flex flex-col">
+                      <span class="leading-tight">{{ activeContact.name }}</span>
 
-                    <!-- No HP User -->
-                    <span v-if="activeContact.type === 'user'" class="text-xs text-gray-400">
-                      {{ activeContact.phone_number }}
-                    </span>
+                      <span v-if="activeContact.type === 'group'" class="text-xs text-gray-500">{{ activeContact.members?.map(member => member.name).join(', ') }}</span>
+
+                      <!-- No HP User -->
+                      <span v-if="activeContact.type === 'user'" class="text-xs text-gray-500">
+                        {{ activeContact.phone_number }}
+                      </span>
+                    </div>
 
                     <!-- last seen method -->
                       <span v-if="activeContact.type === 'user'" class="ml-2">
