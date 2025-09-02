@@ -6,7 +6,14 @@ import PlaceholderPattern from '../components/PlaceholderPattern.vue';
 import type { User } from '../types';
 import { usePage } from '@inertiajs/vue3'
 
-const page = usePage();
+interface PageProps {
+    auth: {
+        user: User;
+    };
+    [key: string]: any;
+}
+
+const page = usePage<PageProps>();
 const user = page.props.auth.user as User;
 const breadcrumbs: BreadcrumbItem[] = [
     {

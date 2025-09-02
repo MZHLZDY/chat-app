@@ -15,10 +15,24 @@ import type { Contact, Group, User, Chat } from '@/types/index';
 
 axios.defaults.withCredentials = true;
 
+// TypeScript Interfaces
+interface AuthUser {
+    id: number;
+    name: string;
+    email: string;
+}
+
+interface PageProps {
+    auth: {
+        user: AuthUser;
+    };
+    [key: string]: any;
+}
+
 const drafts = ref<{ [key: string]: string }>({});
-const page = usePage();
-const currentUserId = computed(() => page.props.auth.user.id);
-const currentUserName = computed(() => page.props.auth.user.name);
+const page = usePage<PageProps>();
+const currentUserId = computed<number>(() => page.props.auth.user.id);
+const currentUserName = computed<string>(() => page.props.auth.user.name);
 
 // --- State Management ---
 // const contacts = ref<{ id: number, name: string, last_seen: string | null, phone_number: string | null}[]>([]);
