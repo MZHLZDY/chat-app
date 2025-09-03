@@ -4,8 +4,9 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import { Video, UserPlus, ChartArea} from 'lucide-vue-next';
-import { formatDistanceToNowStrict, isSameDay, isToday, isYesterday, format } from 'date-fns';
+import { Video, Phone } from 'lucide-vue-next';
+import AgoraRTC from 'agora-rtc-sdk-ng';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
@@ -968,6 +969,375 @@ const createGroup = async () => {
   }
 };
 
+// --- Call Functions by Agora ---
+
+async function joinChannel(channelName?: string) {
+  try {
+    const channel = channelName || `call-${activeContact.value?.id}`;
+    
+    console.log('🔑 Requesting Agora token for channel:', channel);
+    
+    const response = await axios.post('/call/token', {
+      channel: channel,
+      uid: currentUserId.value.toString(),
+      role: 'publisher'
+    });
+    
+    console.log('✅ Token response:', response.data);
+
+    // ✅ PERBAIKI: Gunakan App ID dari config, bukan dari response
+    const { token, uid } = response.data;
+    const appId = "894123bbd10543248118651cef410d1b"; // App ID fix dari .env
+    
+    if (!token) {
+      throw new Error('Invalid token from server');
+    }
+
+    console.log('🔄 Joining Agora channel with AppID:', appId);
+    
+    // JOIN CHANNEL dengan App ID yang fix
+    await client.value.join(
+      appId, // ✅ Gunakan App ID fix
+      channel, 
+      token,
+      uid || currentUserId.value.toString()
+    );
+
+    console.log('✅ Successfully joined Agora channel');
+
+  } catch (error: any) {
+    console.error('❌ Join channel error:', error);
+    
+    // Tampilkan error yang lebih spesifik
+    if (error.message.includes('invalid vendor key')) {
+      alert('Error: App ID tidak valid. Silakan cek konfigurasi Agora.');
+    } else {
+      alert('Gagal terhubung ke panggilan: ' + error.message);
+    }
+    
+    throw error;
+  }
+}
+
+// State Voice Call
+const startVoiceCall = async () => {
+  if (!activeContact.value || activeContact.value.type !== 'user') {
+    console.log('No active contact or contact is not a user');
+    return;
+  }
+  
+  try {
+    console.log('🚀 Starting voice call to:', {
+      callee_id: activeContact.value.id,
+      callee_name: activeContact.value.name,
+      current_user_id: currentUserId.value
+    });
+    
+    // Hapus timer sebelumnya jika ada
+    if (callTimeoutRef.value) {
+      clearTimeout(callTimeoutRef.value);
+      callTimeoutRef.value = null;
+    }
+    
+    // Stop countdown sebelumnya jika ada
+    stopCallTimeout();
+
+    const response = await axios.post('/call/invite', {
+      callee_id: activeContact.value.id,
+      call_type: 'voice'
+    });
+
+    console.log('📞 Call invite response:', response.data);
+
+    if (!response.data.call_id || !response.data.channel) {
+      throw new Error('Invalid response from server - missing call_id or channel');
+    }
+
+    outgoingCall.value = {
+      callId: response.data.call_id,
+      callee: activeContact.value,
+      callType: 'voice',
+      channel: response.data.channel,
+      status: 'calling'
+    };
+
+    // Simpan waktu mulai panggilan
+    callStartTime.value = Date.now();
+    
+    // Start countdown timer
+    startCallTimeout(30); // 30 detik
+    
+    // Set timeout untuk call expiration (fallback)
+    callTimeoutRef.value = setTimeout(() => {
+      if (outgoingCall.value?.status === 'calling') {
+        handleCallTimeout();
+      }
+    }, 30000); // 30 detik
+
+    console.log('⏰ Call timeout timer started (30 seconds)');
+
+  } catch (error: any) {
+    console.error('❌ Failed to start call:', error);
+    
+    // Hapus timer jika ada error
+    if (callTimeoutRef.value) {
+      clearTimeout(callTimeoutRef.value);
+      callTimeoutRef.value = null;
+    }
+    
+    // Stop countdown jika ada error
+    stopCallTimeout();
+    
+    let errorMessage = 'Gagal memulai panggilan';
+    if (axios.isAxiosError(error)) {
+      errorMessage = error.response?.data?.message || error.message;
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    }
+    
+    alert(errorMessage);
+  }
+};
+
+// Menjawab panggilan
+const answerCall = async (accepted: boolean, reason?: string) => {
+  if (!incomingCall.value) {
+    console.error('❌ Tidak ada incoming call untuk dijawab');
+    return;
+  }
+
+  // SIMPAN reference ke incomingCall sebelum reset
+  const currentIncomingCall = { ...incomingCall.value };
+  
+  try {
+    console.log('📞 Answering call:', {
+      accepted,
+      callId: currentIncomingCall.callId,
+      caller: currentIncomingCall.caller
+    });
+
+    // Hapus timer timeout jika panggilan dijawab
+    if (callTimeoutRef.value) {
+      clearTimeout(callTimeoutRef.value);
+      callTimeoutRef.value = null;
+    }
+    
+    // Stop countdown timer jika caller
+    if (outgoingCall.value) {
+      stopCallTimeout();
+    }
+
+    const response = await axios.post('/call/answer', {
+      call_id: currentIncomingCall.callId,
+      caller_id: currentIncomingCall.caller.id,
+      accepted: accepted,
+      reason: reason || (accepted ? undefined : 'Panggilan ditolak')
+    });
+
+    console.log('✅ Call answer response:', response.data);
+
+    if (accepted) {
+      isInCall.value = true;
+      callType.value = currentIncomingCall.callType;
+      
+      console.log('🔄 Joining channel setelah menerima panggilan...');
+      
+      try {
+        // TUNGGU SEBENTAR SEBELUM JOIN CHANNEL
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        await joinChannel(currentIncomingCall.channel);
+        
+        console.log('✅ Successfully joined channel after accepting call');
+        
+        if (currentIncomingCall.callType === 'video') {
+          showVideoCall.value = true;
+          callStatus.value = 'connected';
+        }
+        
+      } catch (joinError: any) {
+        console.error('❌ Gagal join channel setelah menerima panggilan:', joinError);
+        
+        // Kirim ulang answer dengan status rejected karena gagal join
+        try {
+          await axios.post('/call/answer', {
+            call_id: currentIncomingCall.callId,
+            caller_id: currentIncomingCall.caller.id,
+            accepted: false,
+            reason: 'Gagal terhubung ke channel: ' + joinError.message
+          });
+        } catch (e) {
+          console.error('❌ Gagal mengirim reject follow-up:', e);
+        }
+        
+        // Reset state dan beri feedback ke user
+        resetCallState();
+        alert('Gagal terhubung ke panggilan: App ID atau Token tidak valid. Silakan cek konfigurasi Agora.');
+        return;
+      }
+      
+    } else {
+      // Jika ditolak, reset state dengan delay
+      setTimeout(() => {
+        incomingCall.value = null;
+        isInCall.value = false;
+      }, 1000);
+    }
+
+  } catch (error: any) {
+    console.error('❌ Failed to answer call:', error);
+    
+    let errorMessage = 'Gagal menjawab panggilan';
+    if (error.response?.status === 500) {
+      errorMessage = 'Error server. Silakan coba lagi nanti.';
+    } else if (error.message.includes('network')) {
+      errorMessage = 'Koneksi jaringan bermasalah.';
+    }
+    
+    alert(errorMessage);
+    
+    // Reset state
+    incomingCall.value = null;
+    isInCall.value = false;
+  }
+};
+
+// Mengakhiri panggilan
+const endCallWithReason = async (reason?: string) => {
+  try {
+    let callId = '';
+    let participantIds = [currentUserId.value];
+
+    if (outgoingCall.value) {
+      // Jika caller yang mengakhiri
+      callId = outgoingCall.value.callId;
+      participantIds.push(outgoingCall.value.callee.id);
+    } else if (incomingCall.value) {
+      // Jika callee mencoba mengakhiri (seharusnya tidak bisa)
+      console.log('❌ Penerima tidak dapat mengakhiri panggilan');
+      return;
+    } else {
+      return;
+    }
+
+    await axios.post('/call/end', {
+      call_id: callId,
+      participant_ids: participantIds,
+      reason: reason || 'Panggilan diakhiri'
+    });
+
+  } catch (error) {
+    console.error('Error ending call:', error);
+  } finally {
+    if (outgoingCall.value) {
+      // Hanya reset state jika caller yang mengakhiri
+      resetCallState();
+    }
+  }
+};
+
+// Reset call
+const resetCallState = () => {
+  // Hapus timer jika ada
+  if (callTimeoutRef.value) {
+    clearTimeout(callTimeoutRef.value);
+    callTimeoutRef.value = null;
+  }
+  
+  // Stop countdown timer
+  stopCallTimeout();
+  
+  callStartTime.value = null;
+  outgoingCall.value = null;
+  incomingCall.value = null;
+  isInCall.value = false;
+  callType.value = null;
+  callStatus.value = 'idle';
+  showVideoCall.value = false;
+  callTimeoutCountdown.value = null;
+  
+  if (localAudioTrack.value) {
+    localAudioTrack.value.stop();
+    localAudioTrack.value.close();
+    localAudioTrack.value = null;
+  }
+  if (localVideoTrack.value) {
+    localVideoTrack.value.stop();
+    localVideoTrack.value.close();
+    localVideoTrack.value = null;
+  }
+  if (client.value) {
+    client.value.leave();
+  }
+  
+  remoteAudioTrack.value = null;
+  remoteVideoTrack.value = null;
+};
+
+// --- Timeout panggilan ---
+const callTimeoutCountdown = ref<number | null>(null);
+let countdownInterval: NodeJS.Timeout | null = null;
+
+// Function untuk start countdown
+const startCallTimeout = (duration: number = 30) => {
+  // Reset previous countdown jika ada
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+  
+  callTimeoutCountdown.value = duration;
+  
+  countdownInterval = setInterval(() => {
+    if (callTimeoutCountdown.value !== null && callTimeoutCountdown.value > 0) {
+      callTimeoutCountdown.value--;
+      console.log('⏰ Countdown:', callTimeoutCountdown.value);
+    } else {
+      // Countdown finished
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+      handleCallTimeout();
+    }
+  }, 1000);
+};
+
+// Function untuk handle ketika timeout
+const handleCallTimeout = () => {
+  if (outgoingCall.value?.status === 'calling') {
+    console.log('⏰ Call timeout - no response from callee after 30 seconds');
+    
+    // Update status panggilan
+    outgoingCall.value.status = 'ended';
+    outgoingCall.value.reason = 'Diabaikan';
+    callTimeoutCountdown.value = null;
+    
+    // Kirim request ke server untuk menandai panggilan missed
+    axios.post('/call/missed', {
+      call_id: outgoingCall.value.callId,
+      reason: 'timeout'
+    }).catch(error => {
+      console.error('Failed to send missed call notification:', error);
+    });
+    
+    // Reset setelah 3 detik
+    setTimeout(() => {
+      outgoingCall.value = null;
+      callStartTime.value = null;
+    }, 3000);
+  }
+};
+
+// Function untuk stop countdown
+const stopCallTimeout = () => {
+  if (countdownInterval) {
+    clearInterval(countdownInterval);
+    countdownInterval = null;
+  }
+  callTimeoutCountdown.value = null;
+};
+
 const setupGlobalListeners = () => {
   echo.channel('users')
     .listen('.UserRegistered', (event: { user: any }) => {
@@ -1622,29 +1992,29 @@ const currentCallContactName = computed(() => {
             </div>
         </div>
 
-        <!-- Incoming Call Modal -->
+        <!-- Incoming Call Modal (untuk penerima telepon) -->
         <div v-if="incomingCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div class="bg-white rounded-lg p-6 w-96 text-center">
             <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
               {{ incomingCall.caller?.name?.charAt(0).toUpperCase() || '?' }}
             </div>
             <h3 class="text-xl font-bold mb-2">Panggilan {{ incomingCall.callType === 'video' ? 'Video' : 'Suara' }}</h3>
-            <p class="text-gray-600 mb-4">{{ incomingCall.caller?.name || 'Unknown' }} sedang menelpon...</p>
-            
+            <p class="text-gray-600 mb-4">{{ incomingCall.caller?.name || 'Unknown' }} sedang menelpon Anda </p>
+
             <div class="flex justify-center gap-4">
               <button @click="answerCall(false, 'Ditolak')" 
                       class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-                Tolak
+                <PhoneOff class="w-7 h-7"/>
               </button>
               <button @click="answerCall(true)" 
                       class="bg-green-500 text-white px-6 py-2 rounded-full hover:bg-green-600">
-                Terima
+                <PhoneCall class="w-7 h-7"/> 
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Outgoing Call Modal -->
+        <!-- Outgoing Call Modal (untuk pengirim telepon) -->
         <div v-if="outgoingCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div class="bg-white rounded-lg p-6 w-96 text-center">
             <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
@@ -1660,12 +2030,12 @@ const currentCallContactName = computed(() => {
 
                 <!-- Tambahkan countdown timer -->
               <div v-if="outgoingCall.status === 'calling' && callTimeoutCountdown !== null" 
-               class="text-red-500 font-italic mb-2">
-                Akan berakhir dalam {{ callTimeoutCountdown }} detik
+               class="text-red-500 font-semibold mb-2 animate-pulse">
+               Berakhir dalam {{ callTimeoutCountdown }} detik
               </div>
     
               <div v-if="outgoingCall.status === 'calling'" class="animate-pulse text-blue-500 mb-4">
-                 🎵 Berdering...
+                  Berdering...
               </div>
             
             <div v-if="outgoingCall.status === 'rejected' && outgoingCall.reason" class="text-red-500 mb-4">
@@ -1673,7 +2043,7 @@ const currentCallContactName = computed(() => {
             </div>
             
             <div v-if="outgoingCall.status === 'ended' && outgoingCall.reason" class="text-gray-500 mb-4">
-              📞 {{ outgoingCall.reason }}
+               {{ outgoingCall.reason }}
             </div>
             
             <button v-if="outgoingCall.status === 'calling'" 
@@ -1690,22 +2060,6 @@ const currentCallContactName = computed(() => {
           </div>
         </div>
 
-        <!-- Active Call UI -->
-        <div v-if="isInCall && !showVideoCall" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div class="bg-white rounded-lg p-6 w-96 text-center">
-            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-              {{ outgoingCall?.callee?.name?.charAt(0).toUpperCase() || incomingCall?.caller?.name?.charAt(0).toUpperCase() || '?' }}
-            </div>
-            <h3 class="text-xl font-bold mb-2">Sedang Berbicara</h3>
-            <p class="text-gray-600 mb-4">
-              Dengan {{ outgoingCall?.callee?.name || incomingCall?.caller?.name || 'Unknown' }}
-            </p>
-            
-            <button @click="endCallWithReason('Diakhiri')" 
-                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-              Akhiri Panggilan
-            </button>
-          </div>
-        </div>
     </AppLayout>
 </template>
+
