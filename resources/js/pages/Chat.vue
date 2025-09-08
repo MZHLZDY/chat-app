@@ -549,7 +549,7 @@ onMounted(() => {
                            </div>
                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
                                <template v-if="chat.type === 'group'">
-                                   {{ (chat as any).members_count || 0 }} anggota
+                                   {{ chat.members_count }} anggota
                                </template>
                            </div>
                        </div>
