@@ -539,9 +539,9 @@ onMounted(() => {
                        <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
                            {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
                        </div>
-                       <div class="flex-1">
+                       <div class="flex-1 min-w-0 overflow-hidden">
                            <div class="font-semibold">{{ chat.name }}</div>
-                           <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                           <div class="text-sm text-gray-500 dark:text-gray-400 truncate break">
                              <span v-if="chat.type === 'user' && (chat as Contact).latest_message">
                                  <span v-if="(chat as Contact).latest_message?.sender_id === currentUserId">Anda: </span>
                                  {{ (chat as Contact).latest_message?.message }}
@@ -640,7 +640,7 @@ onMounted(() => {
                     <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
                         <div v-for="m in messages" :key="m.id"
                              :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                            <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs'">
+                            <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'">
                                 <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
                                      class="text-xs font-semibold mb-1 opacity-75">
                                     {{ m.sender_name }}
