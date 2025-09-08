@@ -17,8 +17,9 @@ const page = usePage<PageProps>();
 const user = page.props.auth.user as User;
 const breadcrumbs: BreadcrumbItem[] = [
     {
-        title: 'Dashboard',
+        text: 'Dashboard',
         href: '/dashboard',
+        active: true
     },
 ];
 </script>

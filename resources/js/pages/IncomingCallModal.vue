@@ -41,12 +41,12 @@ const reject = () => emit('reject');
 
 <template>
     <div
-    v-if="show"
+    v-if="props.show"
     class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50"
     >
         <div class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg text-center space-y-4">
             <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">🤙 Panggilan Masuk</h2>
-            <p class="text-gray-600 dark:text-gray-300">Dari: {{ callerName || "Unknown" }}</p>
+            <p class="text-gray-600 dark:text-gray-300">Dari: {{ props.callerName || "Unknown" }}</p>
             <p class="text-sm text-gray-500 dark:text-gray-400">Otomatis ditutup dalam {{ countdown }} detik...</p>
             <div class="flex justify-center gap-4">
                 <button

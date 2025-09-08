@@ -18,5 +18,12 @@ export type Contact = User & {
     latest_message: { message: string, sender_id: number } | null;
 };
 
+export interface BreadcrumbItem {
+    text: string;
+    title?: string;
+    href?: string;
+    active?: boolean;
+}
+
 // Iki "KTP" gabungan sing isok nampa Contact utowo Group
 export type Chat = (Contact & { type: 'user' }) | (Group & { type: 'group' });

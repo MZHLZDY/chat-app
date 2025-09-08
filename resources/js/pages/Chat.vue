@@ -10,7 +10,7 @@ import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
-import type { CallStatus } from '@/types/CallStatus';
+import type { CallStatus } from '@/types/CallStatus.js';
 import type { Contact, Group, User, Chat } from '@/types/index';
 
 axios.defaults.withCredentials = true;
@@ -518,10 +518,10 @@ onMounted(() => {
 <template>
     <Head title="Chat" />
     <AppLayout>
-        <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
-
-            <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 overflow-y-auto absolute md:static inset-0 transition-transform duration-300 ease-in-out"
-                 :class="{ '-translate-x-full md:translate-x-0': activeContact }"> <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
+      <!-- section sidebar atas -->
+        <div class="flex h-[89vh] gap-4 rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+            <div class="w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 overflow-y-auto">
+                <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
                             class="flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded-full text-sm hover:bg-blue-600 transition-colors">
@@ -530,151 +530,189 @@ onMounted(() => {
                 </div>
                 <div class="p-2">
                   <input type="text" v-model="searchQuery" placeholder="Cari kontak atau grup..."
-                         class="w-full px-3 py-2 text-sm border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-lg focus:ring-blue-500 dark:focus:ring-blue-400">
+                        class="w-full px-3 py-2 text-sm border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-lg focus:ring-blue-500 dark:focus:ring-blue-400">
                 </div>
+                <!-- sidebar contact dan grup -->
                 <ul>
                    <li v-for="chat in filteredChats" :key="`${chat.type}-${chat.id}`"
-                       @click="selectContact(chat)"
-                       :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-dark:bg-gray-600' : '']">
-                       <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
-                           {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
-                       </div>
-                       <div class="flex-1 min-w-0 overflow-hidden">
-                           <div class="font-semibold">{{ chat.name }}</div>
-                           <div class="text-sm text-gray-500 dark:text-gray-400 truncate break">
-                             <span v-if="chat.type === 'user' && (chat as Contact).latest_message">
-                                 <span v-if="(chat as Contact).latest_message?.sender_id === currentUserId">Anda: </span>
-                                 {{ (chat as Contact).latest_message?.message }}
-                             </span>
-                           </div>
-                           <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
-                               <template v-if="chat.type === 'group'">
-                                   {{ chat.members_count }} anggota
-                               </template>
-                           </div>
-                       </div>
-                       <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
-                       <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
-                   </li>
+                        @click="selectContact(chat)"
+                        :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-dark:bg-gray-600' : '']">
+                        <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
+                            {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
+                        </div>
+                        <div class="flex-1">
+                            <div class="font-semibold">{{ chat.name }}</div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                              <span v-if="chat.type === 'user' && (chat as Contact).latest_message">
+                                  <span v-if="(chat as Contact).latest_message?.sender_id === currentUserId">Anda: </span>
+                                  {{ (chat as Contact).latest_message?.message }}
+                              </span>
+                            </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                <!-- {{ chat.type === 'group' ? `${(chat as any).members_count || 0} anggota` : chat.phone_number }} -->
+                                <template v-if="chat.type === 'group'">
+                                    {{ (chat as any).members_count || 0 }} anggota
+                                </template>
+                            </div>
+                        </div>
+                        <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
+                        <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    </li>
                 </ul>
             </div>
+            <!-- navbar contact -->
+            <div class="flex flex-col flex-1" v-if="activeContact">
+                <div class="p-4.5 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
+                    <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
+                        {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
+                    </div>
+                    <div class="flex flex-col">
+                      <span class="leading-tight">{{ activeContact.name }}</span>
 
-            <div class="w-full md:w-3/4 flex flex-col flex-1 absolute md:static inset-0 transition-transform duration-300 ease-in-out"
-                 :class="{ 'translate-x-0': activeContact, 'translate-x-full md:translate-x-0': !activeContact }">
+                      <span v-if="activeContact.type === 'group'" class="text-xs text-gray-500">{{ activeContact.members?.map(member => member.name).join(', ') }}</span>
 
-                <div v-if="activeContact" class="flex flex-col h-full">
-                    <div class="p-4 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
-                        <button @click="activeContact = null" class="md:hidden p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                        </button>
+                      <!-- No HP User -->
+                      <span v-if="activeContact.type === 'user'" class="text-xs text-gray-500">
+                        {{ activeContact.phone_number }}
+                      </span>
+                    </div>
 
-                        <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
-                           {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
-                        </div>
-                        <div class="flex flex-col">
-                          <span class="leading-tight">{{ activeContact.name }}</span>
-                          <span v-if="activeContact.type === 'group'" class="text-xs text-gray-500">{{ activeContact.members?.map(member => member.name).join(', ') }}</span>
-                          <span v-if="activeContact.type === 'user'" class="text-xs text-gray-500">
-                            {{ activeContact.phone_number }}
-                          </span>
-                        </div>
-
-                        <span v-if="activeContact.type === 'user'" class="ml-2">
-                            <span v-if="onlineUsers.includes(activeContact.id)"
-                                  class="text-green-500 text-xs font-normal flex items-center gap-1">
-                            <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
-                                Online
-                            </span>
-                          <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
-                                class="text-gray-400 text-xs font-normal">
-                                {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
-                          </span>
-                          <span v-else class="text-gray-400 text-xs font-normal">
-                            Offline
-                          </span>
+                    <!-- last seen method -->
+                      <span v-if="activeContact.type === 'user'" class="ml-2">
+                        <span v-if="onlineUsers.includes(activeContact.id)" 
+                          class="text-green-500 text-xs font-normal flex items-center gap-1">
+                        <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                            Online
                         </span>
-                        <button
-                          v-if="activeContact.type === 'user'"
-                          @click="startVideoCall(activeContact.id)"
-                          class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
-                                 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
-                        </button>
-                        <button
-                          v-if="activeContact.type === 'group'"
-                          @click="startGroupCall(activeContact.id, activeContact.name)"
-                          class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
-                                 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
-                        </button>
-                        <VideoCallModal
-                            :show="showVideoCall"
-                            :contactName="activeContact.name"
-                            :status="callStatus"
-                            @end="endVideoCall"
-                        />
-                        <VideoCallModal
-                            :show="showGroupCall"
-                            :isGroup="true"
-                            :groupName="activeGroupCall?.name"
-                            :participants="activeGroupCall?.participants"
-                            :status="callStatus"
-                            @end="leaveGroupCall"
-                        />
-                        <IncomingCallModal
-                            :show="!!incomingCall"
-                            v-if="incomingCall"
-                            :fromName="incomingCall.from.name"
-                            @accept="acceptIncomingCall"
-                            @reject="rejectIncomingCall"
-                        />
-                        <OutgoingCallModal
-                          :show="callStatus === 'calling'"
-                          :calleeName="activeContact?.name"
-                          @cancel="endOutgoingCall"
-                        />
-                    </div>
+                      <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
+                          class="text-gray-400 text-xs font-normal">
+                          {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                      </span>
+                      <span v-else class="text-gray-400 text-xs font-normal">
+                        Offline
+                      </span>
+                    </span>
+                    <!-- Tambahkan button video call -->
+                    <button
+                      v-if="activeContact.type === 'user'"
+                      @click="startVideoCall(activeContact.id)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
+                            hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
+                    </button>
 
-                    <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
-                        <div v-for="m in messages" :key="m.id"
-                             :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                            <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'">
-                                <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
-                                     class="text-xs font-semibold mb-1 opacity-75">
-                                    {{ m.sender_name }}
-                                </div>
-                                {{ m.text }}
+                    <button
+                      v-if="activeContact.type === 'group'"
+                      @click="startGroupCall(activeContact.id, activeContact.name)"
+                      class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
+                            hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
+                    </button>
+
+                    <!-- Video Call Modal (selain calling, untuk 1v1) -->
+                    <VideoCallModal
+                      v-if="showVideoCall && callStatus !== 'calling'"
+                      :show="showVideoCall"
+                      :contactName="activeContact?.name"
+                      :status="callStatus"
+                      @end="endVideoCall"
+                    />
+
+                    <!-- Outgoing Group Call Modal -->
+                    <OutgoingCallModal
+                      v-if="callStatus === 'calling'"
+                      :show="true"
+                      :calleeName="activeGroupCall?.name"
+                      @cancel="leaveGroupCall"
+                    />
+
+                    <!-- Group Call Modal -->
+                    <VideoCallModal
+                      v-else
+                      :show="showGroupCall"
+                      :isGroup="true"
+                      :groupName="activeGroupCall?.name"
+                      :participants="activeGroupCall?.participants"
+                      :status="groupCallStatus"
+                      @end="leaveGroupCall"
+                    />
+
+                    <IncomingCallModal
+                      :show="true"
+                      v-if="incomingCall"
+                      :fromName="incomingCall.from.name"
+                      @accept="acceptIncomingCall"
+                      @reject="rejectIncomingCall"
+                    />
+                    
+                    <!-- Outgoing Call Modal (khusus status calling) -->
+                    <OutgoingCallModal
+                      v-if="callStatus === 'calling'"
+                      :show="true"
+                      :calleeName="activeContact?.name"
+                      @cancel="endOutgoingCall"
+                    />
+                </div>
+
+                <!-- Video Call UI -->
+                <!-- <div v-if="showVideoCall" class="absolute inset-0 bg-black bg-opacity-90 flex flex-col items-center justify-center z-50">
+                  <div class="text-white text-lg mb-4">
+                    Video Call With {{ activeContact?.name }}
+                  </div> -->
+
+                  <!-- <div class="w-[600px] h-[400px] bg-gray-800 rounded-xl flex items-center justify-center"> -->
+                    <!-- nanti di sini stream agora -->
+                     <!-- <span class="text-gray-400">[ Video Stream Area ]</span>
+                  </div> -->
+
+                  <!-- <button
+                    @click="endVideoCall" 
+                    class="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600"
+                    >
+                      End Call
+                  </button>
+                </div> -->
+                <!-- section room chat -->
+                <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
+                    <div v-for="m in messages" :key="m.id"
+                         :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
+                        <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs'">
+                            <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
+                                 class="text-xs font-semibold mb-1 opacity-75">
+                                {{ m.sender_name }}
                             </div>
-                            <div class="text-xs text-gray-500 mt-1">{{ m.time }}</div>
+                            {{ m.text }}
                         </div>
-                    </div>
-
-                    <div class="p-2 md:p-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-                        <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
-                            <input
-                                type="text"
-                                v-model="newMessage"
-                                :placeholder="`Ketik pesan ke ${activeContact.name}...`"
-                                @keyup.enter="sendMessage"
-                                class="flex-1 w-full bg-transparent focus:outline-none focus:ring-0 px-3 text-gray-900 dark:text-gray-200"
-                            />
-                            <button
-                                @click="sendMessage"
-                                class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                            </button>
-                        </div>
+                        <div class="text-xs text-gray-500 mt-1">{{ m.time }}</div>
                     </div>
                 </div>
 
-                <div v-else class="hidden md:flex items-center justify-center flex-1 text-gray-500">
-                    Pilih kontak atau group untuk memulai chat
+                <!-- input teks -->
+                <div class="p-2 md:p-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                    <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
+                        <input
+                            type="text"
+                            v-model="newMessage"
+                            :placeholder="`Ketik pesan ke ${activeContact.name}...`"
+                            @keyup.enter="sendMessage"
+                            class="flex-1 w-full bg-transparent focus:outline-none focus:ring-0 px-3 text-gray-900 dark:text-gray-200"
+                        />
+                        <button
+                            @click="sendMessage"
+                            class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
 
+            <div v-else class="flex items-center justify-center flex-1 text-gray-500">
+                Pilih kontak atau group untuk memulai chat
+            </div>
+        </div>
+        <!-- create group method -->
         <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
                 <h3 class="text-lg font-bold mb-4 dark:text-gray-200">Buat Group Baru</h3>

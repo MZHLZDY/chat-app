@@ -18,7 +18,7 @@ const isCameraOn = ref(true);
 const props = defineProps<{
     show: boolean;
     contactName?: string;
-    status?: CallStatus; // tambahan
+    status?: Exclude <CallStatus, "calling">; // tambahan
     isGroup?: boolean;
     groupName?: string;
     participants?: { id: number; name: string }[];
@@ -125,7 +125,7 @@ watch(
             </div>
 
             <!-- Status Calling -->
-            <div
+            <!-- <div
                 v-if="status === 'calling'"
                 class="flex-1 flex intems-center justify-center"
             >
@@ -138,11 +138,11 @@ watch(
                 >
                     Batalkan
                 </button>
-            </div>
+            </div> -->
 
              <!-- Status Incoming -->
             <div
-                v-else-if="status === 'incoming'"
+                v-if="status === 'incoming'"
                 class="flex-1 flex flex-col items-center justify-center space-y-4"
             >
                 <p class="text-lg font-bold">
