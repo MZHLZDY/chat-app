@@ -2,9 +2,9 @@
 
 namespace App\Events;
 
-use App\Models\ChatMessage; // Pastikan jeneng model e bener
+use App\Models\ChatMessage;
 use Illuminate\Broadcasting\PresenceChannel;
-use Illuminate\Broadcasting\PrivateChannel; // <-- WAJIB DI-IMPORT
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -30,7 +30,7 @@ class MessageSent implements ShouldBroadcastNow
     /**
      * Siaran nang LORO channel.
      */
-    public function broadcastOn(): array // <-- WAJIB array
+    public function broadcastOn(): array
     {
         // Urutno ID ne ben podo karo frontend
         $userIds = [$this->message->sender_id, $this->message->receiver_id];

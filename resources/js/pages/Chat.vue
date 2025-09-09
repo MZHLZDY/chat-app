@@ -245,7 +245,7 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
     messages.value = response.data.map((m: any) => ({
-      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at)
+      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at
     }));
     scrollToBottom();
   } catch (e) { console.error("Gagal memuat pesan:", e); }
@@ -281,6 +281,10 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 time: formatTime(messageData.created_at)
             });
           updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
+          if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
+            // Langsung kirim sinyal "sudah dibaca" ke server
+            axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
+        }
         } else {
         // Lek chat e GAK aktif, berarti p  esene durung diwoco
         let unreadChatId: string;
@@ -349,6 +353,9 @@ const selectContact = (contact: Chat) => {
     newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
     loadMessages(contact.id, contact.type);
     bindChannel(contact.id, contact.type);
+    if (contact.type === 'user') {
+        axios.post('/chat/messages/read', { sender_id: contact.id });
+    }
 };
 
 const sendMessage = async () => {
@@ -494,7 +501,18 @@ const setupGlobalListeners = () => {
                     [unreadChatId]: currentCount + 1
                 };
             }
-        });
+        })
+        .listen('.MessageRead', (eventData: any) => {
+        // Cek jika chat yang relevan sedang aktif
+        if (activeContact.value && activeContact.value.id === eventData.readerId) {
+            // Update status pesan di state `messages`
+            messages.value.forEach(msg => {
+                if (msg.sender_id === currentUserId.value && !msg.read_at) {
+                    msg.read_at = new Date().toISOString();
+                }
+            });
+        }
+    });
 };
 
 // --- Initialize ---
@@ -571,28 +589,31 @@ onMounted(() => {
                         <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                            {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                         </div>
-                        <div class="flex flex-col">
-                          <span class="leading-tight">{{ activeContact.name }}</span>
-                          <span v-if="activeContact.type === 'group'" class="text-xs text-gray-500">{{ activeContact.members?.map(member => member.name).join(', ') }}</span>
-                          <span v-if="activeContact.type === 'user'" class="text-xs text-gray-500">
-                            {{ activeContact.phone_number }}
-                          </span>
-                        </div>
-
-                        <span v-if="activeContact.type === 'user'" class="ml-2">
-                            <span v-if="onlineUsers.includes(activeContact.id)"
-                                  class="text-green-500 text-xs font-normal flex items-center gap-1">
-                            <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
-                                Online
-                            </span>
-                          <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen"
-                                class="text-gray-400 text-xs font-normal">
-                                {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
-                          </span>
-                          <span v-else class="text-gray-400 text-xs font-normal">
-                            Offline
-                          </span>
-                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="font-semibold truncate text-gray-800 dark:text-gray-200">
+                              {{ activeContact.name }}
+                          </div>
+                          <div class="text-xs text-gray-500 dark:text-gray-400">
+                              <span v-if="activeContact.type === 'user'">
+                                  <span v-if="onlineUsers.includes(activeContact.id)" class="text-green-500 flex items-center gap-1.5">
+                                      <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                                      <span>Online</span>
+                                  </span>
+                                  <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen">
+                                      {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                                  </span>
+                                  <span v-else>
+                                      Offline
+                                  </span>
+                              </span>
+                              <span v-else-if="activeContact.type === 'group'" class="truncate">
+                                  {{ activeContact.members?.map(member => member.name).join(', ') }}
+                              </span>
+                          </div>
+                          <div v-if="activeContact.type === 'user'" class="text-xs text-gray-500 dark:text-gray-400">
+                              {{ activeContact.phone_number }}
+                          </div>
+                      </div>
                         <button
                           v-if="activeContact.type === 'user'"
                           @click="startVideoCall(activeContact.id)"
@@ -640,14 +661,27 @@ onMounted(() => {
                     <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
                         <div v-for="m in messages" :key="m.id"
                              :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                            <div :class="m.sender_id === currentUserId ? 'inline-block bg-blue-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'">
+                            <div :class="m.sender_id === currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'">
                                 <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
                                      class="text-xs font-semibold mb-1 opacity-75">
                                     {{ m.sender_name }}
                                 </div>
+                              <div>
                                 {{ m.text }}
+                                  <div class="text-xs text-white-500 mt-1 flex items-center justify-end">
+                                    <span>{{ m.time }}</span>
+                                    <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
+                                          <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
+                                              <path d="M18 6 7 17l-5-5"/>
+                                              <path d="m22 10-7.5 7.5L13 16"/>
+                                          </svg>
+                                          <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                              <path d="M20 6 9 17l-5-5"/>
+                                          </svg>
+                                    </span>
+                                  </div>
+                                </div>
                             </div>
-                            <div class="text-xs text-gray-500 mt-1">{{ m.time }}</div>
                         </div>
                     </div>
 

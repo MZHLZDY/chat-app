@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\ChatMessage;
 use App\Events\MessageSent;
+use App\Events\MessageRead;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -62,5 +63,17 @@ class ChatController extends Controller
         broadcast(new MessageSent($message))->toOthers();
 
         return response()->json($message);
+    }
+
+    public function MarkAsRead(Request $request){
+        $request->validate(['sender_id' => 'required|integer']);
+        ChatMessage::where('sender_id', $request->sender_id)
+        ->where('receiver_id', auth()->id())
+        ->whereNull('read_at')
+        ->update(['read_at' => now()]);
+
+        broadcast(new MessageRead(auth()->id(), $request->sender_id));
+
+    return response()->json(['status' => 'success']);
     }
 }

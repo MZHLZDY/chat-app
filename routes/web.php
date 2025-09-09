@@ -79,6 +79,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/chat/contacts', [ChatController::class, 'contacts']);
     Route::get('/chat/{user}/messages', [ChatController::class, 'messages']);
     Route::post('/chat/send', [ChatController::class, 'sendMessage']);
+    Route::post('chat/messages/read', [ChatController::class, 'MarkAsRead']);
 
     // groups
     Route::get('/groups', [GroupController::class, 'index']);
