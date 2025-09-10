@@ -12,6 +12,7 @@ import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
 import type { CallStatus } from '@/types/CallStatus.js';
 import type { Contact, Group, User, Chat } from '@/types/index';
+import type { Participants } from './OutgoingCallModal.vue';
 
 axios.defaults.withCredentials = true;
 
@@ -48,6 +49,10 @@ const unreadCounts = ref<{ [key: string]: number }>({});
 const messageContainer = ref<HTMLElement | null>(null);
 const isSending = ref(false);
 const searchQuery = ref('');
+const props = defineProps<{
+  participants?: Participants[];
+}>();
+
 
 // --- Personal Video Call State ---
 const showVideoCall = ref(false);
@@ -78,6 +83,7 @@ const endOutgoingCall = () => {
   clearTimeout(callTimer);
   showVideoCall.value = false;
   callPartnerId.value = null;
+  showGroupCall.value = false;
   callStatus.value = "idle"
 }
 
@@ -123,12 +129,21 @@ const restoreVideoCall = () => {
 
 // Group Video Call State
 const showGroupCall = ref(false);
-const groupCallStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected' | 'missed'>('idle');
-const activeGroupCall = ref<null | { groupId: number; name: string; participants: { id: number; name: string }[] }>(null);const joinedMembers = ref<any[]>([]);
+const groupCallStatus = ref<CallStatus>('idle');
+const activeGroupCall = ref<null | { groupId: number; name: string; participants: Participants[] }>(null);const joinedMembers = ref<any[]>([]);
 
 // Start Group Video Call
-const startGroupCall = (groupId: number, groupName: string) => {
-  activeGroupCall.value = { groupId, name: groupName, participants: [] };
+const startGroupCall = (groupId: number, groupName: string, members: { id: number; name: string }[]) => {
+  activeGroupCall.value = {
+    groupId,
+    name: groupName, 
+    participants: members.map(m => ({
+      id: m.id,
+      name: m.name,
+      status: "calling", // default
+    })),
+  };
+
   groupCallStatus.value = 'ringing';
   showGroupCall.value = true;
 
@@ -624,13 +639,45 @@ onMounted(() => {
                         </button>
                         <button
                           v-if="activeContact.type === 'group'"
-                          @click="startGroupCall(activeContact.id, activeContact.name)"
+                          @click="startGroupCall(activeContact.id, activeContact.name, activeContact.members || [])"
                           class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
                                  hover:bg-gray-100 dark:hover:bg-gray-700"
                           >
                             <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                         </button>
+                        <!-- Outgoing Call Modal (khusus status calling) -->
+                        <OutgoingCallModal
+                          v-if="callStatus === 'calling'"
+                          :show="true"
+                          :isGroup="!!activeGroupCall"
+                          :groupName="activeGroupCall?.name"
+                          :calleeName="activeContact?.name"
+                          :participants="activeGroupCall?.participants"
+                          @cancel="endOutgoingCall"
+                        />
+
+                        <!-- Video Call Modal (untuk personal / group setelah connected) -->
                         <VideoCallModal
+                          v-if="(showVideoCall || showGroupCall) && callStatus === 'connected'"
+                          :show="true"
+                          :isGroup="!!activeGroupCall"
+                          :contactName="activeContact?.name"
+                          :groupName="activeGroupCall?.name"
+                          :participants="activeGroupCall?.participants"
+                          :status="callStatus"
+                          @end="activeGroupCall ? leaveGroupCall() : endVideoCall()"
+                        />
+
+                        <!-- Incoming Call Modal -->
+                        <IncomingCallModal
+                          v-if="incomingCall"
+                          :show="true"
+                          :fromName="incomingCall.from.name"
+                          @accept="acceptIncomingCall"
+                          @reject="rejectIncomingCall"
+                        />
+
+                        <!-- <VideoCallModal
                             :show="showVideoCall"
                             :contactName="activeContact.name"
                             :status="callStatus"
@@ -655,7 +702,7 @@ onMounted(() => {
                           :show="callStatus === 'calling'"
                           :calleeName="activeContact?.name"
                           @cancel="endOutgoingCall"
-                        />
+                        /> -->
                     </div>
                     <!-- room chat -->
                     <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">

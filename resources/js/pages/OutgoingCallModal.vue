@@ -4,10 +4,10 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, computed, watch} from 'vue';
 // import { defineProps, defineEmits } from 'vue';
 
-type Participants = {
+export type Participants = {
     id: number;
     name: string;
-    status: "calling" | "rejected" | "tidak missed" | "accepted";
+    status: "calling" | "rejected" | "missed" | "accepted";
 };
 
 interface Props {
@@ -41,10 +41,10 @@ onMounted(() => {
             status: "calling"
         }));
 
-        // timeout 30detik -> yang belum respon otomatis "tidak missed"
+        // timeout 30detik -> yang belum respon otomatis "missed"
         setTimeout(() => {
             memberState.value = memberState.value.map((m) =>
-                m.status === "calling" ? { ...m, status: "tidak missed" } : m
+                m.status === "calling" ? { ...m, status: "missed" } : m
         );
         emit("timeout");
         });
@@ -103,7 +103,7 @@ const updateStatus = (id: number, status: Participants["status"]) => {
                                 'text-blue-500': member.status === 'calling',
                                 'text-green-500': member.status === 'accepted',
                                 'text-red-500': member.status === 'rejected',
-                                'text-gray-400': member.status === 'tidak missed'
+                                'text-gray-400': member.status === 'missed'
                             }"
                         >
                             {{ member.status }}

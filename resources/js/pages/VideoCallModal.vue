@@ -5,6 +5,7 @@ import { ref, onMounted, computed, watch} from 'vue';
 import { defineProps, defineEmits } from 'vue';
 import { Mic, Camera, PhoneOff } from 'lucide-vue-next';
 import type { CallStatus } from '@/types/CallStatus';
+import type { Participants } from './OutgoingCallModal.vue';
 
 const localVideo = ref<HTMLVideoElement | null>(null);
 const remoteVideo = ref<HTMLVideoElement | null>(null);
@@ -18,10 +19,10 @@ const isCameraOn = ref(true);
 const props = defineProps<{
     show: boolean;
     contactName?: string;
-    status?: Exclude <CallStatus, "calling">; // tambahan
+    status?: CallStatus; // tambahan
     isGroup?: boolean;
     groupName?: string;
-    participants?: { id: number; name: string }[];
+    participants?: Participants[];
 }>();
 
 const emit = defineEmits<{

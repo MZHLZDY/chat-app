@@ -7,3 +7,10 @@ export type CallStatus =
   | "ended"
   | "rejected"
   | "missed";
+    "calling";
+
+export type Participants = {
+    id: number;
+    name: string;
+    status: "calling" | "rejected" | "missed" | "accepted";
+};
