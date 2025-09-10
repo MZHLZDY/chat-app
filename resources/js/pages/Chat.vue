@@ -537,7 +537,7 @@ onMounted(() => {
     <Head title="Chat" />
     <AppLayout>
         <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
-
+          <!-- sidebar bagian atas -->
             <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 overflow-y-auto absolute md:static inset-0 transition-transform duration-300 ease-in-out"
                  :class="{ '-translate-x-full md:translate-x-0': activeContact }"> <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
@@ -550,6 +550,7 @@ onMounted(() => {
                   <input type="text" v-model="searchQuery" placeholder="Cari kontak atau grup..."
                          class="w-full px-3 py-2 text-sm border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-lg focus:ring-blue-500 dark:focus:ring-blue-400">
                 </div>
+                <!-- sidebar bagian chat -->
                 <ul>
                    <li v-for="chat in filteredChats" :key="`${chat.type}-${chat.id}`"
                        @click="selectContact(chat)"
@@ -576,16 +577,15 @@ onMounted(() => {
                    </li>
                 </ul>
             </div>
-
+            <!-- layout responsive -->
             <div class="w-full md:w-3/4 flex flex-col flex-1 absolute md:static inset-0 transition-transform duration-300 ease-in-out"
                  :class="{ 'translate-x-0': activeContact, 'translate-x-full md:translate-x-0': !activeContact }">
-
+              <!-- navbar contact -->
                 <div v-if="activeContact" class="flex flex-col h-full">
-                    <div class="p-4 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
+                    <div class="p-2 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
                         <button @click="activeContact = null" class="md:hidden p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                         </button>
-
                         <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
                            {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
                         </div>
@@ -657,7 +657,7 @@ onMounted(() => {
                           @cancel="endOutgoingCall"
                         />
                     </div>
-
+                    <!-- room chat -->
                     <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
                         <div v-for="m in messages" :key="m.id"
                              :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
@@ -684,7 +684,7 @@ onMounted(() => {
                             </div>
                         </div>
                     </div>
-
+                    <!-- input text -->
                     <div class="p-2 md:p-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
                         <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
                             <input
@@ -702,13 +702,13 @@ onMounted(() => {
                         </div>
                     </div>
                 </div>
-
+                <!-- blank page -->
                 <div v-else class="hidden md:flex items-center justify-center flex-1 text-gray-500">
                     Pilih kontak atau group untuk memulai chat
                 </div>
             </div>
         </div>
-
+        <!-- create group -->
         <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">
                 <h3 class="text-lg font-bold mb-4 dark:text-gray-200">Buat Group Baru</h3>
