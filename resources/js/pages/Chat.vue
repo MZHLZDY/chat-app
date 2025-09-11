@@ -266,6 +266,16 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
   } catch (e) { console.error("Gagal memuat pesan:", e); }
 };
 
+const loadUnreadCounts = async () => {
+  try {
+    const response = await axios.get('/chat/unread-counts');
+    unreadCounts.value = response.data;
+  } catch (e) {
+    console.error("Gagal memuat jumlah pesan belum dibaca:", e);
+  }
+};
+
+
 // --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
@@ -535,6 +545,7 @@ onMounted(() => {
   loadContacts();
   loadGroups();
   loadAllUsers();
+  loadUnreadCounts();
   setupGlobalListeners();
 
   // Polling gawe update 'last_seen'
@@ -587,7 +598,7 @@ onMounted(() => {
                                </template>
                            </div>
                        </div>
-                       <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
+                       <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
                        <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
                    </li>
                 </ul>

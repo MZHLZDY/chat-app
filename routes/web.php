@@ -78,6 +78,7 @@ Route::middleware(['auth'])->group(function () {
     // direct chat
     Route::get('/chat/contacts', [ChatController::class, 'contacts']);
     Route::get('/chat/{user}/messages', [ChatController::class, 'messages']);
+    Route::get('/chat/unread-counts', [ChatController::class, 'getUnreadCounts']);
     Route::post('/chat/send', [ChatController::class, 'sendMessage']);
     Route::post('chat/messages/read', [ChatController::class, 'MarkAsRead']);
 

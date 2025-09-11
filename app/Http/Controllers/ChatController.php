@@ -7,6 +7,8 @@ use App\Events\MessageSent;
 use App\Events\MessageRead;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Http\JsonResponse;
 
 class ChatController extends Controller
 {
@@ -75,5 +77,36 @@ class ChatController extends Controller
         broadcast(new MessageRead(auth()->id(), $request->sender_id));
 
     return response()->json(['status' => 'success']);
+    }
+
+    public function getUnreadCounts(): JsonResponse
+    {
+        try {
+            $userId = auth()->id();
+
+            // 1. Menghitung pesan personal yang belum dibaca
+            $userUnreads = DB::table('chat_messages')
+                ->select('sender_id', DB::raw('count(*) as messages_count'))
+                ->where('receiver_id', $userId)
+                ->whereNull('read_at')
+                ->groupBy('sender_id')
+                ->get();
+
+            // 2. Format data agar cocok dengan state di frontend (contoh: { 'user-5': 3 })
+            $unreadCounts = [];
+            foreach ($userUnreads as $unread) {
+                $key = 'user-' . $unread->sender_id;
+                $unreadCounts[$key] = $unread->messages_count;
+            }
+
+            // 3. Kembalikan data dalam format JSON
+            return response()->json($unreadCounts);
+
+        } catch (\Exception $e) {
+            // 4. Jika terjadi error, kirim respons error 500
+            // Ini akan membantu debugging di frontend
+            report($e); // Opsional: catat error ke log
+            return response()->json(['message' => 'Gagal memuat jumlah pesan belum dibaca.'], 500);
+        }
     }
 }
