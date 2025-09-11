@@ -151,6 +151,15 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/end', [AgoraCallController::class, 'endCall']);
         Route::post('/token', [AgoraCallController::class, 'generateToken']);
     });
+
+    Route::prefix('group-call')->group(function () {
+      Route::post('/invite', [AgoraCallController::class, 'inviteGroupCall']);
+      Route::post('/answer', [AgoraCallController::class, 'answerGroupCall']);
+      Route::post('/end', [AgoraCallController::class, 'endGroupCall']);
+      Route::post('/token', [AgoraCallController::class, 'generateGroupToken']);
+      Route::post('/missed', [AgoraCallController::class, 'missedGroupCall']);
+    });
+
 });
 
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');
