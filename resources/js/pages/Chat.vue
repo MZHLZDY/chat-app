@@ -5,7 +5,7 @@ import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 import { Video, UserPlus, ChartArea} from 'lucide-vue-next';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { formatDistanceToNowStrict, isSameDay, isToday, isYesterday, format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
@@ -235,6 +235,32 @@ const updateLatestMessage = (contactId: number, message: { text: string, sender_
     }
 };
 
+const shouldShowDateSeparator = (currentMessage: any, previousMessage: any): boolean => {
+    // Jika ini adalah pesan pertama, selalu tampilkan tanggalnya.
+    if (!previousMessage) {
+        return true;
+    }
+
+    const currentDate = new Date(currentMessage.created_at);
+    const previousDate = new Date(previousMessage.created_at);
+    
+    return !isSameDay(currentDate, previousDate);
+};
+
+const formatDateSeparator = (dateString: string): string => {
+    const date = new Date(dateString);
+
+    if (isToday(date)) {
+        return 'Hari Ini';
+    }
+    if (isYesterday(date)) {
+        return 'Kemarin';
+    }
+    // Format untuk tanggal lainnya, contoh: "Selasa, 11 Sep 2025"
+    return format(date, 'EEEE, d MMM yyyy', { locale: id });
+};
+
+
 // --- Load Functions ---
 const loadContacts = async () => {
   try {
@@ -260,7 +286,7 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
     messages.value = response.data.map((m: any) => ({
-      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at
+      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at, created_at: m.created_at
     }));
     scrollToBottom();
   } catch (e) { console.error("Gagal memuat pesan:", e); }
@@ -303,7 +329,8 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 sender_id: messageData.sender_id,
                 sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
                 text: messageData.message,
-                time: formatTime(messageData.created_at)
+                time: formatTime(messageData.created_at),
+                created_at: messageData.created_at
             });
           updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
           if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
@@ -397,6 +424,7 @@ const sendMessage = async () => {
         sender_name: currentUserName.value,
         text: messageText,
         time: formatTime(new Date().toISOString()),
+        created_at: new Date().toISOString()
     };
     
     addMessage(optimisticMessage);
@@ -717,30 +745,38 @@ onMounted(() => {
                     </div>
                     <!-- room chat -->
                     <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
-                        <div v-for="m in messages" :key="m.id"
-                             :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
+                    <template v-for="(m, index) in messages" :key="m.id">
+
+                        <div v-if="shouldShowDateSeparator(m, messages[index - 1])"
+                            class="text-center my-4">
+                            <span class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs font-semibold px-3 py-2 rounded-full">
+                                {{ formatDateSeparator(m.created_at) }}
+                            </span>
+                        </div>
+                        <div :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
                             <div :class="m.sender_id === currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'">
                                 <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
-                                     class="text-xs font-semibold mb-1 opacity-75">
+                                    class="text-xs font-semibold mb-1 opacity-75">
                                     {{ m.sender_name }}
                                 </div>
-                              <div>
-                                {{ m.text }}
-                                  <div class="text-xs text-white-500 mt-1 flex items-center justify-end">
-                                    <span>{{ m.time }}</span>
-                                    <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
-                                          <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
-                                              <path d="M18 6 7 17l-5-5"/>
-                                              <path d="m22 10-7.5 7.5L13 16"/>
-                                          </svg>
-                                          <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                              <path d="M20 6 9 17l-5-5"/>
-                                          </svg>
-                                    </span>
-                                  </div>
+                                <div>
+                                    {{ m.text }}
+                                    <div class="text-xs text-gray-200 mt-1 flex items-center justify-end">
+                                        <span>{{ m.time }}</span>
+                                        <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
+                                            <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
+                                                <path d="M18 6 7 17l-5-5"/>
+                                                <path d="m22 10-7.5 7.5L13 16"/>
+                                            </svg>
+                                            <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <path d="M20 6 9 17l-5-5"/>
+                                            </svg>
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        </template>
                     </div>
                     <!-- input text -->
                     <div class="p-2 md:p-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
