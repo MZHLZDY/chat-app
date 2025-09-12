@@ -235,6 +235,19 @@ const updateLatestMessage = (contactId: number, message: { text: string, sender_
     }
 };
 
+  const updateLatestGroupMessage = (groupId: number, message: any) => {
+    const groupIndex = groups.value.findIndex(g => g.id === groupId);
+    if (groupIndex !== -1) {
+        // Update properti latest_message pada grup yang sesuai
+        groups.value[groupIndex].latest_message = {
+            message: message.message,
+            sender_id: message.sender_id,
+            sender: message.sender
+        };
+    }
+};
+
+
 const shouldShowDateSeparator = (currentMessage: any, previousMessage: any): boolean => {
     // Jika ini adalah pesan pertama, selalu tampilkan tanggalnya.
     if (!previousMessage) {
@@ -314,6 +327,9 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
 
         if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
             return;
+        }
+        if (messageData.group_id) {
+          updateLatestGroupMessage(messageData.group_id, messageData);
         }
 
         let isChatActive = false;
@@ -430,7 +446,7 @@ const sendMessage = async () => {
     addMessage(optimisticMessage);
     if (activeChat.type === 'user') {
     updateLatestMessage(activeChat.id, { text: messageText, sender_id: currentUserId.value });
-  }
+  } else updateLatestGroupMessage(activeChat.id, { message: messageText, sender_id: currentUserId.value, sender: { id: currentUserId.value, name: currentUserName.value }})
     newMessage.value = '';
     delete drafts.value[`${activeChat.type}-${activeChat.id}`];
 
@@ -491,9 +507,10 @@ const createGroup = async () => {
       members_count: newGroup.members?.length || selectedUsers.value.length + 1,
       owner_id: newGroup.owner_id,
       members: newGroup.members,
+      latest_message: newGroup.latest_message
     });
     closeCreateGroupModal();
-    selectContact({ id: newGroup.id, name: newGroup.name, members_count: newGroup.members_count, owner_id: newGroup.owner_id, members: newGroup.member, type: 'group' });
+    selectContact({ id: newGroup.id, name: newGroup.name, members_count: newGroup.members_count, owner_id: newGroup.owner_id, members: newGroup.member,latest_message: newGroup.latest_message, type: 'group' });
   } catch (e) {
     console.error('Gagal membuat grup:', e);
     alert('Gagal membuat grup!');
@@ -553,6 +570,7 @@ const setupGlobalListeners = () => {
                     ...unreadCounts.value,
                     [unreadChatId]: currentCount + 1
                 };
+                updateLatestGroupMessage(messageData.group_id, messageData);
             }
         })
         .listen('.MessageRead', (eventData: any) => {
@@ -620,11 +638,17 @@ onMounted(() => {
                                  {{ (chat as Contact).latest_message?.message }}
                              </span>
                            </div>
-                           <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
-                               <template v-if="chat.type === 'group'">
-                                   {{ chat.members_count }} anggota
-                               </template>
-                           </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                <span v-if="chat.type === 'group' && chat.latest_message">
+                                  <span v-if="chat.type === 'group' && chat.latest_message.sender_id === currentUserId">
+                                      Anda:
+                                  </span>
+                                  <span v-else-if="chat.type === 'group'">
+                                      {{ chat.latest_message.sender.name }}:
+                                  </span>
+                                  {{ chat.latest_message.message }}
+                              </span>
+                            </div>
                        </div>
                        <div v-if="unreadCounts[`${chat.type}-${chat.id}`]" class="ml-auto mr-2 bg-green-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse"> {{ unreadCounts[`${chat.type}-${chat.id}`] }}</div>
                        <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
@@ -761,7 +785,7 @@ onMounted(() => {
                                 </div>
                                 <div>
                                     {{ m.text }}
-                                    <div class="text-xs text-gray-200 mt-1 flex items-center justify-end">
+                                    <div class="text-xs text-dark-200 mt-1 flex items-center justify-end">
                                         <span>{{ m.time }}</span>
                                         <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
                                             <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">

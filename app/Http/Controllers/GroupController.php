@@ -13,9 +13,11 @@ class GroupController extends Controller
 {
     public function index()
     {
-        $groups = Group::with('members:id,name')
+        $groups = Group::with('members:id,name') // <-- Tetap ada untuk daftar anggota
+            ->with('latestMessage.sender')  // <-- TAMBAHKAN BARIS INI
             ->withCount('members')
             ->whereHas('members', fn($q) => $q->where('users.id', auth()->id()))
+            ->orderByDesc('updated_at') // Opsional: urutkan grup berdasarkan aktivitas terakhir
             ->get();
 
         return response()->json($groups);

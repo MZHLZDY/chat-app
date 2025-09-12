@@ -9,7 +9,7 @@ export type Group = {
     members_count: number;
     owner_id: number;
     members: User[];
-    
+    latest_message: LatestMessage | null;
 };
 
 export type Contact = User & {
@@ -23,6 +23,15 @@ export interface BreadcrumbItem {
     title?: string;
     href?: string;
     active?: boolean;
+}
+
+interface LatestMessage {
+  message: string;
+  sender_id: number;
+  sender: { // Objek pengirim yang dikirim dari backend
+    id: number;
+    name: string;
+  };
 }
 
 // Iki "KTP" gabungan sing isok nampa Contact utowo Group

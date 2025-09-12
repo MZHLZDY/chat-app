@@ -19,4 +19,11 @@ class Group extends Model
     {
         return $this->hasMany(GroupMessage::class);
     }
+
+    public function latestMessage()
+    {
+        // Ambil satu pesan (hasOne) dan urutkan berdasarkan yang paling baru (latest()).
+        return $this->hasOne(GroupMessage::class)->latest();
+    }
+
 }
