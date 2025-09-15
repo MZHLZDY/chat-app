@@ -422,7 +422,7 @@ const selectContact = (contact: Chat) => {
     loadMessages(contact.id, contact.type);
     bindChannel(contact.id, contact.type);
     if (contact.type === 'user') {
-        axios.post('/chat/messages/read', { sender_id: contact.id });
+      axios.post('/chat/messages/read', { sender_id: contact.id });
     }
 };
 
@@ -685,7 +685,7 @@ onMounted(() => {
                                   </span>
                               </span>
                               <span v-else-if="activeContact.type === 'group'" class="truncate">
-                                  {{ activeContact.members?.map(member => member.name).join(', ') }}
+                                  {{ activeContact.members?.map(member => member.id === currentUserId ? 'Anda' : member.name).join(', ') }}
                               </span>
                           </div>
                           <div v-if="activeContact.type === 'user'" class="text-xs text-gray-500 dark:text-gray-400">
@@ -770,7 +770,6 @@ onMounted(() => {
                     <!-- room chat -->
                     <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
                     <template v-for="(m, index) in messages" :key="m.id">
-
                         <div v-if="shouldShowDateSeparator(m, messages[index - 1])"
                             class="text-center my-4">
                             <span class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs font-semibold px-3 py-2 rounded-full">
