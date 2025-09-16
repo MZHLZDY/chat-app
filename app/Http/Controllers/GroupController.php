@@ -46,10 +46,10 @@ class GroupController extends Controller
         // authorize: user harus member
         abort_unless($group->members()->where('users.id',auth()->id())->exists(), 403);
 
-        $messages = $group->messages()
-            ->with('sender:id,name')
-            ->orderBy('created_at')
-            ->get();
+        $messages = GroupMessage::where('group_id', $group->id)
+            ->with('sender:id,name')     // <-- PENTING: Ambil data pengirim
+            ->orderByDesc('created_at') // <-- PENTING: Urutkan dari terbaru
+            ->simplePaginate(50);
 
         return response()->json($messages);
     }
