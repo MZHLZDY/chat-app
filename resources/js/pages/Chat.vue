@@ -680,8 +680,9 @@ onMounted(() => {
     <AppLayout>
         <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
           <!-- sidebar bagian atas -->
-            <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 overflow-y-auto absolute md:static inset-0 transition-transform duration-300 ease-in-out"
-                 :class="{ '-translate-x-full md:translate-x-0': activeContact }"> <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
+            <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col h-full absolute md:static inset-0 transition-transform duration-300 ease-in-out"
+                 :class="{ '-translate-x-full md:translate-x-0': activeContact }"> 
+                 <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
                             class="flex items-center gap-2 bg-blue-500 text-white px-3 py-2 rounded-full text-sm hover:bg-blue-600 transition-colors">
@@ -693,6 +694,7 @@ onMounted(() => {
                          class="w-full px-3 py-2 text-sm border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-200 rounded-lg focus:ring-blue-500 dark:focus:ring-blue-400">
                 </div>
                 <!-- sidebar bagian chat -->
+                <div class="flex-1 overflow-y-auto">
                 <ul>
                    <li v-for="chat in filteredChats" :key="`${chat.type}-${chat.id}`"
                        @click="selectContact(chat)"
@@ -724,6 +726,7 @@ onMounted(() => {
                        <div v-if="drafts[`${chat.type}-${chat.id}`]" class="w-2 h-2 bg-orange-500 rounded-full"></div>
                    </li>
                 </ul>
+            </div>
             </div>
             <!-- layout responsive -->
             <div class="w-full md:w-3/4 flex flex-col flex-1 absolute md:static inset-0 transition-transform duration-300 ease-in-out"
