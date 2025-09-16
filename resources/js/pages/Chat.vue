@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
 import { Video, UserPlus, ChartArea} from 'lucide-vue-next';
@@ -47,7 +47,14 @@ const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
 const unreadCounts = ref<{ [key: string]: number }>({});
 const messageContainer = ref<HTMLElement | null>(null);
+watch(messages, () => {
+    scrollToBottom();
+}, { deep: true });
+const messagesPage = ref(1);
+const hasMoreMessages = ref(true);
 const isSending = ref(false);
+const isLoadingMessages = ref(false);
+const isLoadingMore = ref(false);
 const searchQuery = ref('');
 const props = defineProps<{
   participants?: Participants[];
@@ -298,11 +305,74 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
   try {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
-    messages.value = response.data.map((m: any) => ({
+    messages.value = response.data.data.reverse().map((m: any) => ({
       id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at, created_at: m.created_at
     }));
-    scrollToBottom();
-  } catch (e) { console.error("Gagal memuat pesan:", e); }
+    messagesPage.value = 1;
+    hasMoreMessages.value = !!response.data.next_page_url; 
+  } catch (e) { 
+    console.error("Gagal memuat pesan:", e); 
+  } finally {
+        isLoadingMessages.value = false;
+  }
+};
+
+const handleScroll = (event: Event) => {
+    const container = event.target as HTMLElement;
+
+    // Tambahkan pengecekan ini:
+    // Hanya jalankan jika ADA scrollbar (tinggi konten lebih besar dari tinggi wadah)
+    if (container.scrollHeight <= container.clientHeight) {
+        return;
+    }
+
+    if (container.scrollTop === 0 && hasMoreMessages.value && !isLoadingMore.value) {
+        loadMoreMessages();
+    }
+};
+
+
+const loadMoreMessages = async () => {
+    if (!hasMoreMessages.value || isLoadingMore.value || !activeContact.value) return;
+
+    isLoadingMore.value = true;
+    messagesPage.value++;
+
+    try {
+        const contact = activeContact.value;
+        const endpoint = contact.type === 'group' 
+            ? `/groups/${contact.id}/messages?page=${messagesPage.value}` 
+            : `/chat/${contact.id}/messages?page=${messagesPage.value}`;
+        
+        const response = await axios.get(endpoint);
+        const olderMessages = response.data.data.reverse().map((m: any) => ({
+            id: m.id,
+            sender_id: m.sender_id,
+            sender_name: m.sender?.name || 'Unknown',
+            text: m.message, // Mengubah 'message' menjadi 'text'
+            time: formatTime(m.created_at),
+            read_at: m.read_at,
+            created_at: m.created_at
+        }));
+        // Simpan posisi scroll saat ini
+        const container = messageContainer.value;
+        const oldScrollHeight = container?.scrollHeight || 0;
+
+        // Tambahkan pesan lama di bagian ATAS array
+        messages.value = [...olderMessages, ...messages.value];
+        hasMoreMessages.value = !!response.data.next_page_url;
+        
+        setTimeout(() => {
+            if (container) {
+                container.scrollTop = container.scrollHeight - oldScrollHeight;
+            }
+        }, 0);
+
+    } catch (e) {
+        console.error("Gagal memuat pesan lama:", e);
+    } finally {
+        isLoadingMore.value = false;
+    }
 };
 
 const loadUnreadCounts = async () => {
@@ -415,8 +485,8 @@ const selectContact = (contact: Chat) => {
     unreadCounts.value = newCounts;
 }
 
+    isLoadingMessages.value = true;
     activeContact.value = contact;
-    messages.value = [];
     onlineUsers.value = [];
     newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
     loadMessages(contact.id, contact.type);
@@ -768,37 +838,45 @@ onMounted(() => {
                         /> -->
                     </div>
                     <!-- room chat -->
-                    <div ref="messageContainer" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800">
-                    <template v-for="(m, index) in messages" :key="m.id">
-                        <div v-if="shouldShowDateSeparator(m, messages[index - 1])"
-                            class="text-center my-4">
-                            <span class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs font-semibold px-3 py-2 rounded-full">
-                                {{ formatDateSeparator(m.created_at) }}
-                            </span>
+                    <div ref="messageContainer" @scroll="handleScroll" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800 relative">
+                        <div v-if="isLoadingMessages" class="absolute inset-0 flex justify-center items-center bg-gray-50 dark:bg-gray-800">
+                            <span class="text-gray-500">Memuat pesan...</span>
                         </div>
-                        <div :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                            <div :class="m.sender_id === currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'">
-                                <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
-                                    class="text-xs font-semibold mb-1 opacity-75">
-                                    {{ m.sender_name }}
+                        <template v-else>
+                            <div v-if="isLoadingMore" class="text-center text-gray-500 text-sm py-2">
+                                Memuat pesan lama...
+                            </div>
+                            <template v-for="(m, index) in messages" :key="m.id">
+                                <div v-if="shouldShowDateSeparator(m, messages[index - 1])"
+                                    class="text-center my-4">
+                                    <span class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs font-semibold px-3 py-2 rounded-full">
+                                        {{ formatDateSeparator(m.created_at) }}
+                                    </span>
                                 </div>
-                                <div>
-                                    {{ m.text }}
-                                    <div class="text-xs text-dark-200 mt-1 flex items-center justify-end">
-                                        <span>{{ m.time }}</span>
-                                        <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
-                                            <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
-                                                <path d="M18 6 7 17l-5-5"/>
-                                                <path d="m22 10-7.5 7.5L13 16"/>
-                                            </svg>
-                                            <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M20 6 9 17l-5-5"/>
-                                            </svg>
-                                        </span>
+                                <div :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
+                                    <div :class="m.sender_id === currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'"> 
+                                        <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
+                                            class="text-xs font-semibold mb-1 opacity-75">
+                                            {{ m.sender_name }}
+                                        </div>
+                                        <div>
+                                            {{ m.text }}
+                                            <div class="text-xs text-black-200 opacity-80 mt-1 flex items-center justify-end">
+                                                <span>{{ m.time }}</span>
+                                                <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
+                                                    <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
+                                                        <path d="M18 6 7 17l-5-5"/>
+                                                        <path d="m22 10-7.5 7.5L13 16"/>
+                                                    </svg>
+                                                    <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                        <path d="M20 6 9 17l-5-5"/>
+                                                    </svg>
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
+                            </template>
                         </template>
                     </div>
                     <!-- input text -->
