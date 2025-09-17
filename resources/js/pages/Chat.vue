@@ -10,9 +10,9 @@ import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
-import type { CallStatus } from '@/types/CallStatus.js';
+import type { CallStatus, Participants } from '@/types/CallStatus.js';
 import type { Contact, Group, User, Chat } from '@/types/index';
-import type { Participants } from './OutgoingCallModal.vue';
+// import type { Participants } from './OutgoingCallModal.vue';
 
 axios.defaults.withCredentials = true;
 
@@ -59,40 +59,46 @@ const searchQuery = ref('');
 const props = defineProps<{
   participants?: Participants[];
 }>();
+const activeChat = ref<Chat | null>(null);
 
 
 // --- Personal Video Call State ---
-const showVideoCall = ref(false);
+const showPersonalCall = ref(false);
 const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
-const callStatus = ref<CallStatus>('idle');
+// const personalCallStatus = ref<CallStatus>('idle');
 const incomingCall = ref<{ from: any, to: { id: number, name: string } } | null>(null);
 const isMinimized = ref(false);
+const callStatus = ref<CallStatus>('idle');
+const callType = ref< 'none' | 'personal' | 'group'>('none');
 
 let callTimer : any = null;
 
-const startVideoCall = (userId: number) => {
-  callPartnerId.value = userId;
-  showVideoCall.value = true;
+const startVideoCall = (contact: Chat) => {
+  callType.value = 'personal';
+  callPartnerId.value = contact.id;
+  activeContact.value = contact;
+  // showPersonalCall.value = true;
   callStatus.value = 'calling';
 
-  // set timeout 60dtk, klo ga diangkat dianggap "missed"
+  // set timeout 30dtk, klo ga diangkat dianggap "missed"
   callTimer = setTimeout(() => {
-    if (callStatus.value === 'ringing') {
+    if (callStatus.value === 'calling') {
       callStatus.value = 'missed';
+      endCall();
     }
-  }, 60000);
+  }, 30000);
 
   // TODO: Init Agora/Video Call Service
 };
 
-const endOutgoingCall = () => {
-  clearTimeout(callTimer);
-  showVideoCall.value = false;
-  callPartnerId.value = null;
-  showGroupCall.value = false;
-  callStatus.value = "idle"
-}
+// const endOutgoingCall = () => {
+//   clearTimeout(callTimer);
+//   showPersonalCall.value = false;
+//   callPartnerId.value = null;
+//   showGroupCall.value = false;
+//   callStatus.value = "idle"
+// }
 
 // Trigger klo ada panggilan masuk
 const receiveIncomingCall = (fromUser: any) => {
@@ -106,7 +112,7 @@ const acceptIncomingCall = () => {
   clearTimeout(callTimer)
   callStatus.value = 'connected';
   incomingCall.value = null;
-  showVideoCall.value = true;
+  showPersonalCall.value = true;
 }
 
 const rejectIncomingCall = () => {
@@ -118,48 +124,57 @@ const rejectIncomingCall = () => {
 
 }
 
-const endVideoCall = () => {
-  showVideoCall.value = false;
+const endPersonalCall = () => {
+  activeContact.value = null;
+  showPersonalCall.value = false;
   callPartnerId.value = null;
   callStatus.value = 'idle';
 };
 
 const minimizeVideoCall = () => {
   isMinimized.value = true;
-  showVideoCall.value = false;
+  showPersonalCall.value = false;
 };
 
 const restoreVideoCall = () => {
   isMinimized.value = false;
-  showVideoCall.value = true;
+  showPersonalCall.value = true;
 };
 
 // Group Video Call State
 const showGroupCall = ref(false);
-const groupCallStatus = ref<CallStatus>('idle');
+// const callStatus = ref<CallStatus>('idle');
 const activeGroupCall = ref<null | { groupId: number; name: string; participants: Participants[] }>(null);const joinedMembers = ref<any[]>([]);
 
 // Start Group Video Call
-const startGroupCall = (groupId: number, groupName: string, members: { id: number; name: string }[]) => {
+const startGroupCall = (groupId: number, groupName: string, members: Participants[]) => {
   activeGroupCall.value = {
     groupId,
-    name: groupName, 
-    participants: members.map(m => ({
-      id: m.id,
-      name: m.name,
-      status: "calling", // default
-    })),
+    name: groupName,
+    participants: members.map(m => ({ ...m, status: 'calling' }))
   };
 
-  groupCallStatus.value = 'ringing';
-  showGroupCall.value = true;
+  callType.value = 'group';
+  callStatus.value = 'calling';
+  // showGroupCall.value = true;
+
+  // timeout untuk group call
+  callTimer = setTimeout(() => {
+    if (callStatus.value === 'calling') {
+      const hasAccepted = activeGroupCall.value?.participants.some(p => p.status === 'accepted');
+      if (!hasAccepted) {
+        callStatus.value = 'missed';
+        endCall();
+      }
+    }
+  }, 30000);
 
   // TODO: trigger backend untuk broadcast panggilan ke semua anggota
 };
 
 // Accept group call
 const joinGroupCall = (user: any) => {
-  groupCallStatus.value = 'connected';
+  callStatus.value = 'connected';
   if (!joinedMembers.value.some(m => m.id === user.id)) {
     joinedMembers.value.push(user);
   }
@@ -168,9 +183,22 @@ const joinGroupCall = (user: any) => {
 // Leave group call
 const leaveGroupCall = () => {
   showGroupCall.value = false;
-  groupCallStatus.value = 'idle';
+  callStatus.value = 'idle';
   activeGroupCall.value = null;
   joinedMembers.value = [];
+};
+
+// State End call untuk semua (personal + group)
+const endCall = () => {
+  clearTimeout(callTimer);
+  callType.value = 'none';
+  callStatus.value = 'idle';
+  showPersonalCall.value = false;
+  showGroupCall.value = false;
+  callPartnerId.value = null;
+  activeGroupCall.value = null;
+  joinedMembers.value = []; // Reset joined members
+  isMinimized.value = false; // Reset minimize state
 };
 
 // --- Modal States ---
@@ -480,19 +508,58 @@ const selectContact = (contact: Chat) => {
     const chatIdentifier = `${contact.type}-${contact.id}`;
     // Hapus ID chat iki teko daftar "durung diwoco"
     if (unreadCounts.value[chatIdentifier]) {
-    const newCounts = { ...unreadCounts.value };
-    delete newCounts[chatIdentifier];
-    unreadCounts.value = newCounts;
-}
+      const newCounts = { ...unreadCounts.value };
+      delete newCounts[chatIdentifier];
+      unreadCounts.value = newCounts;
+    }
+    
+    // reset call UI saat pindah chat yang berbeda tipe
+    if (callStatus.value === 'calling') {
+      // jika lagi call personal, tapi pindah ke grup = reset UI personal
+      if (callType.value === 'personal' && contact.type === 'group') {
+        endCall();
+      }
+      // jika lagi call grup, tapi pindah ke personal = reset UI grup
+      if (callType.value === 'group' && contact.type === 'user') {
+        endCall();
+      }
+    }
 
     isLoadingMessages.value = true;
     activeContact.value = contact;
+    messages.value = [];
     onlineUsers.value = [];
     newMessage.value = drafts.value[`${contact.type}-${contact.id}`] || '';
     loadMessages(contact.id, contact.type);
     bindChannel(contact.id, contact.type);
     if (contact.type === 'user') {
       axios.post('/chat/messages/read', { sender_id: contact.id });
+    }
+};
+
+// handler untuk OutgoingCallModal events
+const handleOutgoingCallTimeout = () => {
+  callStatus.value = 'missed';
+  endCall();
+}
+
+const handleGroupMemberAccepted = (memberId: number) => {
+    if (activeGroupCall.value) {
+        activeGroupCall.value.participants = activeGroupCall.value.participants.map(p =>
+            p.id === memberId ? { ...p, status: 'accepted' } : p
+        );
+        
+        // Jika ada yang terima, pindah ke VideoCallModal
+        callStatus.value = 'connected';
+        showGroupCall.value = true;
+    }
+};
+
+const handleGroupMemberRejected = (memberId: number) => {
+    if (activeGroupCall.value) {
+        activeGroupCall.value.participants = activeGroupCall.value.participants.map(p =>
+            p.id === memberId ? { ...p, status: 'rejected' } : p
+        );
     }
 };
 
@@ -673,6 +740,22 @@ onMounted(() => {
     clearInterval(pollingInterval);
   });
 });
+
+const selectChat = (chat: Chat) => {
+  activeChat.value = chat;
+
+  // kalau lagi call personal, tapi pindah ke grup = reset UI personal
+  if (callType.value === 'personal' && chat.type === 'group') {
+    callStatus.value = 'idle';
+    showPersonalCall.value = false;
+  }
+
+  // kalau lagi call grup, tapi pindah ke personal = reset UI grup
+  if (callType.value === 'group' && chat.type === 'user') {
+    callStatus.value = 'idle';
+    showGroupCall.value = false;
+  }
+}
 </script>
 
 <template>
@@ -767,7 +850,7 @@ onMounted(() => {
                       </div>
                         <button
                           v-if="activeContact.type === 'user'"
-                          @click="startVideoCall(activeContact.id)"
+                          @click="startVideoCall(activeContact)"
                           class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
                                  hover:bg-gray-100 dark:hover:bg-gray-700"
                           >
@@ -775,49 +858,65 @@ onMounted(() => {
                         </button>
                         <button
                           v-if="activeContact.type === 'group'"
-                          @click="startGroupCall(activeContact.id, activeContact.name, activeContact.members || [])"
+                          @click="startGroupCall(
+                            activeContact.id,
+                            activeContact.name,
+                            (activeContact.members || []).map(m => ({
+                              ...m,
+                              status: 'calling'
+                             }))
+                            )"
                           class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
                                  hover:bg-gray-100 dark:hover:bg-gray-700"
                           >
                             <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                         </button>
-                        <!-- Outgoing Call Modal (khusus status calling) -->
+
+                        <!-- Outgoing Personal Call Modal -->
                         <OutgoingCallModal
-                          v-if="callStatus === 'calling'"
+                          v-if="callType === 'personal' && callStatus === 'calling'"
                           :show="true"
-                          :isGroup="!!activeGroupCall"
-                          :groupName="activeGroupCall?.name"
                           :calleeName="activeContact?.name"
+                          @cancel="endCall"
+                          @timeout="handleOutgoingCallTimeout"
+                        />
+
+                        <!-- Outgoing Group Call Modal -->
+                        <OutgoingCallModal
+                          v-if="callType === 'group' && callStatus === 'calling'"
+                          :show="true"
+                          :isGroup="true"
+                          :groupName="activeGroupCall?.name"
                           :participants="activeGroupCall?.participants"
-                          @cancel="endOutgoingCall"
+                          @cancel="endCall"
                         />
 
                         <!-- Video Call Modal (untuk personal / group setelah connected) -->
                         <VideoCallModal
-                          v-if="(showVideoCall || showGroupCall) && callStatus === 'connected'"
+                          v-if="(showPersonalCall || showGroupCall) && callStatus === 'connected'"
                           :show="true"
                           :isGroup="!!activeGroupCall"
                           :contactName="activeContact?.name"
                           :groupName="activeGroupCall?.name"
                           :participants="activeGroupCall?.participants"
                           :status="callStatus"
-                          @end="activeGroupCall ? leaveGroupCall() : endVideoCall()"
+                          @end="endCall"
                         />
 
                         <!-- Incoming Call Modal -->
                         <IncomingCallModal
-                          v-if="incomingCall"
+                          v-if="callStatus === 'ringing'"
                           :show="true"
-                          :fromName="incomingCall.from.name"
+                          :fromName="incomingCall?.from.name"
                           @accept="acceptIncomingCall"
                           @reject="rejectIncomingCall"
                         />
 
                         <!-- <VideoCallModal
-                            :show="showVideoCall"
+                            :show="showPersonalCall"
                             :contactName="activeContact.name"
                             :status="callStatus"
-                            @end="endVideoCall"
+                            @end="endPersonalCall"
                         />
                         <VideoCallModal
                             :show="showGroupCall"

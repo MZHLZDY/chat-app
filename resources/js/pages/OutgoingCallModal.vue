@@ -2,13 +2,15 @@
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, computed, watch} from 'vue';
+import type { CallStatus, Participants } from '@/types/CallStatus';
+
 // import { defineProps, defineEmits } from 'vue';
 
-export type Participants = {
-    id: number;
-    name: string;
-    status: "calling" | "rejected" | "missed" | "accepted";
-};
+// export type Participants = {
+//     id: number;
+//     name: string;
+//     status: "calling" | "rejected" | "missed" | "accepted";
+// };
 
 interface Props {
     show: boolean;
@@ -71,7 +73,7 @@ const updateStatus = (id: number, status: Participants["status"]) => {
             <!-- Personal Call -->
             <template v-if="!props.isGroup">
                 <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">🤙 Memanggil</h2>
-                <p class="text-gray-600 dark:text-gray-300">Ke: {{ props.calleeName || "Unknown" }}</p>
+                <p class="text-gray-600 dark:text-gray-300">Ke: {{ props.calleeName || 'Unknown' }}</p>
                 <div>
                     <button
                         @click="emit('cancel')"
