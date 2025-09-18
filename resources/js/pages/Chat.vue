@@ -63,7 +63,6 @@ const activeChat = ref<Chat | null>(null);
 
 
 // --- Personal Video Call State ---
-const showPersonalCall = ref(false);
 const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
 // const personalCallStatus = ref<CallStatus>('idle');
@@ -78,7 +77,6 @@ const startVideoCall = (contact: Chat) => {
   callType.value = 'personal';
   callPartnerId.value = contact.id;
   activeContact.value = contact;
-  // showPersonalCall.value = true;
   callStatus.value = 'calling';
 
   // set timeout 30dtk, klo ga diangkat dianggap "missed"
@@ -94,9 +92,7 @@ const startVideoCall = (contact: Chat) => {
 
 // const endOutgoingCall = () => {
 //   clearTimeout(callTimer);
-//   showPersonalCall.value = false;
 //   callPartnerId.value = null;
-//   showGroupCall.value = false;
 //   callStatus.value = "idle"
 // }
 
@@ -112,7 +108,6 @@ const acceptIncomingCall = () => {
   clearTimeout(callTimer)
   callStatus.value = 'connected';
   incomingCall.value = null;
-  showPersonalCall.value = true;
 }
 
 const rejectIncomingCall = () => {
@@ -125,24 +120,27 @@ const rejectIncomingCall = () => {
 }
 
 const endPersonalCall = () => {
-  activeContact.value = null;
-  showPersonalCall.value = false;
-  callPartnerId.value = null;
-  callStatus.value = 'idle';
+  endCall();
 };
 
 const minimizeVideoCall = () => {
   isMinimized.value = true;
-  showPersonalCall.value = false;
 };
 
 const restoreVideoCall = () => {
   isMinimized.value = false;
-  showPersonalCall.value = true;
 };
 
+// State minimize call yang sedang berjalan
+const isCallActive = computed(() => {
+  return callStatus.value === 'connected' || callStatus.value === 'calling' || isMinimized.value;
+});
+
+// State untuk modal peringatan
+const showCallWarning = ref(false);
+const pendingCall = ref<{ type: 'personal' | 'group', contact?: Chat, groupData?: any } | null>(null);
+
 // Group Video Call State
-const showGroupCall = ref(false);
 // const callStatus = ref<CallStatus>('idle');
 const activeGroupCall = ref<null | { groupId: number; name: string; participants: Participants[] }>(null);const joinedMembers = ref<any[]>([]);
 
@@ -156,7 +154,6 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
 
   callType.value = 'group';
   callStatus.value = 'calling';
-  // showGroupCall.value = true;
 
   // timeout untuk group call
   callTimer = setTimeout(() => {
@@ -182,10 +179,7 @@ const joinGroupCall = (user: any) => {
 
 // Leave group call
 const leaveGroupCall = () => {
-  showGroupCall.value = false;
-  callStatus.value = 'idle';
-  activeGroupCall.value = null;
-  joinedMembers.value = [];
+  endCall();
 };
 
 // State End call untuk semua (personal + group)
@@ -193,8 +187,6 @@ const endCall = () => {
   clearTimeout(callTimer);
   callType.value = 'none';
   callStatus.value = 'idle';
-  showPersonalCall.value = false;
-  showGroupCall.value = false;
   callPartnerId.value = null;
   activeGroupCall.value = null;
   joinedMembers.value = []; // Reset joined members
@@ -513,14 +505,27 @@ const selectContact = (contact: Chat) => {
       unreadCounts.value = newCounts;
     }
     
-    // reset call UI saat pindah chat yang berbeda tipe
-    if (callStatus.value === 'calling') {
-      // jika lagi call personal, tapi pindah ke grup = reset UI personal
-      if (callType.value === 'personal' && contact.type === 'group') {
-        endCall();
+    // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
+    if (callStatus.value === 'calling' || callStatus.value === 'connected') {
+      let shouldEndCall = false;
+      
+      if (callType.value === 'personal') {
+        // Jika sedang call personal, end call jika:
+        // 1. Pindah ke group chat (apapun groupnya)
+        // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
+        if (contact.type === 'group' || (contact.type === 'user' && contact.id !== callPartnerId.value)) {
+          shouldEndCall = true;
+        }
+      } else if (callType.value === 'group') {
+        // Jika sedang call group, end call jika:
+        // 1. Pindah ke personal chat (apapun orangnya)  
+        // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
+        if (contact.type === 'user' || (contact.type === 'group' && contact.id !== activeGroupCall.value?.groupId)) {
+          shouldEndCall = true;
+        }
       }
-      // jika lagi call grup, tapi pindah ke personal = reset UI grup
-      if (callType.value === 'group' && contact.type === 'user') {
+      
+      if (shouldEndCall) {
         endCall();
       }
     }
@@ -551,7 +556,6 @@ const handleGroupMemberAccepted = (memberId: number) => {
         
         // Jika ada yang terima, pindah ke VideoCallModal
         callStatus.value = 'connected';
-        showGroupCall.value = true;
     }
 };
 
@@ -744,16 +748,29 @@ onMounted(() => {
 const selectChat = (chat: Chat) => {
   activeChat.value = chat;
 
-  // kalau lagi call personal, tapi pindah ke grup = reset UI personal
-  if (callType.value === 'personal' && chat.type === 'group') {
-    callStatus.value = 'idle';
-    showPersonalCall.value = false;
-  }
-
-  // kalau lagi call grup, tapi pindah ke personal = reset UI grup
-  if (callType.value === 'group' && chat.type === 'user') {
-    callStatus.value = 'idle';
-    showGroupCall.value = false;
+  // Logic call management yang sama dengan selectContact
+  if (callStatus.value === 'calling' || callStatus.value === 'connected') {
+    let shouldEndCall = false;
+    
+    if (callType.value === 'personal') {
+      // Jika sedang call personal, end call jika:
+      // 1. Pindah ke group chat (apapun groupnya)
+      // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
+      if (chat.type === 'group' || (chat.type === 'user' && chat.id !== callPartnerId.value)) {
+        shouldEndCall = true;
+      }
+    } else if (callType.value === 'group') {
+      // Jika sedang call group, end call jika:
+      // 1. Pindah ke personal chat (apapun orangnya)  
+      // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
+      if (chat.type === 'user' || (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId)) {
+        shouldEndCall = true;
+      }
+    }
+    
+    if (shouldEndCall) {
+      endCall();
+    }
   }
 }
 </script>
@@ -833,15 +850,15 @@ const selectChat = (chat: Chat) => {
                                       <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
                                       <span>Online</span>
                                   </span>
-                                  <span v-else-if="(contacts.find(c => c.id === activeContact?.id) as any)?.last_seen">
-                                      {{ formatLastSeen((contacts.find(c => c.id === activeContact?.id) as any)?.last_seen) }}
+                                  <span v-else-if="(contacts.find((c: Contact) => c.id === activeContact?.id) as any)?.last_seen">
+                                      {{ formatLastSeen((contacts.find((c: Contact) => c.id === activeContact?.id) as any)?.last_seen) }}
                                   </span>
                                   <span v-else>
                                       Offline
                                   </span>
                               </span>
                               <span v-else-if="activeContact.type === 'group'" class="truncate">
-                                  {{ activeContact.members?.map(member => member.id === currentUserId ? 'Anda' : member.name).join(', ') }}
+                                  {{ activeContact.members?.map((member: User) => member.id === currentUserId ? 'Anda' : member.name).join(', ') }}
                               </span>
                           </div>
                           <div v-if="activeContact.type === 'user'" class="text-xs text-gray-500 dark:text-gray-400">
@@ -861,7 +878,7 @@ const selectChat = (chat: Chat) => {
                           @click="startGroupCall(
                             activeContact.id,
                             activeContact.name,
-                            (activeContact.members || []).map(m => ({
+                            (activeContact.members || []).map((m: User) => ({
                               ...m,
                               status: 'calling'
                              }))
@@ -893,12 +910,15 @@ const selectChat = (chat: Chat) => {
 
                         <!-- Video Call Modal (untuk personal / group setelah connected) -->
                         <VideoCallModal
-                          v-if="(showPersonalCall || showGroupCall) && callStatus === 'connected'"
+                          v-if="callStatus === 'connected' && (
+                            (callType === 'personal' && activeContact?.type === 'user' && activeContact?.id === callPartnerId) ||
+                            (callType === 'group' && activeContact?.type === 'group' && activeContact?.id === activeGroupCall?.groupId)
+                          )"
                           :show="true"
-                          :isGroup="!!activeGroupCall"
-                          :contactName="activeContact?.name"
-                          :groupName="activeGroupCall?.name"
-                          :participants="activeGroupCall?.participants"
+                          :isGroup="callType === 'group'"
+                          :contactName="callType === 'personal' ? activeContact?.name : undefined"
+                          :groupName="callType === 'group' ? activeGroupCall?.name : undefined"
+                          :participants="callType === 'group' ? activeGroupCall?.participants : undefined"
                           :status="callStatus"
                           @end="endCall"
                         />
@@ -911,33 +931,6 @@ const selectChat = (chat: Chat) => {
                           @accept="acceptIncomingCall"
                           @reject="rejectIncomingCall"
                         />
-
-                        <!-- <VideoCallModal
-                            :show="showPersonalCall"
-                            :contactName="activeContact.name"
-                            :status="callStatus"
-                            @end="endPersonalCall"
-                        />
-                        <VideoCallModal
-                            :show="showGroupCall"
-                            :isGroup="true"
-                            :groupName="activeGroupCall?.name"
-                            :participants="activeGroupCall?.participants"
-                            :status="callStatus"
-                            @end="leaveGroupCall"
-                        />
-                        <IncomingCallModal
-                            :show="!!incomingCall"
-                            v-if="incomingCall"
-                            :fromName="incomingCall.from.name"
-                            @accept="acceptIncomingCall"
-                            @reject="rejectIncomingCall"
-                        />
-                        <OutgoingCallModal
-                          :show="callStatus === 'calling'"
-                          :calleeName="activeContact?.name"
-                          @cancel="endOutgoingCall"
-                        /> -->
                     </div>
                     <!-- room chat -->
                     <div ref="messageContainer" @scroll="handleScroll" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800 relative">
