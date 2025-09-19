@@ -2,65 +2,60 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use App\Models\User;
+use App\Models\Group;
 
 class GroupIncomingCallVoice implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, SerializesModels;
 
-    public $callId;
-    public $group;
-    public $caller;
-    public $callType;
-    public $channel;
-    public $participants;
+    public function __construct(
+        public string $callId,
+        public Group $group,
+        public User $caller,
+        public string $callType,
+        public string $channel,
+        public array $participants,
+        public ?User $recalledUser = null
+    ) {}
 
-    public function __construct($callId, $group, $caller, $callType, $channel, $participants)
+    public function broadcastOn(): array
     {
-        $this->callId = $callId;
-        $this->group = $group;
-        $this->caller = $caller;
-        $this->callType = $callType;
-        $this->channel = $channel;
-        $this->participants = $participants;
-    }
+        // Jika ini panggilan ulang, kirim hanya ke satu user
+        if ($this->recalledUser) {
+            return [ new PrivateChannel('user.' . $this->recalledUser->id) ];
+        }
 
-    public function broadcastOn()
-    {
-        // Broadcast ke channel private setiap peserta
+        // --- PERBAIKAN: LOGIKA MENJADI LEBIH SEDERHANA ---
         $channels = [];
         foreach ($this->participants as $participant) {
-            $channels[] = new PrivateChannel('user.' . $participant['id']);
+            // Siarkan HANYA jika ID peserta BUKAN ID penelepon
+            if (isset($participant['id']) && $participant['id'] !== $this->caller->id) {
+                $channels[] = new PrivateChannel('user.' . $participant['id']);
+            }
         }
         return $channels;
     }
 
-    public function broadcastAs()
+    public function broadcastAs(): string
     {
         return 'group-incoming-call';
     }
 
-    public function broadcastWith()
+    public function broadcastWith(): array
     {
+        // Data yang dikirim ke penerima tetap data yang lengkap
         return [
             'callId' => $this->callId,
-            'group' => [
-                'id' => $this->group->id,
-                'name' => $this->group->name
-            ],
-            'caller' => [
-                'id' => $this->caller->id,
-                'name' => $this->caller->name
-            ],
+            'group' => ['id' => $this->group->id, 'name' => $this->group->name],
+            'caller' => ['id' => $this->caller->id, 'name' => $this->caller->name],
             'callType' => $this->callType,
             'channel' => $this->channel,
-            'participants' => $this->participants
+            'participants' => $this->participants // Kirim daftar lengkap
         ];
     }
 }
-

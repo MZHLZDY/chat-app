@@ -12,6 +12,8 @@ use App\Events\IncomingCallVoice;
 use App\Events\GroupIncomingCallVoice;
 use App\Events\GroupCallAnswered;
 use App\Events\GroupCallEnded;
+use App\Events\GroupCallCancelled;
+use App\Events\GroupParticipantLeft;
 use App\Events\CallAccepted;
 use App\Events\CallStarted;
 use App\Events\CallRejected;
@@ -204,158 +206,81 @@ public function endCall(Request $request)
 }
 
     // TAMBAHKAN METHOD UNTUK HANDLE MISSED CALL
-    public function inviteGroupCall(Request $request)
-    {
-        DB::beginTransaction();
-        try {
-            Log::info('Group call invite request:', $request->all());
-            
-            $request->validate([
-                'group_id' => 'required|exists:groups,id',
-                'call_type' => 'required|in:voice,video'
-            ]);
-            
-            $caller = auth()->user();
-            $groupId = $request->group_id;
-            
-            // Cek apakah user adalah anggota grup menggunakan query langsung
-            $isMember = DB::table('group_user')
-                ->where('group_id', $groupId)
-                ->where('user_id', $caller->id)
-                ->exists();
-            
-            if (!$isMember) {
-                return response()->json(['error' => 'Anda bukan anggota grup ini'], 403);
-            }
-            
-            // Ambil data grup
-            $group = Group::find($groupId);
-            
-            // Ambil anggota grup (exclude caller)
-            $participants = DB::table('group_user')
-                ->join('users', 'group_user.user_id', '=', 'users.id')
-                ->where('group_user.group_id', $groupId)
-                ->where('users.id', '!=', $caller->id)
-                ->select('users.id', 'users.name')
-                ->get()
-                ->map(function($user) {
-                    return [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'status' => 'calling'
-                    ];
-                })
-                ->toArray();
-            
-            Log::info('Group call participants:', $participants);
-            
-            $callId = uniqid();
-            $channel = 'group-call-' . $callId;
-            
-            // Broadcast panggilan ke semua anggota grup
-            event(new GroupIncomingCallVoice(
-                $callId,
-                $group,
-                $caller,
-                $request->call_type,
-                $channel,
-                $participants
-            ));
-            
-            DB::commit();
-            
-            return response()->json([
-                'call_id' => $callId,
-                'channel' => $channel,
-                'participants' => $participants,
-                'group' => [
-                    'id' => $group->id,
-                    'name' => $group->name
-                ]
-            ]);
-            
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
-            Log::error('Validation error in group call:', $e->errors());
-            return response()->json(['error' => 'Data tidak valid', 'details' => $e->errors()], 422);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error starting group call: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json([
-                'error' => 'Gagal memulai panggilan grup',
-                'message' => $e->getMessage()
-            ], 500);
-        }
+    public function inviteGroupCall(Request $request) {
+    $request->validate(['group_id' => 'required|exists:groups,id', 'call_type' => 'required|in:voice,video']);
+
+    $caller = $request->user();
+    $group = Group::find($request->group_id);
+
+    // 1. Buat daftar partisipan LENGKAP untuk dikirim ke UI Host dan juga ke event
+    $allParticipants = $group->members()->get(['users.id', 'users.name'])
+        ->map(function ($user) use ($caller) {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'status' => $user->id === $caller->id ? 'accepted' : 'calling'
+            ];
+        })->toArray();
+
+    $callId = uniqid('group-call-');
+    $channel = 'group-call-' . $callId;
+
+    // 2. Siarkan event dengan membawa daftar peserta LENGKAP
+    event(new \App\Events\GroupIncomingCallVoice($callId, $group, $caller, $request->call_type, $channel, $allParticipants, null));
+
+    // 3. Kirim kembali daftar LENGKAP ke Host
+    return response()->json([
+        'call_id' => $callId, 
+        'channel' => $channel, 
+        'participants' => $allParticipants,
+        'group' => ['id' => $group->id, 'name' => $group->name]
+    ]);
+}
+
+    public function answerGroupCall(Request $request) {
+        $request->validate(['call_id' => 'required|string', 'group_id' => 'required|exists:groups,id', 'accepted' => 'required|boolean', 'reason' => 'nullable|string']);
+        $user = $request->user();
+        $group = Group::find($request->group_id);
+        event(new GroupCallAnswered($request->call_id, $group, $user, $request->boolean('accepted'), $request->reason));
+        return response()->json(['status' => 'success']);
     }
-    
-    /**
-     * Menjawab panggilan grup
-     */
-    public function answerGroupCall(Request $request)
-    {
-        try {
-            Log::info('Group call answer request:', $request->all());
-            
-            $request->validate([
-                'call_id' => 'required',
-                'accepted' => 'required|boolean',
-                'reason' => 'nullable|string'
-            ]);
-            
-            $user = auth()->user();
-            $accepted = $request->boolean('accepted');
-            
-            // Di sini Anda bisa menyimpan status jawaban ke database jika diperlukan
-            // Contoh: menyimpan ke tabel call_participants
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => $accepted ? 'Panggilan diterima' : 'Panggilan ditolak',
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            Log::error('Error answering group call: ' . $e->getMessage());
-            return response()->json(['error' => 'Gagal menjawab panggilan grup'], 500);
-        }
+
+    public function endGroupCall(Request $request) {
+        $request->validate(['call_id' => 'required|string', 'group_id' => 'required|exists:groups,id', 'reason' => 'nullable|string']);
+        $user = $request->user();
+        $group = Group::find($request->group_id);
+        event(new GroupCallEnded($request->call_id, $group->id, $user, $request->reason));
+        return response()->json(['status' => 'success']);
     }
-    
-    /**
-     * Mengakhiri panggilan grup
-     */
-    public function endGroupCall(Request $request)
-    {
-        try {
-            Log::info('Group call end request:', $request->all());
-            
-            $request->validate([
-                'call_id' => 'required',
-                'reason' => 'nullable|string'
-            ]);
-            
-            $user = auth()->user();
-            
-            // Di sini Anda bisa update status panggilan di database
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Panggilan diakhiri',
-                'ended_by' => [
-                    'id' => $user->id,
-                    'name' => $user->name
-                ]
-            ]);
-            
-        } catch (\Exception $e) {
-            Log::error('Error ending group call: ' . $e->getMessage());
-            return response()->json(['error' => 'Gagal mengakhiri panggilan grup'], 500);
-        }
+
+    public function cancelGroupCall(Request $request) {
+        $request->validate(['call_id' => 'required|string', 'participant_ids' => 'required|array']);
+        $caller = $request->user();
+        event(new GroupCallCancelled($request->call_id, $request->participant_ids, $caller));
+        return response()->json(['message' => 'Panggilan berhasil dibatalkan']);
+    }
+
+    public function leaveGroupCall(Request $request) {
+        $request->validate(['call_id' => 'required|string', 'group_id' => 'required|exists:groups,id']);
+        $user = $request->user();
+        $group = Group::find($request->group_id);
+        event(new GroupParticipantLeft($request->call_id, $group, $user));
+        return response()->json(['message' => 'Notifikasi keluar berhasil dikirim']);
+    }
+
+    public function recallParticipant(Request $request) {
+        $request->validate(['call_id' => 'required|string', 'group_id' => 'required|exists:groups,id', 'user_id_to_recall' => 'required|exists:users,id', 'current_participants' => 'required|array']);
+        $caller = $request->user();
+        $group = Group::find($request->group_id);
+        $userToRecall = User::find($request->user_id_to_recall);
+        $participants = $request->current_participants;
+        event(new GroupIncomingCallVoice($request->call_id, $group, $caller, 'voice', 'group-call-' . $request->call_id, $participants, $userToRecall));
+        return response()->json(['message' => 'Undangan panggilan ulang berhasil dikirim']);
+    }
+
+    public function missedGroupCall(Request $request) {
+        Log::info('Missed group call:', $request->all());
+        return response()->json(['status' => 'success']);
     }
     
     /**
@@ -386,31 +311,11 @@ public function endCall(Request $request)
             Log::error('Error generating group token: ' . $e->getMessage());
             return response()->json(['error' => 'Gagal generate token'], 500);
         }
+
     }
+
     
     /**
      * Menangani panggilan grup yang tidak dijawab
      */
-    public function missedGroupCall(Request $request)
-    {
-        try {
-            Log::info('Missed group call:', $request->all());
-            
-            $request->validate([
-                'call_id' => 'required',
-                'reason' => 'nullable|string'
-            ]);
-            
-            // Log missed call ke database atau sistem notifikasi
-            
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Panggilan missed dicatat'
-            ]);
-            
-        } catch (\Exception $e) {
-            Log::error('Error handling missed group call: ' . $e->getMessage());
-            return response()->json(['error' => 'Gagal menangani panggilan missed'], 500);
-        }
-    }
 }

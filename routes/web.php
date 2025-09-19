@@ -152,18 +152,21 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/token', [AgoraCallController::class, 'generateToken']);
     });
 
-    Route::prefix('group-call')->group(function () {
-      Route::post('/invite', [AgoraCallController::class, 'inviteGroupCall']);
-      Route::post('/answer', [AgoraCallController::class, 'answerGroupCall']);
-      Route::post('/end', [AgoraCallController::class, 'endGroupCall']);
-      Route::post('/token', [AgoraCallController::class, 'generateGroupToken']);
-      Route::post('/missed', [AgoraCallController::class, 'missedGroupCall']);
+    Route::prefix('group-call')->as('group-call.')->group(function () {
+      Route::post('/invite', [AgoraCallController::class, 'inviteGroupCall'])->name('invite');
+      Route::post('/answer', [AgoraCallController::class, 'answerGroupCall'])->name('answer');
+      Route::post('/end', [AgoraCallController::class, 'endGroupCall'])->name('end');
+      Route::post('/cancel', [AgoraCallController::class, 'cancelGroupCall'])->name('cancel'); // <-- PASTIKAN BARIS INI ADA
+      Route::post('/leave', [AgoraCallController::class, 'leaveGroupCall'])->name('leave');
+      Route::post('/recall', [AgoraCallController::class, 'recallParticipant'])->name('recall');
+      Route::post('/missed', [AgoraCallController::class, 'missedGroupCall'])->name('missed');
+      Route::post('/token', [AgoraCallController::class, 'generateGroupToken'])->name('token');
     });
 
 });
-
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');
 Route::post('/messages/hide', [HiddenMessageController::class, 'store'])->middleware('auth');
+
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';

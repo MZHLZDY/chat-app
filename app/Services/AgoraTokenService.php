@@ -38,3 +38,4 @@ class AgoraTokenService
         return self::generateRtcToken($appId, $appCertificate, $channelName, $uid, 'publisher', $expireTime);
     }
 }
+

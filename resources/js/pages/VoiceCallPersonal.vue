@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, watch, ref, onUnmounted } from 'vue';
-import { PhoneForwarded } from 'lucide-vue-next';
+import { PhoneForwarded, Volume2, Mic, MicOff } from 'lucide-vue-next';
 
 // Props
 const props = defineProps({
@@ -127,7 +127,7 @@ onUnmounted(() => {
       
       <!-- Status Koneksi -->
       <div class="text-sm text-green-500 dark:text-green-400 mb-4">
-        Terhubung dengan baik
+        Terhubung
       </div>
 
       <!-- Audio Status Indicators -->
@@ -149,13 +149,8 @@ onUnmounted(() => {
                    isMuted ? 'bg-red-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white']"
           title="Mute/Unmute"
         >
-          <svg v-if="isMuted" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 4.202 12 4.746 12 5.618v12.764c0 .872-1.077 1.416-1.707.707L5.586 15z"/>
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
-          </svg>
-          <svg v-else class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6a9 9 0 010 12m-4.5-9.5L12 4.5l4.5 4.5M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 4.202 12 4.746 12 5.618v12.764c0 .872-1.077 1.416-1.707.707L5.586 15z"/>
-          </svg>
+          <MicOff v-if="isMuted" class="w-5 h-5"/>
+          <Mic v-else class="w-5 h-5"/>
         </button>
 
         <!-- Tombol Speaker -->
@@ -165,9 +160,7 @@ onUnmounted(() => {
                    isSpeakerOn ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white']"
           title="Speaker"
         >
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 2a1 1 0 011 1v18a1 1 0 01-1 1h-2a1 1 0 01-1-1V3a1 1 0 011-1h2zM5 8h1a2 2 0 012 2v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4a2 2 0 012-2zM19 8h1a2 2 0 012 2v4a2 2 0 01-2 2h-1a2 2 0 01-2-2v-4a2 2 0 012-2z"/>
-          </svg>
+          <Volume2 class="w-5 h-5"/>
         </button>
 
         <!-- Tombol End Call -->

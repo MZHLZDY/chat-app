@@ -2,37 +2,40 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\Channel;
-use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
+use App\Models\User;
 
 class GroupCallEnded implements ShouldBroadcast
 {
-    use Dispatchable, InteractsWithSockets, SerializesModels;
+    use Dispatchable, SerializesModels;
 
-    public $callId;
-    public $user;
-    public $reason;
-
-    public function __construct($callId, $user, $reason = null)
-    {
-        $this->callId = $callId;
-        $this->user = $user;
-        $this->reason = $reason;
-    }
+    public function __construct(
+        public string $callId,
+        public int $groupId,
+        public User $endedBy,
+        public ?string $reason
+    ) {}
 
     public function broadcastOn()
     {
-        // Broadcast ke semua peserta panggilan
-        return new PrivateChannel('group-call.' . $this->callId);
+        // Siarkan ke channel utama grup
+        return new PrivateChannel('group.' . $this->groupId);
     }
 
-    public function broadcastAs()
+    public function broadcastAs(): string
     {
         return 'group-call-ended';
     }
-}
 
+    public function broadcastWith(): array
+    {
+        return [
+            'call_id' => $this->callId,
+            'ended_by' => ['id' => $this->endedBy->id, 'name' => $this->endedBy->name],
+            'reason' => $this->reason,
+        ];
+    }
+}
