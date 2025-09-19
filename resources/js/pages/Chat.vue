@@ -77,6 +77,14 @@ const callType = ref< 'none' | 'personal' | 'group'>('none');
 let callTimer : any = null;
 
 const startVideoCall = (contact: Chat) => {
+  // cek apakah sedang ada call aktif
+  if (isCallActive.value) {
+    // simpan informasi call yang ingin dibuat
+    pendingCall.value = { type: 'personal', contact };
+    showCallWarning.value = true;
+    return;
+  }
+
   callType.value = 'personal';
   callPartnerId.value = contact.id;
   activeContact.value = contact;
@@ -149,6 +157,17 @@ const activeGroupCall = ref<null | { groupId: number; name: string; participants
 
 // Start Group Video Call
 const startGroupCall = (groupId: number, groupName: string, members: Participants[]) => {
+  // cek apakah sedang ada call aktif
+  if (isCallActive.value) {
+    // simpan informasi call yang ingin dibuat
+    pendingCall.value = {
+      type: 'group',
+      groupData: { groupId, groupName, members }
+    };
+    showCallWarning.value = true;
+    return;
+  }
+
   activeGroupCall.value = {
     groupId,
     name: groupName,
@@ -157,6 +176,7 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
 
   callType.value = 'group';
   callStatus.value = 'calling';
+  isMinimized.value = false;
 
   // timeout untuk group call
   callTimer = setTimeout(() => {
@@ -546,28 +566,36 @@ const selectContact = (contact: Chat) => {
       unreadCounts.value = newCounts;
     }
     
-    // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
+    // logic untuk minimize / restore call saat pindah chat
     if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-      let shouldEndCall = false;
+      let shouldMinimize = false;
+      let shouldRestore = false;
       
       if (callType.value === 'personal') {
-        // Jika sedang call personal, end call jika:
-        // 1. Pindah ke group chat (apapun groupnya)
-        // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
-        if (contact.type === 'group' || (contact.type === 'user' && contact.id !== callPartnerId.value)) {
-          shouldEndCall = true;
+        // jika sedang call personal
+        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+          // pindah ke chat yang sama dengan call -> restore
+          shouldRestore = true;
+        } else {
+          // pindah ke chat yang berbeda dengan call -> minimize
+          shouldMinimize = true;
         }
+      
       } else if (callType.value === 'group') {
-        // Jika sedang call group, end call jika:
-        // 1. Pindah ke personal chat (apapun orangnya)  
-        // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
-        if (contact.type === 'user' || (contact.type === 'group' && contact.id !== activeGroupCall.value?.groupId)) {
-          shouldEndCall = true;
+        // jika sedang call group
+        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+          // pindah ke grup yang sama dengan call -> restore
+          shouldRestore = true;
+        } else {
+          // pindah ke chat yang berbeda dengan call -> minimize
+          shouldMinimize = true;
         }
       }
-      
-      if (shouldEndCall) {
-        endCall();
+
+      if (shouldMinimize) {
+        isMinimized.value = true;
+      } else if (shouldRestore) {
+        isMinimized.value = false;
       }
     }
 
@@ -791,29 +819,61 @@ const selectChat = (chat: Chat) => {
 
   // Logic call management yang sama dengan selectContact
   if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-    let shouldEndCall = false;
+    let shouldMinimize = false;
+    let shouldRestore = false;
     
     if (callType.value === 'personal') {
       // Jika sedang call personal, end call jika:
       // 1. Pindah ke group chat (apapun groupnya)
       // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
-      if (chat.type === 'group' || (chat.type === 'user' && chat.id !== callPartnerId.value)) {
-        shouldEndCall = true;
+      if (chat.type === 'user' && chat.id === callPartnerId.value) {
+        let shouldRestore = true;
+      } else {
+        shouldMinimize = true;
       }
+    
     } else if (callType.value === 'group') {
       // Jika sedang call group, end call jika:
       // 1. Pindah ke personal chat (apapun orangnya)  
       // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
-      if (chat.type === 'user' || (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId)) {
-        shouldEndCall = true;
+      if (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId) {
+        shouldRestore = true;
+      } else {
+        shouldMinimize = true;
       }
     }
     
-    if (shouldEndCall) {
-      endCall();
+    if (shouldMinimize) {
+      isMinimized.value = true;
+    } else if (shouldRestore) {
+      isMinimized.value = false;
     }
   }
 }
+
+// function untuk warning modal
+const handleEndCurrentCallAndStart = () => {
+  endCall();
+
+  // start new call setelah delay singkat
+  setTimeout(() => {
+    if (pendingCall.value) {
+      if (pendingCall.value.type === 'personal' && pendingCall.value.contact) {
+        startVideoCall(pendingCall.value.contact);
+      } else if (pendingCall.value.type === 'group' && pendingCall.value.groupData) {
+        const { groupId, groupName, members } = pendingCall.value.groupData;
+        startGroupCall(groupId, groupName, members);
+      }
+    }
+    pendingCall.value = null;
+    showCallWarning.value = false;
+  }, 100);
+};
+
+const handleCancelNewCall = () => {
+  pendingCall.value = null;
+  showCallWarning.value = false;
+};
 </script>
 
 <template>
@@ -822,7 +882,7 @@ const selectChat = (chat: Chat) => {
         <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
           <!-- sidebar bagian atas -->
             <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col h-full absolute md:static inset-0 transition-transform duration-300 ease-in-out"
-                 :class="{ '-translate-x-full md:translate-x-0': activeContact }"> 
+                 :class="{ 'translate-x-full md:translate-x-0': activeContact }"> 
                  <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
@@ -932,7 +992,7 @@ const selectChat = (chat: Chat) => {
 
                         <!-- Outgoing Personal Call Modal -->
                         <OutgoingCallModal
-                          v-if="callType === 'personal' && callStatus === 'calling'"
+                          v-if="callType === 'personal' && callStatus === 'calling' && !isMinimized"
                           :show="true"
                           :calleeName="activeContact?.name"
                           @cancel="endCall"
@@ -941,7 +1001,7 @@ const selectChat = (chat: Chat) => {
 
                         <!-- Outgoing Group Call Modal -->
                         <OutgoingCallModal
-                          v-if="callType === 'group' && callStatus === 'calling'"
+                          v-if="callType === 'group' && callStatus === 'calling' && !isMinimized"
                           :show="true"
                           :isGroup="true"
                           :groupName="activeGroupCall?.name"
@@ -951,7 +1011,7 @@ const selectChat = (chat: Chat) => {
 
                         <!-- Video Call Modal (untuk personal / group setelah connected) -->
                         <VideoCallModal
-                          v-if="callStatus === 'connected' && (
+                          v-if="callStatus === 'connected' && !isMinimized && (
                             (callType === 'personal' && activeContact?.type === 'user' && activeContact?.id === callPartnerId) ||
                             (callType === 'group' && activeContact?.type === 'group' && activeContact?.id === activeGroupCall?.groupId)
                           )"
@@ -962,6 +1022,7 @@ const selectChat = (chat: Chat) => {
                           :participants="callType === 'group' ? activeGroupCall?.participants : undefined"
                           :status="callStatus"
                           @end="endCall"
+                          @minimize="minimizeVideoCall"
                         />
 
                         <!-- Incoming Call Modal -->
@@ -972,6 +1033,36 @@ const selectChat = (chat: Chat) => {
                           @accept="acceptIncomingCall"
                           @reject="rejectIncomingCall"
                         />
+                    </div>
+                    <!-- minimize call indicator -->
+                    <div v-if="isCallActive && isMinimized"
+                      @click="restoreVideoCall"
+                      class="fixed bottom-4 right-4 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full cursor-pointer shadow-lg flex items-center gap-2 z-50 transition-colors">
+                      <Video class="w-4 h-4"/>
+                      <span class="text-sm font-medium">
+                        {{ callType === 'personal' ? `Call dengan ${contacts.find(c => c.id === callPartnerId)?.name}` : `Group Call ${activeGroupCall?.name}` }}
+                      </span>
+                      <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    </div>
+
+                     <!-- call warning modal -->
+                    <div v-if="showCallWarning" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
+                        <h3 class="text-lg font-bold mb-4 dark:text-gray-200">Panggilan sedang berlangsung</h3>
+                        <p class="mb-4 text-gray-700 dark:text-gray-300">
+                          Anda sedang dalam panggilan. Apakah anda ingin mengakhiri panggilan saat ini dan memulai panggilan baru?
+                        </p>
+                        <div class="flex gap-3">
+                          <button @click="handleEndCurrentCallAndStart"
+                                  class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg">
+                            Akhiri & Panggil
+                          </button>
+                          <button @click="handleCancelNewCall"
+                                  class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 px-4 rounded-lg">
+                            Batal
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <!-- room chat -->
                     <div ref="messageContainer" @scroll="handleScroll" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800 relative">
