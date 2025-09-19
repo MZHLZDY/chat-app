@@ -6,6 +6,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Models\ChatMessage;
 
 class User extends Authenticatable
 {
@@ -61,6 +62,16 @@ class User extends Authenticatable
     public function groups()
     {
         return $this->belongsToMany(Group::class, 'group_user', 'user_id', 'group_id');
+    }
+
+    public function latestMessageSent()
+    {
+        return $this->hasOne(ChatMessage::class, 'sender_id')->latest();
+    }
+
+    public function latestMessageReceived()
+    {
+        return $this->hasOne(ChatMessage::class, 'receiver_id')->latest();
     }
 
     public function getChatPartnersAttribute()

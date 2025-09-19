@@ -6,6 +6,7 @@ use App\Http\Controllers\ChatController;
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\CallController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\HiddenMessageController;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -101,6 +102,7 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');
+Route::post('/messages/hide', [HiddenMessageController::class, 'store'])->middleware('auth');
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';

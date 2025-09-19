@@ -60,6 +60,9 @@ const props = defineProps<{
   participants?: Participants[];
 }>();
 const activeChat = ref<Chat | null>(null);
+const showDeleteModal = ref(false);
+const messageToDelete = ref<any | null>(null);
+const deleteType = ref<'me' | 'everyone'>('everyone');
 
 
 // --- Personal Video Call State ---
@@ -300,7 +303,6 @@ const formatDateSeparator = (dateString: string): string => {
     return format(date, 'EEEE, d MMM yyyy', { locale: id });
 };
 
-
 // --- Load Functions ---
 const loadContacts = async () => {
   try {
@@ -404,6 +406,45 @@ const loadUnreadCounts = async () => {
   }
 };
 
+const openDeleteModal = (message: any) => {
+    messageToDelete.value = message;
+    showDeleteModal.value = true;
+    deleteType.value = 'everyone';
+};
+
+// Fungsi untuk mengeksekusi penghapusan
+const confirmDeletion = () => {
+    if (!messageToDelete.value) return;
+    if (deleteType.value === 'everyone') {
+        deleteMessageForEveryone(messageToDelete.value);
+    } else {
+        deleteMessageForMe(messageToDelete.value);
+    }
+    showDeleteModal.value = false;
+    messageToDelete.value = null;
+};
+
+// Fungsi 'Hapus untuk Saya'
+const deleteMessageForMe = async (message: any) => {
+    messages.value = messages.value.filter(m => m.id !== message.id);
+    try {
+        await axios.post('/messages/hide', {
+            message_id: message.id,
+            message_type: activeContact.value?.type === 'group' ? 'group' : 'chat',
+        });
+    } catch (error) { console.error('Gagal menyembunyikan pesan:', error); }
+};
+
+// Fungsi 'Hapus untuk Semua' (sebelumnya bernama deleteMessage)
+const deleteMessageForEveryone = async (message: any) => {
+    try {
+        const endpoint = activeContact.value?.type === 'group'
+            ? `/group-messages/${message.id}`
+            : `/messages/${message.id}`;
+        await axios.delete(endpoint);
+        messages.value = messages.value.filter(m => m.id !== message.id);
+    } catch (error) { console.error('Gagal menghapus pesan:', error); }
+};
 
 // --- WebSocket Management ---
 let boundChannel = '';
@@ -948,8 +989,27 @@ const selectChat = (chat: Chat) => {
                                         {{ formatDateSeparator(m.created_at) }}
                                     </span>
                                 </div>
-                                <div :class="m.sender_id === currentUserId ? 'text-right' : 'text-left'">
-                                    <div :class="m.sender_id === currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left'"> 
+                                <div v-if="showDeleteModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="showDeleteModal = false">
+                                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm p-6">
+                                    <h3 class="text-lg font-bold mb-4 text-gray-800 dark:text-gray-200">Hapus Pesan?</h3>
+                                    <div class="space-y-4 text-gray-700 dark:text-gray-300">
+                                      <label class="flex items-center space-x-3 cursor-pointer">
+                                        <input type="radio" v-model="deleteType" value="me" class="form-radio h-5 w-5 text-blue-600">
+                                        <span>Hapus untuk Saya</span>
+                                      </label>
+                                      <label class="flex items-center space-x-3 cursor-pointer">
+                                        <input type="radio" v-model="deleteType" value="everyone" class="form-radio h-5 w-5 text-blue-600">
+                                        <span>Hapus untuk Semua</span>
+                                      </label>
+                                    </div>
+                                    <div class="mt-6 flex justify-end space-x-4">
+                                      <button @click="showDeleteModal = false" class="px-4 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700">Batal</button>
+                                      <button @click="confirmDeletion" class="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700">Hapus</button>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div :class="m.sender_id == currentUserId ? 'text-right' : 'text-left'">
+                                    <div @click="m.sender_id == currentUserId ? openDeleteModal(m) : null" :class="[m.sender_id == currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left cursor-pointer' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left']"> 
                                         <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
                                             class="text-xs font-semibold mb-1 opacity-75">
                                             {{ m.sender_name }}

@@ -19,32 +19,52 @@ class ChatController extends Controller
 
     public function contacts()
     {
+        try {
         $contacts = User::where('id', '!=', auth()->id())
-                    ->get(['id', 'name', 'last_seen', 'phone_number']);
-        
-        $contacts->each(function ($contact) {
-            $contact->latest_message = ChatMessage::where(function ($query) use ($contact) {
-                $query->where('sender_id', auth()->id())
-                    ->where('receiver_id', $contact->id);
-            })->orWhere(function ($query) use ($contact) {
+                        ->get(['id', 'name', 'last_seen', 'phone_number']);
+
+        $authId = auth()->id();
+
+        foreach ($contacts as $contact) {
+            $contact->latest_message = ChatMessage::where(function ($query) use ($authId, $contact) {
+                $query->where('sender_id', $authId)
+                      ->where('receiver_id', $contact->id);
+            })->orWhere(function ($query) use ($authId, $contact) {
                 $query->where('sender_id', $contact->id)
-                    ->where('receiver_id', auth()->id());
-            })->latest()->first();
-        });
+                      ->where('receiver_id', $authId);
+            })
+            ->latest()
+            ->first();
+        }
 
         return response()->json($contacts);
+
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json(['message' => 'Terjadi error di method contacts()', 'error' => $e->getMessage()], 500);
+        }
     }
 
     public function messages(User $user)
     {
-        $messages = ChatMessage::where(function($q) use ($user) {
-            $q->where('sender_id', auth()->id())
-              ->where('receiver_id', $user->id);
-        })->orWhere(function($q) use ($user) {
-            $q->where('sender_id', $user->id)
-              ->where('receiver_id', auth()->id());
-        })
-        ->orderByDesc('created_at')->simplePaginate(50);
+        $authId = auth()->id();
+
+        $messages = ChatMessage::query()
+            ->where(function ($query) use ($user, $authId) {
+                $query->where('sender_id', $authId)
+                    ->where('receiver_id', $user->id)
+                    ->orWhere(function ($q) use ($user, $authId) {
+                        $q->where('sender_id', $user->id)
+                            ->where('receiver_id', $authId);
+                    });
+            })
+            ->whereDoesntHave('hiddenForUsers', function ($query) use ($authId) {
+                $query->where('user_id', $authId);
+            })
+            
+            ->with('sender:id,name', 'parentMessage.sender:id,name')
+            ->orderByDesc('created_at')
+            ->simplePaginate(50);
 
         return response()->json($messages);
     }
@@ -84,29 +104,21 @@ class ChatController extends Controller
     {
         try {
             $userId = auth()->id();
-
-            // 1. Menghitung pesan personal yang belum dibaca
             $userUnreads = DB::table('chat_messages')
                 ->select('sender_id', DB::raw('count(*) as messages_count'))
                 ->where('receiver_id', $userId)
                 ->whereNull('read_at')
                 ->groupBy('sender_id')
                 ->get();
-
-            // 2. Format data agar cocok dengan state di frontend (contoh: { 'user-5': 3 })
             $unreadCounts = [];
             foreach ($userUnreads as $unread) {
                 $key = 'user-' . $unread->sender_id;
                 $unreadCounts[$key] = $unread->messages_count;
             }
-
-            // 3. Kembalikan data dalam format JSON
             return response()->json($unreadCounts);
 
         } catch (\Exception $e) {
-            // 4. Jika terjadi error, kirim respons error 500
-            // Ini akan membantu debugging di frontend
-            report($e); // Opsional: catat error ke log
+            report($e);
             return response()->json(['message' => 'Gagal memuat jumlah pesan belum dibaca.'], 500);
         }
     }

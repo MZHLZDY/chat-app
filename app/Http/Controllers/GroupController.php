@@ -8,16 +8,17 @@ use App\Models\GroupMessage;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class GroupController extends Controller
 {
     public function index()
     {
-        $groups = Group::with('members:id,name') // <-- Tetap ada untuk daftar anggota
-            ->with('latestMessage.sender')  // <-- TAMBAHKAN BARIS INI
+        $groups = Group::with('members:id,name')
+            ->with('latestMessage.sender')
             ->withCount('members')
             ->whereHas('members', fn($q) => $q->where('users.id', auth()->id()))
-            ->orderByDesc('updated_at') // Opsional: urutkan grup berdasarkan aktivitas terakhir
+            ->orderByDesc('updated_at') 
             ->get();
 
         return response()->json($groups);
@@ -43,13 +44,17 @@ class GroupController extends Controller
 
     public function messages(Group $group)
     {
+        $authId = auth()->id();
         // authorize: user harus member
         abort_unless($group->members()->where('users.id',auth()->id())->exists(), 403);
 
         $messages = GroupMessage::where('group_id', $group->id)
-            ->with('sender:id,name')     // <-- PENTING: Ambil data pengirim
-            ->orderByDesc('created_at') // <-- PENTING: Urutkan dari terbaru
-            ->simplePaginate(50);
+        ->whereDoesntHave('hiddenForUsers', function ($query) use ($authId) {
+            $query->where('user_id', $authId);
+        })
+        ->with('sender:id,name')
+        ->orderByDesc('created_at')
+        ->simplePaginate(50);
 
         return response()->json($messages);
     }
