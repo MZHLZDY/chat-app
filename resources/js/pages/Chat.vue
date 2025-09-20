@@ -71,6 +71,10 @@ const userBackgroundPath = computed<string | null>(() => page.props.auth.user.ba
 const userBackgroundUrl = computed<string>(() => page.props.auth.user.background_image_url);
 
 
+// --- Agora Call State ---
+const { startVoiceCall } = usePersonalCall();
+const { startGroupVoiceCall, setupDynamicGroupListeners, leaveDynamicGroupChannel } = useGroupCall();
+
 // --- Personal Video Call State ---
 const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
@@ -223,17 +227,6 @@ const activeGroupCall = ref<null | { groupId: number; name: string; participants
 
 // Start Group Video Call
 const startGroupCall = (groupId: number, groupName: string, members: Participants[]) => {
-  // cek apakah sedang ada call aktif
-  if (isCallActive.value) {
-    // simpan informasi call yang ingin dibuat
-    pendingCall.value = {
-      type: 'group',
-      groupData: { groupId, groupName, members }
-    };
-    showCallWarning.value = true;
-    return;
-  }
-
   activeGroupCall.value = {
     groupId,
     name: groupName,
@@ -242,7 +235,6 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
 
   callType.value = 'group';
   callStatus.value = 'calling';
-  isMinimized.value = false;
 
   // timeout untuk group call
   callTimer = setTimeout(() => {
@@ -509,6 +501,7 @@ const formatDateSeparator = (dateString: string): string => {
     }
     return format(date, 'EEEE, d MMM yyyy', { locale: id });
 };
+
 
 // --- Load Functions ---
 const loadContacts = async () => {
@@ -810,21 +803,17 @@ const selectContact = (contact: Chat) => {
       unreadCounts.value = newCounts;
     }
     
-    // logic untuk minimize / restore call saat pindah chat
+    // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
     if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-      let shouldMinimize = false;
-      let shouldRestore = false;
+      let shouldEndCall = false;
       
       if (callType.value === 'personal') {
-        // jika sedang call personal
-        if (contact.type === 'user' && contact.id === callPartnerId.value) {
-          // pindah ke chat yang sama dengan call -> restore
-          shouldRestore = true;
-        } else {
-          // pindah ke chat yang berbeda dengan call -> minimize
-          shouldMinimize = true;
+        // Jika sedang call personal, end call jika:
+        // 1. Pindah ke group chat (apapun groupnya)
+        // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
+        if (contact.type === 'group' || (contact.type === 'user' && contact.id !== callPartnerId.value)) {
+          shouldEndCall = true;
         }
-      
       } else if (callType.value === 'group') {
         // jika sedang call group
         if (contact.type === 'group' && contact.id === activeGroupCall.value?.groupId) {
@@ -835,11 +824,9 @@ const selectContact = (contact: Chat) => {
           shouldMinimize = true;
         }
       }
-
-      if (shouldMinimize) {
-        isMinimized.value = true;
-      } else if (shouldRestore) {
-        isMinimized.value = false;
+      
+      if (shouldEndCall) {
+        endCall();
       }
     }
 
@@ -1225,27 +1212,21 @@ const selectChat = (chat: Chat) => {
 
   // Logic call management yang sama dengan selectContact
   if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-    let shouldMinimize = false;
-    let shouldRestore = false;
+    let shouldEndCall = false;
     
     if (callType.value === 'personal') {
       // Jika sedang call personal, end call jika:
       // 1. Pindah ke group chat (apapun groupnya)
       // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
-      if (chat.type === 'user' && chat.id === callPartnerId.value) {
-        let shouldRestore = true;
-      } else {
-        shouldMinimize = true;
+      if (chat.type === 'group' || (chat.type === 'user' && chat.id !== callPartnerId.value)) {
+        shouldEndCall = true;
       }
-    
     } else if (callType.value === 'group') {
       // Jika sedang call group, end call jika:
       // 1. Pindah ke personal chat (apapun orangnya)  
       // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
-      if (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId) {
-        shouldRestore = true;
-      } else {
-        shouldMinimize = true;
+      if (chat.type === 'user' || (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId)) {
+        shouldEndCall = true;
       }
     }
     
@@ -1338,7 +1319,7 @@ const currentCallContactName = computed(() => {
         <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
           <!-- sidebar bagian atas -->
             <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col h-full absolute md:static inset-0 transition-transform duration-300 ease-in-out"
-                 :class="{ 'translate-x-full md:translate-x-0': activeContact }"> 
+                 :class="{ '-translate-x-full md:translate-x-0': activeContact }"> 
                  <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
@@ -1465,7 +1446,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Outgoing Personal Call Modal -->
                         <OutgoingCallModal
-                          v-if="callType === 'personal' && callStatus === 'calling' && !isMinimized"
+                          v-if="callType === 'personal' && callStatus === 'calling'"
                           :show="true"
                           :calleeName="currentCallContactName"
                           @cancel="endCall"
@@ -1474,7 +1455,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Outgoing Group Call Modal -->
                         <OutgoingCallModal
-                          v-if="callType === 'group' && callStatus === 'calling' && !isMinimized"
+                          v-if="callType === 'group' && callStatus === 'calling'"
                           :show="true"
                           :isGroup="true"
                           :groupName="currentCallContactName"
@@ -1484,7 +1465,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Video Call Modal (untuk personal / group setelah connected) -->
                         <VideoCallModal
-                          v-if="callStatus === 'connected' && !isMinimized && (
+                          v-if="callStatus === 'connected' && (
                             (callType === 'personal' && activeContact?.type === 'user' && activeContact?.id === callPartnerId) ||
                             (callType === 'group' && activeContact?.type === 'group' && activeContact?.id === activeGroupCall?.groupId)
                           )"
@@ -1495,7 +1476,6 @@ const currentCallContactName = computed(() => {
                           :participants="callType === 'group' ? activeGroupCall?.participants : undefined"
                           :status="callStatus"
                           @end="endCall"
-                          @minimize="minimizeVideoCall"
                         />
 
                         <!-- Incoming Call Modal -->
