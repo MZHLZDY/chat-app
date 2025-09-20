@@ -8,6 +8,8 @@ import { Video, UserPlus, ChartArea, Phone } from 'lucide-vue-next';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { formatDistanceToNowStrict, isSameDay, isToday, isYesterday, format } from 'date-fns';
 import { id } from 'date-fns/locale';
+import { usePersonalCall } from '@/composables/usePersonalCall';
+import { useGroupCall } from '@/composables/useGroupCall';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
