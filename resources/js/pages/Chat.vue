@@ -4,15 +4,14 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import { Video, UserPlus, ChartArea, Phone } from 'lucide-vue-next';
-import AgoraRTC from 'agora-rtc-sdk-ng';
+import { Video, UserPlus, ChartArea, Phone} from 'lucide-vue-next';
 import { formatDistanceToNowStrict, isSameDay, isToday, isYesterday, format } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { usePersonalCall } from '@/composables/usePersonalCall';
-import { useGroupCall } from '@/composables/useGroupCall';
 import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
+import { usePersonalCall } from '@/composables/usePersonalCall';
+import { useGroupCall } from '@/composables/useGroupCall';
 import type { CallStatus, Participants } from '@/types/CallStatus.js';
 import type { Contact, Group, User, Chat, AppPageProps } from '@/types/index';
 // import type { Participants } from './OutgoingCallModal.vue';
@@ -84,7 +83,7 @@ const isMinimized = ref(false);
 const callStatus = ref<CallStatus>('idle');
 const callType = ref< 'none' | 'personal' | 'group'>('none');
 
-let callTimer: any = null;
+let callTimer : any = null;
 
 const startVideoCall = async (contact: Chat) => {
   // cek apakah sedang ada call aktif
@@ -227,6 +226,17 @@ const activeGroupCall = ref<null | { groupId: number; name: string; participants
 
 // Start Group Video Call
 const startGroupCall = (groupId: number, groupName: string, members: Participants[]) => {
+  // cek apakah sedang ada call aktif
+  if (isCallActive.value) {
+    // simpan informasi call yang ingin dibuat
+    pendingCall.value = {
+      type: 'group',
+      groupData: { groupId, groupName, members }
+    };
+    showCallWarning.value = true;
+    return;
+  }
+
   activeGroupCall.value = {
     groupId,
     name: groupName,
@@ -235,6 +245,7 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
 
   callType.value = 'group';
   callStatus.value = 'calling';
+  isMinimized.value = false;
 
   // timeout untuk group call
   callTimer = setTimeout(() => {
@@ -501,7 +512,6 @@ const formatDateSeparator = (dateString: string): string => {
     }
     return format(date, 'EEEE, d MMM yyyy', { locale: id });
 };
-
 
 // --- Load Functions ---
 const loadContacts = async () => {
@@ -803,7 +813,40 @@ const selectContact = (contact: Chat) => {
       unreadCounts.value = newCounts;
     }
     
-    // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
+    // logic untuk minimize / restore call saat pindah chat
+    if (callStatus.value === 'calling' || callStatus.value === 'connected') {
+      let shouldMinimize = false;
+      let shouldRestore = false;
+      
+      if (callType.value === 'personal') {
+        // jika sedang call personal
+        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+          // pindah ke chat yang sama dengan call -> restore
+          shouldRestore = true;
+        } else {
+          // pindah ke chat yang berbeda dengan call -> minimize
+          shouldMinimize = true;
+        }
+      
+      } else if (callType.value === 'group') {
+        // jika sedang call group
+        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+          // pindah ke grup yang sama dengan call -> restore
+          shouldRestore = true;
+        } else {
+          // pindah ke chat yang berbeda dengan call -> minimize
+          shouldMinimize = true;
+        }
+      }
+
+      if (shouldMinimize) {
+        isMinimized.value = true;
+      } else if (shouldRestore) {
+        isMinimized.value = false;
+      }
+    }
+
+        // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
     if (callStatus.value === 'calling' || callStatus.value === 'connected') {
       let shouldEndCall = false;
       
@@ -958,7 +1001,6 @@ const createGroup = async () => {
   }
 };
 
-// -- Setup Global Listeners --
 const setupGlobalListeners = () => {
   echo.channel('users')
     .listen('.UserRegistered', (event: { user: any }) => {
@@ -1091,70 +1133,10 @@ const setupGlobalListeners = () => {
       })
 };
 
-// Setup listener untuk remote user di grup call
 const setupGroupCallListeners = (groupId: number) => {
   // Ambil fungsi dari composable dan langsung panggil
   const { setupDynamicGroupListeners } = useGroupCall();
   setupDynamicGroupListeners(groupId);
-};
-
-// --- DEBUG PUSHER ---
-const debugPusherConnection = () => {
-  echo.connector.pusher.connection.bind('connected', () => {
-    console.log('✅ PUSHER CONNECTED - Socket ID:', echo.connector.pusher.connection.socket_id);
-  });
-
-  echo.connector.pusher.connection.bind('error', (error: any) => {
-    console.error('❌ PUSHER ERROR:', error);
-  });
-
-  echo.connector.pusher.connection.bind('disconnected', () => {
-    console.log('🔌 PUSHER DISCONNECTED');
-  });
-};
-
-const testPusherDirectly = () => {
-  console.log('🧪 Testing Pusher langsung...');
-  
-  // Test 1: Check connection state
-  const pusher = echo.connector.pusher;
-  console.log('🔌 Pusher connection state:', pusher.connection.state);
-  
-  // Test 2: Try to subscribe to channel
-  const testChannel = pusher.subscribe(`private-user.${currentUserId.value}`);
-  
-  testChannel.bind('pusher:subscription_succeeded', () => {
-    console.log('✅ Berhasil subscribe ke channel private');
-  });
-  
-  testChannel.bind('pusher:subscription_error', (error: any) => {
-    console.error('❌ Gagal subscribe ke channel:', error);
-  });
-  
-  // Test 3: Bind to custom event
-  testChannel.bind('incoming-call', (data: any) => {
-    console.log('📞 Direct bind event received:', data);
-  });
-};
-
-// Debug channel naming
-const debugChannelNaming = () => {
-  console.log('🔍 Channel naming debug:');
-  console.log('Current user ID:', currentUserId.value);
-  console.log('Private channel name:', `user.${currentUserId.value}`);
-  console.log('Presence channel name:', `user.${currentUserId.value}`);
-  
-  // Test jika user online
-  echo.join(`user.${currentUserId.value}`)
-    .here((users: any[]) => {
-      console.log('👥 Users in my channel:', users);
-    })
-    .joining((user: any) => {
-      console.log('➡️ User joining:', user);
-    })
-    .leaving((user: any) => {
-      console.log('⬅️ User leaving:', user);
-    });
 };
 
 // --- Initialize ---
@@ -1162,49 +1144,18 @@ onMounted(() => {
   loadContacts();
   loadGroups();
   loadAllUsers();
+  loadUnreadCounts();
   setupGlobalListeners();
   setupGroupCallListeners;
-  debugPusherConnection();
-  debugChannelNaming();
-  // checkAudioDevices ();
-  // testAudioManually();
-
-  // setupAudio().catch(error => {
-  //   console.warn('Audio pre-setup warning:', error);
-  // });
-
-  // if (!checkBrowserSupport()) {
-  //   console.warn('⚠️ Browser tidak fully supported untuk fitur audio');
-  //   // Bisa tampilkan warning ke user
-  //   alert('⚠️ Beberapa fitur audio mungkin tidak bekerja di browser ini. Disarankan menggunakan Chrome, Firefox, atau Edge.');
-  // }
-
-  console.log('🔌 Pusher connected dengan Socket ID:', echo.connector.pusher.connection.socket_id)
-
-  setTimeout(() => {
-    testPusherDirectly();
-  }, 2000)
-
-  echo.private(`user.${currentUserId.value}`).listen('.incoming-call', (data : any) => {
-  console.log('📞 Panggilan masuk di lawan:', data);
-});
 
   // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
     loadContacts();
   }, 30000); // 30 detik
 
-  
-
   onUnmounted(() => {
-  // Pastikan semua panggilan dibersihkan saat component unmount
-  
-  // Hapus interval polling
-  if (pollingInterval) {
     clearInterval(pollingInterval);
-  }
-});
-
+  });
 });
 
 const selectChat = (chat: Chat) => {
@@ -1212,21 +1163,27 @@ const selectChat = (chat: Chat) => {
 
   // Logic call management yang sama dengan selectContact
   if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-    let shouldEndCall = false;
+    let shouldMinimize = false;
+    let shouldRestore = false;
     
     if (callType.value === 'personal') {
       // Jika sedang call personal, end call jika:
       // 1. Pindah ke group chat (apapun groupnya)
       // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
-      if (chat.type === 'group' || (chat.type === 'user' && chat.id !== callPartnerId.value)) {
-        shouldEndCall = true;
+      if (chat.type === 'user' && chat.id === callPartnerId.value) {
+        let shouldRestore = true;
+      } else {
+        shouldMinimize = true;
       }
+    
     } else if (callType.value === 'group') {
       // Jika sedang call group, end call jika:
       // 1. Pindah ke personal chat (apapun orangnya)  
       // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
-      if (chat.type === 'user' || (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId)) {
-        shouldEndCall = true;
+      if (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId) {
+        shouldRestore = true;
+      } else {
+        shouldMinimize = true;
       }
     }
     
@@ -1319,7 +1276,7 @@ const currentCallContactName = computed(() => {
         <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
           <!-- sidebar bagian atas -->
             <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col h-full absolute md:static inset-0 transition-transform duration-300 ease-in-out"
-                 :class="{ '-translate-x-full md:translate-x-0': activeContact }"> 
+                 :class="{ 'translate-x-full md:translate-x-0': activeContact }"> 
                  <div class="p-4 border-b dark:border-gray-700 flex flex justify-between items-center">
                     <span class="font-bold text-lg">Chat</span>
                     <button @click="openCreateGroupModal"
@@ -1446,7 +1403,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Outgoing Personal Call Modal -->
                         <OutgoingCallModal
-                          v-if="callType === 'personal' && callStatus === 'calling'"
+                          v-if="callType === 'personal' && callStatus === 'calling' && !isMinimized"
                           :show="true"
                           :calleeName="currentCallContactName"
                           @cancel="endCall"
@@ -1455,7 +1412,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Outgoing Group Call Modal -->
                         <OutgoingCallModal
-                          v-if="callType === 'group' && callStatus === 'calling'"
+                          v-if="callType === 'group' && callStatus === 'calling' && !isMinimized"
                           :show="true"
                           :isGroup="true"
                           :groupName="currentCallContactName"
@@ -1465,7 +1422,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Video Call Modal (untuk personal / group setelah connected) -->
                         <VideoCallModal
-                          v-if="callStatus === 'connected' && (
+                          v-if="callStatus === 'connected' && !isMinimized && (
                             (callType === 'personal' && activeContact?.type === 'user' && activeContact?.id === callPartnerId) ||
                             (callType === 'group' && activeContact?.type === 'group' && activeContact?.id === activeGroupCall?.groupId)
                           )"
@@ -1476,6 +1433,7 @@ const currentCallContactName = computed(() => {
                           :participants="callType === 'group' ? activeGroupCall?.participants : undefined"
                           :status="callStatus"
                           @end="endCall"
+                          @minimize="minimizeVideoCall"
                         />
 
                         <!-- Incoming Call Modal -->
@@ -1690,7 +1648,5 @@ const currentCallContactName = computed(() => {
                 </div>
             </div>
         </div>
-
     </AppLayout>
 </template>
-
