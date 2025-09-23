@@ -23,7 +23,7 @@ class GroupCallAnswered implements ShouldBroadcast
 
     public function broadcastOn(): array
     {
-        // Siarkan ke channel utama grup
+        // Siarkan ke channel utama grup agar semua anggota tahu
         return [ new PrivateChannel('group.' . $this->group->id) ];
     }
 

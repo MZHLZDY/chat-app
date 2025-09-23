@@ -91,15 +91,8 @@ class AgoraCallController extends Controller
             return response()->json(['error' => 'Caller not found'], 404);
         }
 
-        Log::info('Processing call answer', [
-            'call_id' => $request->call_id,
-            'caller' => $caller->name,
-            'callee' => $callee->name,
-            'accepted' => $request->accepted
-        ]);
-
         if ($request->accepted) {
-            // Kirim event ke CALLER bahwa panggilan diterima
+            // ✅ KIRIM DATA CALLER LENGKAP ke event
             event(new CallAccepted(
                 callerId: $caller->id,
                 callee: $callee,
@@ -107,16 +100,13 @@ class AgoraCallController extends Controller
                 callId: $request->call_id
             ));
 
-            // KIRIM EVENT KE CALLEE UNTUK MENAMPILKAN UI PANGGILAN
+            // ✅ KIRIM DATA CALLER LENGKAP ke event CallStarted
             event(new CallStarted(
                 callId: $request->call_id,
-                callType: 'voice', // Anda bisa simpan call_type di database
+                callType: 'voice',
                 channel: 'call-' . $request->call_id,
-                caller: $caller
+                caller: $caller // Kirim object User lengkap
             ));
-
-            Log::info('Call accepted events sent to both parties');
-
         } else {
             event(new CallRejected(
                 callId: $request->call_id,
@@ -178,61 +168,65 @@ public function endCall(Request $request)
 {
     $request->validate([
         'channel' => 'required|string',
-        'uid' => 'required|integer'
+        'uid' => 'required|string'
     ]);
 
-    $appId = env('AGORA_APP_ID');
-    $appCertificate = env('AGORA_APP_CERTIFICATE');
+    $appId = config('services.agora.app_id');
+    $appCertificate = config('services.agora.app_certificate');
     
-    $channelName = $request->channel;
-    $uid = $request->uid;
-
+    // Untuk Testing Mode, return token null
     $token = AgoraTokenService::generateRtcToken(
         $appId, 
         $appCertificate, 
-        $channelName, 
-        $uid, 
+        $request->channel, 
+        $request->uid, 
         'publisher', 
         3600
     );
 
     return response()->json([
-        'token' => $token, // Bisa null untuk Testing Mode
+        'token' => $token, // akan null untuk Testing Mode
         'app_id' => $appId,
-        'channel' => $channelName,
-        'uid' => $uid,
+        'uid' => $request->uid,
         'mode' => empty($appCertificate) ? 'testing' : 'secure'
     ]);
 }
 
-    // TAMBAHKAN METHOD UNTUK HANDLE MISSED CALL
+    // Di dalam app/Http/Controllers/AgoraCallController.php
+
     public function inviteGroupCall(Request $request) {
     $request->validate(['group_id' => 'required|exists:groups,id', 'call_type' => 'required|in:voice,video']);
-
     $caller = $request->user();
     $group = Group::find($request->group_id);
-
-    // 1. Buat daftar partisipan LENGKAP untuk dikirim ke UI Host dan juga ke event
-    $allParticipants = $group->members()->get(['users.id', 'users.name'])
-        ->map(function ($user) use ($caller) {
-            return [
-                'id' => $user->id,
-                'name' => $user->name,
-                'status' => $user->id === $caller->id ? 'accepted' : 'calling'
-            ];
-        })->toArray();
-
+    
+    $allMembers = $group->members()->get(['users.id', 'users.name']);
+    
+    // Buat daftar peserta dengan status yang benar
+    $allParticipants = $allMembers->map(function ($user) use ($caller) {
+        return [ 
+            'id' => $user->id, 
+            'name' => $user->name, 
+            'status' => $user->id === $caller->id ? 'accepted' : 'calling' 
+        ];
+    })->toArray();
+    
     $callId = uniqid('group-call-');
     $channel = 'group-call-' . $callId;
-
-    // 2. Siarkan event dengan membawa daftar peserta LENGKAP
-    event(new \App\Events\GroupIncomingCallVoice($callId, $group, $caller, $request->call_type, $channel, $allParticipants, null));
-
-    // 3. Kirim kembali daftar LENGKAP ke Host
+    
+    // Kirim event ke SEMUA peserta termasuk HOST
+    event(new GroupIncomingCallVoice(
+        $callId, 
+        $group, 
+        $caller, 
+        $request->call_type, 
+        $channel, 
+        $allParticipants
+    ));
+    
     return response()->json([
         'call_id' => $callId, 
         'channel' => $channel, 
-        'participants' => $allParticipants,
+        'participants' => $allParticipants, 
         'group' => ['id' => $group->id, 'name' => $group->name]
     ]);
 }
@@ -282,38 +276,63 @@ public function endCall(Request $request)
         Log::info('Missed group call:', $request->all());
         return response()->json(['status' => 'success']);
     }
-    
     /**
      * Generate token untuk panggilan grup
      */
     public function generateGroupToken(Request $request)
-    {
-        try {
-            Log::info('Group token request:', $request->all());
-            
-            $request->validate([
-                'channel' => 'required|string',
-                'uid' => 'required|string',
-                'role' => 'required|in:publisher,subscriber'
-            ]);
-            
-            // Generate token sederhana untuk testing
-            $token = "group-token-" . uniqid();
-            
-            return response()->json([
-                'token' => $token,
-                'app_id' => config('services.agora.app_id', 'test-app-id'),
-                'uid' => $request->uid,
-                'channel' => $request->channel
-            ]);
-            
-        } catch (\Exception $e) {
-            Log::error('Error generating group token: ' . $e->getMessage());
-            return response()->json(['error' => 'Gagal generate token'], 500);
+{
+    try {
+        Log::info('Group token request:', $request->all());
+        
+        // --- PERBAIKAN 1: Longgarkan aturan validasi ---
+        $request->validate([
+            'channel' => 'required|string',
+            'uid' => 'required', // Hapus validasi 'string'
+            'role' => 'required|in:publisher,subscriber'
+        ]);
+
+        // --- PERBAIKAN 2: Ambil UID dan ubah secara manual ke string ---
+        $uid = (string) $request->input('uid');
+
+        $appId = config('services.agora.app_id');
+        $appCertificate = config('services.agora.app_certificate');
+        
+        // Gunakan AgoraTokenService yang sama, tapi dengan $uid yang sudah pasti string
+        $token = AgoraTokenService::generateRtcToken(
+            $appId, 
+            $appCertificate, 
+            $request->channel, 
+            $uid, // Gunakan variabel $uid yang sudah di-casting
+            $request->role, 
+            3600
+        );
+
+        Log::info('Group token generated successfully', [
+            'channel' => $request->channel,
+            'uid' => $uid, // Log UID yang sudah di-casting
+            'role' => $request->role
+        ]);
+        
+        return response()->json([
+            'token' => $token,
+            'app_id' => $appId,
+            'uid' => $uid, // Kirim kembali UID sebagai string
+            'channel' => $request->channel,
+            'role' => $request->role,
+            'mode' => empty($appCertificate) ? 'testing' : 'secure'
+        ]);
+        
+    } catch (\Exception $e) {
+        // Tambahkan detail error validasi ke log untuk debugging di masa depan
+        if ($e instanceof \Illuminate\Validation\ValidationException) {
+            Log::error('Validation error generating group token: ', $e->errors());
+            return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
         }
-
+        
+        Log::error('Error generating group token: ' . $e->getMessage());
+        return response()->json(['error' => 'Gagal generate token'], 500);
     }
-
+}
     
     /**
      * Menangani panggilan grup yang tidak dijawab

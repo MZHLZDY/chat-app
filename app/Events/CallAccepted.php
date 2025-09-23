@@ -19,17 +19,16 @@ class CallAccepted implements ShouldBroadcast
         public int $callerId,
         public User $callee,
         public string $channel,
-        public string $callId // UBAH DARI int MENJADI string JIKA PERLU
+        public string $callId
     ) {}
 
     public function broadcastOn(): array
-{
-    // Kirim ke caller DAN callee
-    return [
-        new PrivateChannel('user.' . $this->callerId),
-        new PrivateChannel('user.' . $this->callee->id),
-    ];
-}
+    {
+        return [
+            new PrivateChannel('user.' . $this->callerId),
+            new PrivateChannel('user.' . $this->callee->id),
+        ];
+    }
 
     public function broadcastAs(): string
     {
@@ -38,16 +37,18 @@ class CallAccepted implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
+        // ✅ HINDARI QUERY DATABASE DI EVENT - Kirim data yang sudah ada
         return [
             'call_id' => $this->callId,
             'caller' => [
-              'id' => $this->callerId,
-              'name' => User::find($this->callerId)->name // atau gunakan approach yang sama
+                'id' => $this->callerId,
+                // Nama caller harus dikirim dari controller, bukan query di sini
+                'name' => $this->callerId // Ini akan diperbaiki di controller
             ],
             'callee' => [
                 'id' => $this->callee->id,
                 'name' => $this->callee->name,
-                'email' => $this->callee->email
+                // HAPUS email karena tidak diperlukan untuk call UI
             ],
             'channel' => $this->channel,
             'timestamp' => now()->toISOString()

@@ -14,13 +14,13 @@ class GroupIncomingCallVoice implements ShouldBroadcast
     use Dispatchable, SerializesModels;
 
     public function __construct(
-        public string $callId,
-        public Group $group,
-        public User $caller,
-        public string $callType,
-        public string $channel,
-        public array $participants,
-        public ?User $recalledUser = null
+      public string $callId,
+      public Group $group,
+      public User $caller,
+      public string $callType,
+      public string $channel,
+      public array $participants, // Daftar lengkap semua peserta
+      public ?User $recalledUser = null
     ) {}
 
     public function broadcastOn(): array
@@ -30,14 +30,15 @@ class GroupIncomingCallVoice implements ShouldBroadcast
             return [ new PrivateChannel('user.' . $this->recalledUser->id) ];
         }
 
-        // --- PERBAIKAN: LOGIKA MENJADI LEBIH SEDERHANA ---
         $channels = [];
+        
+        // Kirim ke SEMUA peserta termasuk HOST
         foreach ($this->participants as $participant) {
-            // Siarkan HANYA jika ID peserta BUKAN ID penelepon
-            if (isset($participant['id']) && $participant['id'] !== $this->caller->id) {
+            if (isset($participant['id'])) {
                 $channels[] = new PrivateChannel('user.' . $participant['id']);
             }
         }
+
         return $channels;
     }
 
@@ -48,14 +49,13 @@ class GroupIncomingCallVoice implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
-        // Data yang dikirim ke penerima tetap data yang lengkap
         return [
             'callId' => $this->callId,
             'group' => ['id' => $this->group->id, 'name' => $this->group->name],
             'caller' => ['id' => $this->caller->id, 'name' => $this->caller->name],
             'callType' => $this->callType,
             'channel' => $this->channel,
-            'participants' => $this->participants // Kirim daftar lengkap
+            'participants' => $this->participants
         ];
     }
 }

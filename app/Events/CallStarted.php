@@ -15,10 +15,10 @@ class CallStarted implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public function __construct(
-        public string $callId,
-        public string $callType,
-        public string $channel,
-        public User $caller
+     public string $callId,
+     public string $callType,
+     public string $channel,
+     public User $caller // Terima object User lengkap
     ) {}
 
     public function broadcastOn(): array
@@ -52,3 +52,5 @@ class CallStarted implements ShouldBroadcast
         ];
     }
 }
+
+

@@ -301,10 +301,10 @@ export function usePersonalCall() {
             }
             
             const response = await axios.post('/call/token', {
-                channel: channel,
-                uid: currentUserId.value.toString(),
-                role: 'publisher'
-            });
+              channel: channel,
+              uid: currentUserId.value.toString(), // ✅ UBAH KE STRING
+              role: 'publisher'
+           });
             
             const { token, app_id, uid } = response.data;
             
@@ -488,9 +488,9 @@ const checkAudioPermissions = async (): Promise<boolean> => {
             stopCallTimeout();
             
             const response = await axios.post('/call/invite', {
-                callee_id: contact.id,
-                call_type: 'voice'
-            });
+             callee_id: contact.id.toString(), // ✅ UBAH KE STRING JIKA PERLU
+             call_type: 'voice'
+           });
             
             console.log('📞 Call invite response:', response.data);
             
@@ -539,7 +539,7 @@ const checkAudioPermissions = async (): Promise<boolean> => {
         }
 
         const callId = incomingCallVoice.value.callId;
-        const callerId = incomingCallVoice.value.caller.id;
+        const callerId = incomingCallVoice.value.caller.id.toString(); 
         
         incomingCallVoice.value = null;
 
@@ -725,10 +725,17 @@ const checkAudioPermissions = async (): Promise<boolean> => {
             isInVoiceCall.value = true;
             
             joinChannel(data.channel).catch(error => {
-                console.error('❌ Gagal bergabung ke channel setelah panggilan diterima:', error);
-                alert('Gagal terhubung ke panggilan.');
-                resetVoiceCallState();
-            });
+             console.error('❌ Gagal bergabung ke channel setelah panggilan diterima:', error);
+        
+             // Tampilkan detail error yang lebih spesifik
+             if (error.response) {
+             console.error('Error response:', error.response.data);
+             console.error('Error status:', error.response.status);
+            }
+        
+            alert('Gagal terhubung ke panggilan: ' + (error.response?.data?.error || error.message));
+            resetVoiceCallState();
+         });
         });
         
         privateChannel.listen('.call-started', (data: any) => {
