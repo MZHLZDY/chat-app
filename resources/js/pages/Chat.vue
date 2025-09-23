@@ -583,7 +583,7 @@ const selectContact = (contact: Chat) => {
       
       } else if (callType.value === 'group') {
         // jika sedang call group
-        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+        if (contact.type === 'group' && contact.id === activeGroupCall.value?.groupId) {
           // pindah ke grup yang sama dengan call -> restore
           shouldRestore = true;
         } else {
@@ -874,6 +874,17 @@ const handleCancelNewCall = () => {
   pendingCall.value = null;
   showCallWarning.value = false;
 };
+
+// computed untuk mendapatkan nama contact yang sedang di-call
+const currentCallContactName = computed(() => {
+  if (callType.value === 'personal' && callPartnerId.value) {
+    const contact = contacts.value.find(c => c.id === callPartnerId.value);
+    return contact?.name || 'Unknown';
+  } else if (callType.value === 'group' && activeGroupCall.value) {
+    return activeGroupCall.value.name;
+  }
+  return '';
+});
 </script>
 
 <template>
@@ -966,6 +977,16 @@ const handleCancelNewCall = () => {
                               {{ activeContact.phone_number }}
                           </div>
                       </div>
+                        <!-- minimize call button -->
+                        <div v-if="isCallActive && isMinimized"
+                            @click="restoreVideoCall"
+                            class="absolute right-14 top-3 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-full shadow-lg cursor-pointer flex items-center gap-2 transition-all duration-200 z-10">
+                          <Video class="w-4 h-4"/>
+                          <div class="text-sm font-medium">
+                            {{ callType === 'personal' ? currentCallContactName : activeGroupCall?.name || 'Group Call' }}
+                          </div>
+                          <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                        </div>
                         <button
                           v-if="activeContact.type === 'user'"
                           @click="startVideoCall(activeContact)"
@@ -994,7 +1015,7 @@ const handleCancelNewCall = () => {
                         <OutgoingCallModal
                           v-if="callType === 'personal' && callStatus === 'calling' && !isMinimized"
                           :show="true"
-                          :calleeName="activeContact?.name"
+                          :calleeName="currentCallContactName"
                           @cancel="endCall"
                           @timeout="handleOutgoingCallTimeout"
                         />
@@ -1004,7 +1025,7 @@ const handleCancelNewCall = () => {
                           v-if="callType === 'group' && callStatus === 'calling' && !isMinimized"
                           :show="true"
                           :isGroup="true"
-                          :groupName="activeGroupCall?.name"
+                          :groupName="currentCallContactName"
                           :participants="activeGroupCall?.participants"
                           @cancel="endCall"
                         />
@@ -1017,8 +1038,8 @@ const handleCancelNewCall = () => {
                           )"
                           :show="true"
                           :isGroup="callType === 'group'"
-                          :contactName="callType === 'personal' ? activeContact?.name : undefined"
-                          :groupName="callType === 'group' ? activeGroupCall?.name : undefined"
+                          :contactName="callType === 'personal' ? currentCallContactName : undefined"
+                          :groupName="callType === 'group' ? currentCallContactName : undefined"
                           :participants="callType === 'group' ? activeGroupCall?.participants : undefined"
                           :status="callStatus"
                           @end="endCall"
@@ -1034,17 +1055,6 @@ const handleCancelNewCall = () => {
                           @reject="rejectIncomingCall"
                         />
                     </div>
-                    <!-- minimize call indicator -->
-                    <div v-if="isCallActive && isMinimized"
-                      @click="restoreVideoCall"
-                      class="fixed bottom-4 right-4 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full cursor-pointer shadow-lg flex items-center gap-2 z-50 transition-colors">
-                      <Video class="w-4 h-4"/>
-                      <span class="text-sm font-medium">
-                        {{ callType === 'personal' ? `Call dengan ${contacts.find(c => c.id === callPartnerId)?.name}` : `Group Call ${activeGroupCall?.name}` }}
-                      </span>
-                      <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    </div>
-
                      <!-- call warning modal -->
                     <div v-if="showCallWarning" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                       <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
