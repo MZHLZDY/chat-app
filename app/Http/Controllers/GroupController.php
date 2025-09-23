@@ -74,4 +74,25 @@ class GroupController extends Controller
 
         return response()->json($message);
     }
+
+    public function destroy(GroupMessage $message)
+    {
+        // Otorisasi: Pastikan pengguna yang request adalah pengirim pesan.
+        if ($message->sender_id !== auth()->id()) {
+            return response()->json(['error' => 'Anda tidak memiliki izin untuk menghapus pesan ini.'], 403);
+        }
+
+        // Simpan ID pesan sebelum dihapus
+        $deletedMessageId = $message->id;
+        
+        // Hapus pesan dari database
+        $message->delete();
+
+        // Kirim respons sukses kembali ke si penghapus.
+        return response()->json([
+            'message' => 'Pesan grup berhasil dihapus.',
+            'deleted_message_id' => $deletedMessageId
+        ], 200);
+    }
+
 }
