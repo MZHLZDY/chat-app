@@ -82,12 +82,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/chat/unread-counts', [ChatController::class, 'getUnreadCounts']);
     Route::post('/chat/send', [ChatController::class, 'sendMessage']);
     Route::post('chat/messages/read', [ChatController::class, 'MarkAsRead']);
+    Route::delete('/messages/{message}', [ChatController::class, 'destroy']);
 
     // groups
     Route::get('/groups', [GroupController::class, 'index']);
     Route::post('/groups', [GroupController::class, 'store']);
     Route::get('/groups/{group}/messages', [GroupController::class, 'messages']);
     Route::post('/groups/{group}/send', [GroupController::class, 'send']);
+    Route::delete('/group-messages/{message}', [GroupController::class, 'destroy']);
 
     // signaling call
     Route::post('/call/signal', [CallController::class, 'signal']);

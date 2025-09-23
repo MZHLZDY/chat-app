@@ -122,4 +122,18 @@ class ChatController extends Controller
             return response()->json(['message' => 'Gagal memuat jumlah pesan belum dibaca.'], 500);
         }
     }
+
+    public function destroy(ChatMessage $message)
+    {
+        if ($message->sender_id !== auth()->id()) {
+            // Kembalikan error 'Forbidden' jika bukan pengirimnya.
+            return response()->json(['error' => 'Anda tidak memiliki izin untuk menghapus pesan ini.'], 403);
+        }
+
+        $message->delete();
+        return response()->json([
+            'message' => 'Pesan berhasil dihapus untuk semua orang.',
+            'deleted_message_id' => $message->id
+        ], 200);
+    }
 }

@@ -455,7 +455,7 @@ const deleteMessageForMe = async (message: any) => {
     } catch (error) { console.error('Gagal menyembunyikan pesan:', error); }
 };
 
-// Fungsi 'Hapus untuk Semua' (sebelumnya bernama deleteMessage)
+// Fungsi 'Hapus untuk Semua'
 const deleteMessageForEveryone = async (message: any) => {
     try {
         const endpoint = activeContact.value?.type === 'group'
