@@ -19,16 +19,14 @@ use App\Events\CallStarted;
 use App\Events\CallRejected;
 use App\Events\CallEnded;
 
-class AgoraCallController extends Controller
+use Twilio\Jwt\AccessToken;
+use Twilio\Jwt\Grants\VideoGrant;
+
+class TwilioCallController extends Controller
 {
     public function inviteCall(Request $request)
     {
-        Log::info('inviteCall called', $request->all());
-        
-        $request->validate([
-            'callee_id' => 'required|exists:users,id',
-            'call_type' => 'required|in:voice,video'
-        ]);
+        $request->validate([ 'callee_id' => 'required|exists:users,id' ]);
 
         $caller = $request->user();
         $callee = User::find($request->callee_id);
@@ -54,20 +52,14 @@ class AgoraCallController extends Controller
         event(new IncomingCallVoice(
             caller: $caller,
             callee: $callee,
-            callType: $request->call_type,
-            channel: $channel
+            callType: 'voice',
+            channel: $roomName // Di sisi frontend nanti, ini akan dibaca sebagai roomName
         ));
 
-        Log::info('IncomingCall event broadcasted');
-
+        // Mengembalikan nama room ke penelepon agar bisa langsung join
         return response()->json([
-            'call_id' => $callId,
-            'channel' => $channel,
+            'room_name' => $roomName,
             'status' => 'calling',
-            'caller' => [ // TAMBAHKAN INFO CALLER UNTUK DEBUGGING
-                'id' => $caller->id,
-                'name' => $caller->name
-            ]
         ]);
     }
 
@@ -165,71 +157,62 @@ public function endCall(Request $request)
 }
 
     public function generateToken(Request $request)
-{
-    $request->validate([
-        'channel' => 'required|string',
-        'uid' => 'required|string'
-    ]);
+    {
+        $request->validate([
+            'room_name' => 'required|string',
+        ]);
 
-    $appId = config('services.agora.app_id');
-    $appCertificate = config('services.agora.app_certificate');
-    
-    // Untuk Testing Mode, return token null
-    $token = AgoraTokenService::generateRtcToken(
-        $appId, 
-        $appCertificate, 
-        $request->channel, 
-        $request->uid, 
-        'publisher', 
-        3600
-    );
+        $accountSid = config('services.twilio.account_sid');
+        $apiKeySid = config('services.twilio.api_key_sid');
+        $apiKeySecret = config('services.twilio.api_key_secret');
 
-    return response()->json([
-        'token' => $token, // akan null untuk Testing Mode
-        'app_id' => $appId,
-        'uid' => $request->uid,
-        'mode' => empty($appCertificate) ? 'testing' : 'secure'
-    ]);
-}
+        // Identity adalah nama unik untuk user yang meminta token
+        $identity = str_replace(' ', '_', $request->user()->name) . '-' . $request->user()->id;
+        
+        $token = new AccessToken(
+            $accountSid,
+            $apiKeySid,
+            $apiKeySecret,
+            3600, // Token valid selama 1 jam
+            $identity
+        );
+
+        $grant = new VideoGrant();
+        $grant->setRoom($request->room_name);
+        $token->addGrant($grant);
+
+        return response()->json([
+            'token' => $token->toJWT(),
+            'identity' => $identity,
+        ]);
+    }
 
     // Di dalam app/Http/Controllers/AgoraCallController.php
 
-    public function inviteGroupCall(Request $request) {
-    $request->validate(['group_id' => 'required|exists:groups,id', 'call_type' => 'required|in:voice,video']);
-    $caller = $request->user();
-    $group = Group::find($request->group_id);
-    
-    $allMembers = $group->members()->get(['users.id', 'users.name']);
-    
-    // Buat daftar peserta dengan status yang benar
-    $allParticipants = $allMembers->map(function ($user) use ($caller) {
-        return [ 
-            'id' => $user->id, 
-            'name' => $user->name, 
-            'status' => $user->id === $caller->id ? 'accepted' : 'calling' 
-        ];
-    })->toArray();
-    
-    $callId = uniqid('group-call-');
-    $channel = 'group-call-' . $callId;
-    
-    // Kirim event ke SEMUA peserta termasuk HOST
-    event(new GroupIncomingCallVoice(
-        $callId, 
-        $group, 
-        $caller, 
-        $request->call_type, 
-        $channel, 
-        $allParticipants
-    ));
-    
-    return response()->json([
-        'call_id' => $callId, 
-        'channel' => $channel, 
-        'participants' => $allParticipants, 
-        'group' => ['id' => $group->id, 'name' => $group->name]
-    ]);
-}
+    public function inviteGroupCall(Request $request) 
+    {
+        $request->validate(['group_id' => 'required|exists:groups,id']);
+        $caller = $request->user();
+        $group = Group::find($request->group_id);
+        
+        $allMembers = $group->members()->get(['users.id', 'users.name']);
+        
+        $allParticipants = $allMembers->map(function ($user) use ($caller) {
+            return [ 'id' => $user->id, 'name' => $user->name, 'status' => $user->id === $caller->id ? 'accepted' : 'calling' ];
+        })->toArray();
+        
+        $callId = uniqid('group-call-');
+        $roomName = 'group-call-' . $group->id . '-' . time();
+        
+        event(new GroupIncomingCallVoice($callId, $group, $caller, 'voice', $roomName, $allParticipants));
+        
+        return response()->json([
+            'call_id' => $callId, 
+            'room_name' => $roomName,
+            'participants' => $allParticipants, 
+            'group' => ['id' => $group->id, 'name' => $group->name]
+        ]);
+    }
 
     public function answerGroupCall(Request $request) {
         $request->validate(['call_id' => 'required|string', 'group_id' => 'required|exists:groups,id', 'accepted' => 'required|boolean', 'reason' => 'nullable|string']);
@@ -279,60 +262,65 @@ public function endCall(Request $request)
     /**
      * Generate token untuk panggilan grup
      */
-    public function generateGroupToken(Request $request)
-{
-    try {
-        Log::info('Group token request:', $request->all());
-        
-        // --- PERBAIKAN 1: Longgarkan aturan validasi ---
-        $request->validate([
-            'channel' => 'required|string',
-            'uid' => 'required', // Hapus validasi 'string'
-            'role' => 'required|in:publisher,subscriber'
-        ]);
+//     public function generateGroupToken(Request $request)
+// {
+//     Log::info('VERIFYING AGORA CREDENTIALS:', [
+//         'app_id_from_config' => config('services.agora.app_id'),
+//         'certificate_is_set' => !empty(config('services.agora.app_certificate'))
+//     ]);
 
-        // --- PERBAIKAN 2: Ambil UID dan ubah secara manual ke string ---
-        $uid = (string) $request->input('uid');
+//     try {
+//         Log::info('Group token request:', $request->all());
+        
+//         // --- PERBAIKAN 1: Longgarkan aturan validasi ---
+//         $request->validate([
+//             'channel' => 'required|string',
+//             'uid' => 'required', // Hapus validasi 'string'
+//             'role' => 'required|in:publisher,subscriber'
+//         ]);
 
-        $appId = config('services.agora.app_id');
-        $appCertificate = config('services.agora.app_certificate');
-        
-        // Gunakan AgoraTokenService yang sama, tapi dengan $uid yang sudah pasti string
-        $token = AgoraTokenService::generateRtcToken(
-            $appId, 
-            $appCertificate, 
-            $request->channel, 
-            $uid, // Gunakan variabel $uid yang sudah di-casting
-            $request->role, 
-            3600
-        );
+//         // --- PERBAIKAN 2: Ambil UID dan ubah secara manual ke string ---
+//         $uid = (string) $request->input('uid');
 
-        Log::info('Group token generated successfully', [
-            'channel' => $request->channel,
-            'uid' => $uid, // Log UID yang sudah di-casting
-            'role' => $request->role
-        ]);
+//         $appId = config('services.agora.app_id');
+//         $appCertificate = config('services.agora.app_certificate');
         
-        return response()->json([
-            'token' => $token,
-            'app_id' => $appId,
-            'uid' => $uid, // Kirim kembali UID sebagai string
-            'channel' => $request->channel,
-            'role' => $request->role,
-            'mode' => empty($appCertificate) ? 'testing' : 'secure'
-        ]);
+//         // Gunakan AgoraTokenService yang sama, tapi dengan $uid yang sudah pasti string
+//         $token = AgoraTokenService::generateRtcToken(
+//             $appId, 
+//             $appCertificate, 
+//             $request->channel, 
+//             $uid, // Gunakan variabel $uid yang sudah di-casting
+//             $request->role, 
+//             3600
+//         );
+
+//         Log::info('Group token generated successfully', [
+//             'channel' => $request->channel,
+//             'uid' => $uid, // Log UID yang sudah di-casting
+//             'role' => $request->role
+//         ]);
         
-    } catch (\Exception $e) {
-        // Tambahkan detail error validasi ke log untuk debugging di masa depan
-        if ($e instanceof \Illuminate\Validation\ValidationException) {
-            Log::error('Validation error generating group token: ', $e->errors());
-            return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
-        }
+//         return response()->json([
+//             'token' => $token,
+//             'app_id' => $appId,
+//             'uid' => $uid, // Kirim kembali UID sebagai string
+//             'channel' => $request->channel,
+//             'role' => $request->role,
+//             'mode' => empty($appCertificate) ? 'testing' : 'secure'
+//         ]);
         
-        Log::error('Error generating group token: ' . $e->getMessage());
-        return response()->json(['error' => 'Gagal generate token'], 500);
-    }
-}
+//     } catch (\Exception $e) {
+//         // Tambahkan detail error validasi ke log untuk debugging di masa depan
+//         if ($e instanceof \Illuminate\Validation\ValidationException) {
+//             Log::error('Validation error generating group token: ', $e->errors());
+//             return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
+//         }
+        
+//         Log::error('Error generating group token: ' . $e->getMessage());
+//         return response()->json(['error' => 'Gagal generate token'], 500);
+//     }
+// }
     
     /**
      * Menangani panggilan grup yang tidak dijawab

@@ -55,7 +55,7 @@ const {
   cancelGroupCall,
   handleLeaveGroupCall,
   handleRecallParticipant,
-  initializeGlobalListeners
+  initializeGlobalListeners,
 } = useGroupCall();
 
 const {

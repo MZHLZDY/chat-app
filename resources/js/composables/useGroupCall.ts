@@ -4,7 +4,6 @@ import { ref, computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import AgoraRTC from 'agora-rtc-sdk-ng';
 import type { Chat, User } from '@/types/index';
 
 // State variables

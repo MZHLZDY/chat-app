@@ -3,7 +3,7 @@
 import { ref, computed, onUnmounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
-import AgoraRTC from 'agora-rtc-sdk-ng';
+
 import type { Chat, User, Contact } from '@/types/index';
 import { echo } from '../echo.js';
 
