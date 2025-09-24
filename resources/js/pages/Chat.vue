@@ -11,7 +11,7 @@ import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
 import type { CallStatus, Participants } from '@/types/CallStatus.js';
-import type { Contact, Group, User, Chat } from '@/types/index';
+import type { Contact, Group, User, Chat } from '@/types/index.ts';
 // import type { Participants } from './OutgoingCallModal.vue';
 
 axios.defaults.withCredentials = true;
@@ -42,6 +42,12 @@ const groups = ref<Group[]>([]);
 const allUsers = ref<User[]>([]);
 // const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
 const activeContact = ref<Chat | null>(null);
+const activeContactDetails = computed(() => {
+  if (!activeContact.value) {
+    return null;
+  }
+  return contacts.value.find(c => c.id === activeContact.value?.id);
+});
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
@@ -943,40 +949,65 @@ const currentCallContactName = computed(() => {
             <!-- layout responsive -->
             <div class="w-full md:w-3/4 flex flex-col flex-1 absolute md:static inset-0 transition-transform duration-300 ease-in-out"
                  :class="{ 'translate-x-0': activeContact, 'translate-x-full md:translate-x-0': !activeContact }">
-              <!-- navbar contact -->
                 <div v-if="activeContact" class="flex flex-col h-full">
-                    <div class="p-2 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
-                        <button @click="activeContact = null" class="md:hidden p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                        </button>
-                        <div :class="activeContact.type === 'group' ? 'w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm' : 'w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm'">
-                           {{ activeContact.type === 'group' ? 'G' : activeContact.name.charAt(0).toUpperCase() }}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                          <div class="font-semibold truncate text-gray-800 dark:text-gray-200">
-                              {{ activeContact.name }}
-                          </div>
-                          <div class="text-xs text-gray-500 dark:text-gray-400">
-                              <span v-if="activeContact.type === 'user'">
-                                  <span v-if="onlineUsers.includes(activeContact.id)" class="text-green-500 flex items-center gap-1.5">
-                                      <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
-                                      <span>Online</span>
-                                  </span>
-                                  <span v-else-if="(contacts.find((c: Contact) => c.id === activeContact?.id) as any)?.last_seen">
-                                      {{ formatLastSeen((contacts.find((c: Contact) => c.id === activeContact?.id) as any)?.last_seen) }}
-                                  </span>
-                                  <span v-else>
-                                      Offline
-                                  </span>
-                              </span>
-                              <span v-else-if="activeContact.type === 'group'" class="truncate">
-                                  {{ activeContact.members?.map((member: User) => member.id === currentUserId ? 'Anda' : member.name).join(', ') }}
-                              </span>
-                          </div>
-                          <div v-if="activeContact.type === 'user'" class="text-xs text-gray-500 dark:text-gray-400">
-                              {{ activeContact.phone_number }}
-                          </div>
+                  <!-- navbar personal chat -->
+                  <div v-if="activeContact.type === 'user'"class="p-1.5 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
+                    <button @click="activeContact = null" class="md:hidden p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/>
+                      </svg>
+                    </button>
+                    <div class="w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm">
+                      <span v-if="activeContact.name">{{ activeContact.name.charAt(0).toUpperCase() }}</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-semibold truncate text-gray-800 dark:text-gray-200">
+                        {{ activeContact.name }}
                       </div>
+                      <div class="text-xs text-gray-500 dark:text-gray-400">
+                        <span v-if="onlineUsers.includes(activeContact.id)" class="text-green-500 flex items-center gap-1.5">
+                          <svg class="w-2 h-2 fill-current" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+                          <span>Online</span>
+                        </span>
+                        <span v-else-if="activeContactDetails?.last_seen">
+                          {{ formatLastSeen(activeContactDetails.last_seen) }}
+                        </span>
+                        <span v-else>Offline</span>
+                      </div>
+                      <div class="text-xs text-gray-500 dark:text-gray-400">
+                        {{ activeContact.phone_number }}
+                      </div>
+                    </div>
+                    
+                    <button @click="startVideoCall(activeContact)"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                      <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
+                    </button>
+                  </div>
+
+                  <!-- navbar group -->
+                  <div v-else-if="activeContact.type === 'group'"class="p-3.5 border-b dark:border-gray-700 font-semibold flex items-center gap-3">
+                    <button @click="activeContact = null" class="md:hidden p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/>
+                      </svg>
+                    </button>
+                    <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">
+                      G
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="font-semibold truncate text-gray-800 dark:text-gray-200">
+                        {{ activeContact.name }}
+                      </div>
+                      <div v-if="activeContact.members" class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {{ activeContact.members.map(member => member.id === currentUserId ? 'Anda' : member.name).join(', ') }}
+                      </div>
+                    </div>
+                    
+                    <button @click="startGroupCall(activeContact.id, activeContact.name, (activeContact.members || []).map(m => ({...m, status: 'calling'})))"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                      <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
+                    </button>
+                  </div>
+                  <div v-if="isCallActive && isMinimized"@click="restoreVideoCall"class="absolute right-14 top-3 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-full shadow-lg cursor-pointer flex items-center gap-2 transition-all duration-200 z-10">
+                  </div>
+
                         <!-- minimize call button -->
                         <div v-if="isCallActive && isMinimized"
                             @click="restoreVideoCall"
@@ -987,29 +1018,6 @@ const currentCallContactName = computed(() => {
                           </div>
                           <div class="w-2 h-2 bg-white rounded-full animate-pulse"></div>
                         </div>
-                        <button
-                          v-if="activeContact.type === 'user'"
-                          @click="startVideoCall(activeContact)"
-                          class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
-                                 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
-                        </button>
-                        <button
-                          v-if="activeContact.type === 'group'"
-                          @click="startGroupCall(
-                            activeContact.id,
-                            activeContact.name,
-                            (activeContact.members || []).map((m: User) => ({
-                              ...m,
-                              status: 'calling'
-                             }))
-                            )"
-                          class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full
-                                 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          >
-                            <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
-                        </button>
 
                         <!-- Outgoing Personal Call Modal -->
                         <OutgoingCallModal
@@ -1054,7 +1062,7 @@ const currentCallContactName = computed(() => {
                           @accept="acceptIncomingCall"
                           @reject="rejectIncomingCall"
                         />
-                    </div>
+
                      <!-- call warning modal -->
                     <div v-if="showCallWarning" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                       <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96">
@@ -1157,8 +1165,8 @@ const currentCallContactName = computed(() => {
                 <div v-else class="hidden md:flex items-center justify-center flex-1 text-gray-500">
                     Pilih kontak atau group untuk memulai chat
                 </div>
+              </div>
             </div>
-        </div>
         <!-- create group -->
         <div v-if="showCreateGroupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 max-h-[90vh] overflow-y-auto">

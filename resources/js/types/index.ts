@@ -28,11 +28,10 @@ export interface BreadcrumbItem {
 interface LatestMessage {
   message: string;
   sender_id: number;
-  sender: { // Objek pengirim yang dikirim dari backend
+  sender: {
     id: number;
     name: string;
   };
 }
 
-// Iki "KTP" gabungan sing isok nampa Contact utowo Group
 export type Chat = (Contact & { type: 'user' }) | (Group & { type: 'group' });

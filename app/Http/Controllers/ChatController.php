@@ -108,6 +108,7 @@ class ChatController extends Controller
                 ->select('sender_id', DB::raw('count(*) as messages_count'))
                 ->where('receiver_id', $userId)
                 ->whereNull('read_at')
+                ->whereNull('deleted_at')
                 ->groupBy('sender_id')
                 ->get();
             $unreadCounts = [];
