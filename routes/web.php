@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AgoraCallController;
 use App\Http\Controllers\TwilioCallController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\GroupController;
@@ -146,24 +147,41 @@ Route::middleware(['auth'])->group(function () {
 
     // call routes
     Route::prefix('call')->group(function () {
-        Route::post('/invite', [TwilioCallController::class, 'inviteCall']);
-        Route::post('/answer', [TwilioCallController::class, 'answerCall']);
-        Route::post('/end', [TwilioCallController::class, 'endCall']);
-        Route::post('/token', [TwilioCallController::class, 'generateToken']);
+        Route::post('/invite', [AgoraCallController::class, 'inviteCall']);
+        Route::post('/answer', [AgoraCallController::class, 'answerCall']);
+        Route::post('/end', [AgoraCallController::class, 'endCall']);
+        Route::post('/token', [AgoraCallController::class, 'generateToken']);
     });
 
     Route::prefix('group-call')->as('group-call.')->group(function () {
-      Route::post('/invite', [TwilioCallController::class, 'inviteGroupCall'])->name('invite');
-      Route::post('/answer', [TwilioCallController::class, 'answerGroupCall'])->name('answer');
-      Route::post('/end', [TwilioCallController::class, 'endGroupCall'])->name('end');
-      Route::post('/cancel', [TwilioCallController::class, 'cancelGroupCall'])->name('cancel'); // <-- PASTIKAN BARIS INI ADA
-      Route::post('/leave', [TwilioCallController::class, 'leaveGroupCall'])->name('leave');
-      Route::post('/recall', [TwilioCallController::class, 'recallParticipant'])->name('recall');
-      Route::post('/missed', [TwilioCallController::class, 'missedGroupCall'])->name('missed');
-      Route::post('/token', [TwilioCallController::class, 'generateGroupToken'])->name('token');
+      Route::post('/invite', [AgoraCallController::class, 'inviteGroupCall'])->name('invite');
+      Route::post('/answer', [AgoraCallController::class, 'answerGroupCall'])->name('answer');
+      Route::post('/end', [AgoraCallController::class, 'endGroupCall'])->name('end');
+      Route::post('/cancel', [AgoraCallController::class, 'cancelGroupCall'])->name('cancel'); // <-- PASTIKAN BARIS INI ADA
+      Route::post('/leave', [AgoraCallController::class, 'leaveGroupCall'])->name('leave');
+      Route::post('/recall', [AgoraCallController::class, 'recallParticipant'])->name('recall');
+      Route::post('/missed', [AgoraCallController::class, 'missedGroupCall'])->name('missed');
+      Route::post('/token', [AgoraCallController::class, 'generateGroupToken'])->name('token');
     });
 
+    // Route::prefix('call')->group(function () {
+    //     Route::post('/invite', [TwilioCallController::class, 'inviteCall']);
+    //     Route::post('/answer', [TwilioCallController::class, 'answerCall']);
+    //     Route::post('/end', [TwilioCallController::class, 'endCall']);
+    // });
+
+    // Route::prefix('group-call')->as('group-call.')->group(function () {
+    //   Route::post('/invite', [TwilioCallController::class, 'inviteGroupCall'])->name('invite');
+    //   Route::post('/answer', [TwilioCallController::class, 'answerGroupCall'])->name('answer');
+    //   Route::post('/end', [TwilioCallController::class, 'endGroupCall'])->name('end');
+    //   Route::post('/cancel', [TwilioCallController::class, 'cancelGroupCall'])->name('cancel'); // <-- PASTIKAN BARIS INI ADA
+    //   Route::post('/leave', [TwilioCallController::class, 'leaveGroupCall'])->name('leave');
+    //   Route::post('/recall', [TwilioCallController::class, 'recallParticipant'])->name('recall');
+    //   Route::post('/missed', [TwiioCallController::class, 'missedGroupCall'])->name('missed');
+    // });
 });
+
+// Route::post('/twilio/token', [TwilioCallController::class, 'generateToken'])->middleware('auth');
 Route::get('/users', [UserController::class, 'index'])->middleware('auth');
 Route::post('/messages/hide', [HiddenMessageController::class, 'store'])->middleware('auth');
 

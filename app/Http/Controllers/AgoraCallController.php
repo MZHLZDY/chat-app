@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Group;
+use App\Services\AgoraTokenService;
 use App\Events\IncomingCallVoice;
 use App\Events\GroupIncomingCallVoice;
 use App\Events\GroupCallAnswered;
@@ -16,52 +19,43 @@ use App\Events\CallStarted;
 use App\Events\CallRejected;
 use App\Events\CallEnded;
 
-// Import library Twilio
-use Twilio\Jwt\AccessToken;
-use Twilio\Jwt\Grants\VideoGrant;
+// use Twilio\Jwt\AccessToken;
+// use Twilio\Jwt\Grants\VideoGrant;
 
-
-class TwilioCallController extends Controller
+class AgoraCallController extends Controller
 {
     public function inviteCall(Request $request)
-    {
-        $request->validate([ 'callee_id' => 'required|exists:users,id' ]);
+{
+    $request->validate([
+        'callee_id' => 'required|exists:users,id',
+        'call_type' => 'required|in:voice,video'
+    ]);
 
-        $caller = $request->user();
-        $callee = User::find($request->callee_id);
+    $caller = $request->user();
+    $callee = User::find($request->callee_id);
 
-        if (!$callee) {
-            return response()->json(['error' => 'User not found'], 404);
-        }
+    // --- PERBAIKAN DI SINI ---
+    // 1. Definisikan $callId terlebih dahulu
+    $callId = uniqid();
+    
+    // 2. Gunakan $callId untuk membuat nama channel
+    $channel = 'call-' . $callId;
 
-        $callId = uniqid();
-        $channel = 'call-' . $callId;
-        
-        Log::info('Caller and callee', [
-            'caller_id' => $caller->id,
-            'caller_name' => $caller->name,
-            'callee_id' => $callee->id,
-            'callee_name' => $callee->name,
-            'channel' => $channel
-        ]);
+    // Panggil event (kode Anda di sini sudah benar)
+    event(new IncomingCallVoice(
+        caller: $caller,
+        callee: $callee,
+        callType: $request->call_type,
+        channel: $channel
+    ));
 
-        Log::info('Broadcasting IncomingCall to user.' . $callee->id);
-        
-        // Broadcast incoming call ke callee
-        event(new IncomingCallVoice(
-            caller: $caller,
-            callee: $callee,
-            callType: 'voice',
-            channel: $roomName // Kita tetap pakai 'channel' agar event sama, tapi isinya room name
-        ));
-
-        // Mengembalikan nama room ke penelepon agar bisa langsung join
-        return response()->json([
-            'call_id' => $callId,
-            'room_name' => $roomName, // Kirim 'room_name' ke frontend
-            'status' => 'calling',
-        ]);
-    }
+    // 3. Sekarang Anda bisa menggunakan kedua variabel di sini tanpa error
+    return response()->json([
+        'call_id' => $callId,
+        'channel' => $channel,
+        'status' => 'calling',
+    ]);
+}
 
     public function answerCall(Request $request)
 {
@@ -156,39 +150,23 @@ public function endCall(Request $request)
     ]);
 }
 
-    // public function generateToken(Request $request)
-    // {
-    //     $request->validate([
-    //         'room_name' => 'required|string',
-    //     ]);
+    public function generateToken(Request $request)
+{
+    $request->validate([
+        'channel' => 'required|string',
+        'uid' => 'required|string'
+    ]);
 
-    //     // Ambil kredensial dari file .env melalui config/services.php
-    //     $accountSid = config('services.twilio.account_sid');
-    //     $apiKeySid = config('services.twilio.api_key_sid');
-    //     $apiKeySecret = config('services.twilio.api_key_secret');
+    // Secara eksplisit kirim token: null untuk Mode Testing
+    return response()->json([
+        'token' => null, 
+        'app_id' => config('services.agora.app_id'),
+        'uid' => $request->uid,
+    ]);
+}
 
-    //     // Identity adalah nama/ID unik untuk user yang meminta token
-    //     $identity = str_replace(' ', '_', $request->user()->name) . '-' . $request->user()->id;
-        
-    //     // Buat token baru
-    //     $token = new AccessToken(
-    //         $accountSid,
-    //         $apiKeySid,
-    //         $apiKeySecret,
-    //         3600, // Token valid selama 1 jam
-    //         $identity
-    //     );
 
-    //     // Buat "izin" (grant) untuk mengakses Video/Voice room
-    //     $grant = new VideoGrant();
-    //     $grant->setRoom($request->room_name); // Izinkan user ini masuk ke room yang diminta
-    //     $token->addGrant($grant);
-
-    //     return response()->json([
-    //         'token' => $token->toJWT(),
-    //         'identity' => $identity,
-    //     ]);
-    // }
+    // Di dalam app/Http/Controllers/AgoraCallController.php
 
     public function inviteGroupCall(Request $request) 
     {
@@ -203,13 +181,23 @@ public function endCall(Request $request)
         })->toArray();
         
         $callId = uniqid('group-call-');
-        $roomName = 'group-call-' . $group->id . '-' . time();
+        // --- PERBAIKAN 1: Ganti nama variabel menjadi $channel ---
+        $channel = 'group-call-' . $callId;
         
-        event(new GroupIncomingCallVoice($callId, $group, $caller, 'voice', $roomName, $allParticipants));
+        // --- PERBAIKAN 2: Kirim $channel ke event, bukan $roomName ---
+        event(new GroupIncomingCallVoice(
+            $callId, 
+            $group, 
+            $caller, 
+            'voice', 
+            $channel, 
+            $allParticipants
+        ));
         
+        // --- PERBAIKAN 3: Ganti key di JSON menjadi 'channel' ---
         return response()->json([
             'call_id' => $callId, 
-            'room_name' => $roomName,
+            'channel' => $channel, // <- Diperbaiki
             'participants' => $allParticipants, 
             'group' => ['id' => $group->id, 'name' => $group->name]
         ]);
@@ -263,67 +251,14 @@ public function endCall(Request $request)
     /**
      * Generate token untuk panggilan grup
      */
-//     public function generateGroupToken(Request $request)
-// {
-//     Log::info('VERIFYING AGORA CREDENTIALS:', [
-//         'app_id_from_config' => config('services.agora.app_id'),
-//         'certificate_is_set' => !empty(config('services.agora.app_certificate'))
-//     ]);
-
-//     try {
-//         Log::info('Group token request:', $request->all());
-        
-//         // --- PERBAIKAN 1: Longgarkan aturan validasi ---
-//         $request->validate([
-//             'channel' => 'required|string',
-//             'uid' => 'required', // Hapus validasi 'string'
-//             'role' => 'required|in:publisher,subscriber'
-//         ]);
-
-//         // --- PERBAIKAN 2: Ambil UID dan ubah secara manual ke string ---
-//         $uid = (string) $request->input('uid');
-
-//         $appId = config('services.agora.app_id');
-//         $appCertificate = config('services.agora.app_certificate');
-        
-//         // Gunakan AgoraTokenService yang sama, tapi dengan $uid yang sudah pasti string
-//         $token = AgoraTokenService::generateRtcToken(
-//             $appId, 
-//             $appCertificate, 
-//             $request->channel, 
-//             $uid, // Gunakan variabel $uid yang sudah di-casting
-//             $request->role, 
-//             3600
-//         );
-
-//         Log::info('Group token generated successfully', [
-//             'channel' => $request->channel,
-//             'uid' => $uid, // Log UID yang sudah di-casting
-//             'role' => $request->role
-//         ]);
-        
-//         return response()->json([
-//             'token' => $token,
-//             'app_id' => $appId,
-//             'uid' => $uid, // Kirim kembali UID sebagai string
-//             'channel' => $request->channel,
-//             'role' => $request->role,
-//             'mode' => empty($appCertificate) ? 'testing' : 'secure'
-//         ]);
-        
-//     } catch (\Exception $e) {
-//         // Tambahkan detail error validasi ke log untuk debugging di masa depan
-//         if ($e instanceof \Illuminate\Validation\ValidationException) {
-//             Log::error('Validation error generating group token: ', $e->errors());
-//             return response()->json(['error' => 'Validation failed', 'details' => $e->errors()], 422);
-//         }
-        
-//         Log::error('Error generating group token: ' . $e->getMessage());
-//         return response()->json(['error' => 'Gagal generate token'], 500);
-//     }
-// }
-    
-    /**
-     * Menangani panggilan grup yang tidak dijawab
-     */
+    public function generateGroupToken(Request $request)
+{
+    // ... (lakukan hal yang sama untuk group token)
+    return response()->json([
+        'token' => null, 
+        'app_id' => config('services.agora.app_id'),
+        'uid' => (string) $request->input('uid'),
+        'channel' => $request->channel,
+    ]);
+}
 }

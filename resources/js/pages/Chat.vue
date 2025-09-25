@@ -70,9 +70,9 @@ const userBackgroundPath = computed<string | null>(() => page.props.auth.user.ba
 const userBackgroundUrl = computed<string>(() => page.props.auth.user.background_image_url);
 
 
-// --- Agora Call State ---
+// --- Call State ---
 const { startVoiceCall } = usePersonalCall();
-const { startGroupVoiceCall, setupDynamicGroupListeners, leaveDynamicGroupChannel } = useGroupCall();
+const { startGroupVoiceCall } = useGroupCall();
 
 // --- Personal Video Call State ---
 const activeCall = ref<null | { contactName: string }>(null);

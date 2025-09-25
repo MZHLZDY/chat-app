@@ -42,26 +42,73 @@ const rejectIncomingCall = () => {
     setTimeout(() => (callStatus.value = 'idle'), 2000);
 };
 
+// --- Data untuk komponen VoiceCallPersonal Versi Twilio ---
+// const personalCallUIData = computed(() => {
+//     if (!isInCall.value && !outgoingCallvoice.value) return null;
+
+//     // Saat sedang memanggil, kita ambil data dari `outgoingCall`
+//     if (outgoingCallvoice.value) {
+//         return {
+//             isCaller: true,
+//             callee: outgoingCallvoice.value.callee,
+//         };
+//     }
+    
+//     // Saat panggilan sudah terhubung, kita bisa ambil data dari `activeRoom`
+//     if (activeRoom.value) {
+//         const remoteParticipantIdentity = Array.from(activeRoom.value.participants.keys())[0];
+//         // Anda bisa menambahkan logika untuk mencari nama user berdasarkan identity jika perlu
+//         const remoteParticipantName = remoteParticipantIdentity?.split('-')[0].replace('_', ' ');
+
+//         return {
+//             isCaller: true, // Asumsi user ini yang memulai
+//             callee: { name: remoteParticipantName || 'Peserta' },
+//         };
+//     }
+    
+//     return null;
+// });
+
 
 // --- STATE UNTUK PANGGILAN SUARA GRUP (DARI COMPOSABLE) ---
-const {
-  isGroupVoiceCallActive,
-  groupVoiceCallData,
-  isGroupCaller,
-  groupCallTimeoutCountdown,
-  acceptGroupCall,
-  rejectGroupCall,
-  endGroupCall,
-  cancelGroupCall,
-  handleLeaveGroupCall,
-  handleRecallParticipant,
-  initializeGlobalListeners,
-} = useGroupCall();
+// const {
+//   isGroupCallActive,
+//   groupCallData,
+//   isGroupCaller,
+//   acceptGroupCall,
+//   rejectGroupCall,
+//   endGroupCall,
+//   handleLeaveGroupCall,
+//   initializeGlobalListeners,
+// } = useGroupCall(); // <-- ini untuk Twilio
 
 const {
-    isInVoiceCall, localAudioTrack, remoteAudioTrack, incomingCallVoice,
-    outgoingCallVoice, activeCallData, answerVoiceCall, endVoiceCallWithReason,
-    initializePersonalCallListeners, callTimeoutCountdown
+    groupVoiceCallData,
+    isGroupVoiceCallActive,
+    isGroupCaller,
+    groupCallTimeoutCountdown,
+    startGroupVoiceCall,
+    acceptGroupCall,
+    rejectGroupCall,
+    endGroupCall,
+    cancelGroupCall,
+    handleLeaveGroupCall,
+    handleRecallParticipant,
+    initializeGlobalListeners
+} = useGroupCall(); // <-- ini untuk Agora
+
+
+const {
+    isInVoiceCall,
+    localAudioTrack,
+    remoteAudioTrack,
+    incomingCallVoice,
+    outgoingCallVoice,
+    activeCallData,
+    callTimeoutCountdown,
+    answerVoiceCall,
+    endVoiceCallWithReason,
+    initializePersonalCallListeners,
 } = usePersonalCall();
 
 
@@ -92,20 +139,32 @@ onMounted(() => {
         @reject="rejectIncomingCall"
     />
 
-    <VoiceCallGroup
-     v-if="isGroupVoiceCallActive"
-     :is-visible="isGroupVoiceCallActive"
-     :group-call-data="groupVoiceCallData"
+    <!-- <VoiceCallGroup
+     v-if="isGroupCallActive"
+     :is-visible="isGroupCallActive"
+     :group-call-data="groupCallData"
      :is-caller="isGroupCaller"
      :current-user-id="currentUserId"
-     :calltimeoutcountdown="groupCallTimeoutCountdown"
      @accept-call="acceptGroupCall"
      @reject-call="rejectGroupCall"
      @end-call="endGroupCall"
-     @cancel-call="cancelGroupCall"
      @leave-call="handleLeaveGroupCall"
-     @recall-participant="handleRecallParticipant"
-    />
+     /> --> <!-- <<-- ini untuk twilio -->
+
+     <VoiceCallGroup
+        v-if="isGroupVoiceCallActive"
+        :is-visible="isGroupVoiceCallActive"
+        :group-call-data="groupVoiceCallData"
+        :is-caller="isGroupCaller"
+        :current-user-id="currentUserId"
+        :calltimeoutcountdown="groupCallTimeoutCountdown"
+        @accept-call="acceptGroupCall"
+        @reject-call="rejectGroupCall"
+        @end-call="endGroupCall"
+        @cancel-call="cancelGroupCall"
+        @leave-call="handleLeaveGroupCall"
+        @recall-participant="handleRecallParticipant"
+    /> <!-- <<-- ini untuk Agora -->
 
     <div v-if="incomingCallVoice" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
               <div class="bg-white rounded-lg p-6 w-96 text-center">
@@ -152,11 +211,10 @@ onMounted(() => {
           </div>
 
 <VoiceCallPersonal
- :is-visible="isInVoiceCall"
- :call-data="activeCallData"
- :local-audio-track="localAudioTrack"
- :remote-audio-track="remoteAudioTrack"
- @end-call="endVoiceCallWithReason"
- @mute-toggled="(isMuted: boolean) => localAudioTrack && localAudioTrack.setEnabled(!isMuted)"
-/>
+     :is-visible="isInVoiceCall"
+     :call-data="activeCallData"
+     :local-audio-track="localAudioTrack"
+     :remote-audio-track="remoteAudioTrack"
+     @end-call="endVoiceCallWithReason"
+    />
 </template>
