@@ -45,7 +45,7 @@ const isCallEnded = computed(() => props.groupCallData?.status === 'ended');
 
 const callTitle = computed(() => {
   if (isIncomingCall.value) return 'Panggilan Grup Masuk';
-  if (isOngoingCall.value) return 'Sedang Berbicara';
+  if (isOngoingCall.value) return 'Panggilan Suara Grup';
   if (isOutgoingCall.value) return 'Memanggil Grup';
   if (isCallEnded.value) return 'Panggilan Selesai';
   return 'Panggilan Grup';

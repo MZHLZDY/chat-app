@@ -1313,6 +1313,12 @@ const currentCallContactName = computed(() => {
                     <button @click="startVideoCall(activeContact)"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
+                    <button
+                             v-if="activeContact.type === 'user'"
+                             @click="startVoiceCall(activeContact)" title="Voice Call Group"
+                             class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                             <Phone class="w-5 h-5 ..."/>
+                            </button>
                   </div>
 
                   <!-- navbar group -->
@@ -1336,10 +1342,17 @@ const currentCallContactName = computed(() => {
                     <button @click="startGroupCall(activeContact.id, activeContact.name, (activeContact.members || []).map(m => ({...m, status: 'calling'})))"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
+
+                    <button
+                       v-if="activeContact.type === 'group'"
+                       @click="startGroupVoiceCall(activeContact)" title="Voice Call Group"
+                       class="flex ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                       <Phone class="w-5 h-5 ..."/>
+                    </button>
                   </div>
                   <div v-if="isCallActive && isMinimized"@click="restoreVideoCall"class="absolute right-14 top-3 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-full shadow-lg cursor-pointer flex items-center gap-2 transition-all duration-200 z-10">
                   </div>
-
+                  
                         <!-- minimize call button -->
                         <div v-if="isCallActive && isMinimized"
                             @click="restoreVideoCall"
