@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Models\ChatMessage;
 use App\Events\MessageSent;
 use App\Events\MessageRead;
+use App\Events\MessageDeleted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -127,11 +128,12 @@ class ChatController extends Controller
     public function destroy(ChatMessage $message)
     {
         if ($message->sender_id !== auth()->id()) {
-            // Kembalikan error 'Forbidden' jika bukan pengirimnya.
             return response()->json(['error' => 'Anda tidak memiliki izin untuk menghapus pesan ini.'], 403);
         }
 
         $message->delete();
+        broadcast(new MessageDeleted($message))->toOthers();
+
         return response()->json([
             'message' => 'Pesan berhasil dihapus untuk semua orang.',
             'deleted_message_id' => $message->id

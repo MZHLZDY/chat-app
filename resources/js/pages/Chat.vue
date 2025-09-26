@@ -472,6 +472,60 @@ const deleteMessageForEveryone = async (message: any) => {
     } catch (error) { console.error('Gagal menghapus pesan:', error); }
 };
 
+const setupEchoListener = (chat: Chat) => {
+    let channelName = '';
+
+    // 1. MEMBUAT NAMA CHANNEL YANG BENAR
+    if (chat.type === 'group') {
+        channelName = `group.${chat.id}`;
+    } else { // type === 'user'
+        // Menggunakan kedua ID, diurutkan, agar cocok dengan channels.php
+        const participants = [currentUserId.value, chat.id];
+        participants.sort((a, b) => a - b);
+        channelName = `chat.${participants.join('.')}`;
+    }
+
+    console.log(`Bergabung ke channel real-time: ${channelName}`);
+
+    window.Echo.private(channelName)
+        .listen('.MessageSent', (event: any) => {
+            if (event.message.sender_id === currentUserId.value) {
+                return;
+            }
+            console.log('Pesan baru diterima dari Echo:', event.message);
+            messages.value.push(event.message);
+        })
+        .listen('.message.deleted', (event: { messageId: number }) => {
+          console.log('Event message.deleted diterima!', event);
+            
+            const messageIndex = messages.value.findIndex(m => m.id === event.messageId);
+
+            if (messageIndex !== -1) {
+                messages.value[messageIndex].text = 'Pesan ini telah dihapus';
+        }
+      });
+};
+
+watch(activeContact, (newContact, oldContact) => {
+    if (oldContact) {
+        let oldChannelName = '';
+        if (oldContact.type === 'group') {
+            oldChannelName = `group.${oldContact.id}`;
+        } else {
+            const participants = [currentUserId.value, oldContact.id];
+            participants.sort((a, b) => a - b);
+            oldChannelName = `chat.${participants.join('.')}`;
+        }
+        window.Echo.leave(oldChannelName);
+        console.log(`Meninggalkan channel: ${oldChannelName}`);
+    }
+
+    // 3. BERGABUNG KE CHANNEL BARU
+    if (newContact) {
+        setupEchoListener(newContact);
+    }
+});
+
 // --- WebSocket Management ---
 let boundChannel = '';
 const bindChannel = (contactId: number, type: 'user' | 'group') => {
