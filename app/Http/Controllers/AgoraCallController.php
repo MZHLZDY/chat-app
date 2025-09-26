@@ -253,11 +253,16 @@ public function endCall(Request $request)
      */
     public function generateGroupToken(Request $request)
 {
-    // ... (lakukan hal yang sama untuk group token)
+    $request->validate([
+        'channel' => 'required|string',
+        'uid' => 'required|string'
+    ]);
+
+    // SELALU return token: null untuk development mode
     return response()->json([
         'token' => null, 
         'app_id' => config('services.agora.app_id'),
-        'uid' => (string) $request->input('uid'),
+        'uid' => $request->input('uid'),
         'channel' => $request->channel,
     ]);
 }

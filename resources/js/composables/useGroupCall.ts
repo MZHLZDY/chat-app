@@ -157,167 +157,277 @@ export function useGroupCall() {
         }
     };
 
-    // --- IMPROVED JOIN GROUP CHANNEL FUNCTION ---
-    const joinGroupChannel = async (channelName: string) => {
-        try {
-            console.log('🔑 Requesting Agora group token for channel:', channelName);
-            
-            // 1. Unlock audio context first
-            await unlockAudioContext();
-            
-            // 2. Check client state and cleanup if needed
-            const connectionState = groupClient.value.connectionState;
-            console.log('📊 Current connection state:', connectionState);
-            
-            if (connectionState === 'CONNECTED' || connectionState === 'CONNECTING') {
-                console.log('🔄 Client already connected, leaving first...');
-                await leaveGroupChannel();
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-            
-            // 3. Request token from server
-            const response = await axios.post('/group-call/token', {
-                channel: channelName,
-                uid: currentUserId.value.toString(),
-                role: 'publisher'
-            });
-            
-            console.log('✅ Group token response:', response.data);
-            
-            const { token, app_id } = response.data;
-            
-            if (!app_id) {
-                throw new Error('Invalid app_id from server');
-            }
-            
-            // 4. Setup audio listeners BEFORE join
-            setupGroupAudioListeners();
-            
-            // 5. Join channel
-            console.log('🔄 Joining Agora group channel with AppID:', app_id);
-            
-            await groupClient.value.join(
-                app_id,
-                channelName,
-                token || null,
-                currentUserId.value.toString()
-            );
-            
-            console.log('✅ Successfully joined Agora group channel');
-            
-            // 6. Wait before publishing audio
-            await new Promise(resolve => setTimeout(resolve, 800));
-            
-            // 7. Setup and publish audio track
-            try {
-                // Clean up existing track
-                if (groupLocalAudioTrack.value) {
-                    try {
-                        groupLocalAudioTrack.value.stop();
-                        groupLocalAudioTrack.value.close();
-                    } catch (e) {
-                        console.warn('Error closing existing track:', e);
-                    }
-                    groupLocalAudioTrack.value = null;
-                }
-                
-                // Create new microphone audio track
-                groupLocalAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack({
-                    encoderConfig: 'music_standard',
-                    AEC: true,
-                    AGC: true,
-                    ANS: true
-                });
-                
-                // Wait before publish
-                await new Promise(resolve => setTimeout(resolve, 300));
-                
-                // Publish audio track to channel
-                await groupClient.value.publish([groupLocalAudioTrack.value]);
-                console.log('✅ Successfully published audio to group channel');
-                
-            } catch (audioError: any) {
-                console.error('❌ Failed to setup audio track:', audioError);
-                
-                if (audioError.name === 'NOT_SUPPORTED' || audioError.name === 'PERMISSION_DENIED') {
-                    alert('Microphone permission is required for voice calls. Please allow microphone access.');
-                }
-                
-                // Leave channel if audio setup fails
-                await groupClient.value.leave();
-                throw audioError;
-            }
-            
-            return true;
-            
-        } catch (error: any) {
-            console.error('❌ Join group channel error:', error);
-            
-            if (error.message.includes('already in connecting/connected state')) {
-                console.log('🔄 Force leaving and retrying group channel...');
-                try {
-                    await leaveGroupChannel();
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    return await joinGroupChannel(channelName);
-                } catch (retryError) {
-                    console.error('❌ Group retry failed:', retryError);
-                    throw retryError;
-                }
-            }
-            
-            // Handle Agora specific errors
-            if (error.code) {
-                switch (error.code) {
-                    case 'CANNOT_JOIN_CHANNEL':
-                        alert('Cannot join channel. Please try again.');
-                        break;
-                    case 'INVALID_CHANNEL_NAME':
-                        alert('Invalid channel name.');
-                        break;
-                    case 'INVALID_TOKEN':
-                        alert('Invalid token. Please refresh the page.');
-                        break;
-                    default:
-                        alert('Error joining call: ' + error.message);
-                }
-            }
-            
-            throw error;
+// --- IMPROVED JOIN GROUP CHANNEL FUNCTION WITH UID CONFLICT HANDLING ---
+// --- PERBAIKAN JOIN GROUP CHANNEL FUNCTION DENGAN TYPE SAFETY ---
+const joinGroupChannel = async (channelName: string): Promise<boolean> => {
+    try {
+        console.log('🔑 Requesting Agora group token for channel:', channelName);
+        
+        // 1. Unlock audio context first
+        await unlockAudioContext();
+        
+        // 2. Check client state and cleanup if needed
+        const connectionState = groupClient.value.connectionState;
+        console.log('📊 Current connection state:', connectionState);
+        
+        // PERBAIKAN: Handle state lebih hati-hati
+        if (connectionState === 'CONNECTED' || connectionState === 'CONNECTING') {
+            console.log('🔄 Client already connected, leaving first...');
+            await safeLeaveGroupChannel();
+            await new Promise(resolve => setTimeout(resolve, 1000));
         }
-    };
-
-    // --- IMPROVED LEAVE GROUP CHANNEL ---
-    const leaveGroupChannel = async () => {
+        
+        // 3. Request token from server
+        const response = await axios.post('/group-call/token', {
+            channel: channelName,
+            uid: '0', // SELALU gunakan 0 untuk auto-generate UID
+            role: 'publisher'
+        });
+        
+        console.log('✅ Group token response:', response.data);
+        
+        const { token, app_id } = response.data;
+        
+        if (!app_id) {
+            throw new Error('Invalid app_id from server');
+        }
+        
+        // 4. Setup audio listeners BEFORE join
+        setupGroupAudioListeners();
+        
+        // 5. Join channel - biarkan Agora generate UID otomatis
+        console.log('🔄 Joining Agora group channel with AppID:', app_id);
+        
+        await groupClient.value.join(
+            app_id,
+            channelName,
+            token || null
+            // Biarkan UID kosong untuk auto-generate oleh Agora
+        );
+        
+        console.log('✅ Successfully joined Agora group channel');
+        
+        // 6. Wait sebelum publishing audio
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // 7. Setup dan publish audio track
         try {
-            console.log('🚪 Leaving group channel...');
-            
-            // Stop all remote tracks first
-            Object.keys(groupRemoteAudioTracks.value).forEach(uid => {
-                safeUnsubscribeFromUser(Number(uid));
-            });
-            groupRemoteAudioTracks.value = {};
-            
-            // Stop and close local track
+            // Clean up existing track
             if (groupLocalAudioTrack.value) {
                 try {
                     groupLocalAudioTrack.value.stop();
                     groupLocalAudioTrack.value.close();
                 } catch (e) {
-                    console.warn('Error closing local track:', e);
+                    console.warn('Error closing existing track:', e);
                 }
                 groupLocalAudioTrack.value = null;
             }
             
-            // Leave channel if connected
-            if (groupClient.value.connectionState !== 'DISCONNECTED') {
-                await groupClient.value.leave();
+            // Create new microphone audio track
+            groupLocalAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack({
+                encoderConfig: 'music_standard',
+                AEC: true,
+                AGC: true,
+                ANS: true
+            });
+            
+            // Wait sebelum publish
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Publish audio track ke channel
+            await groupClient.value.publish([groupLocalAudioTrack.value]);
+            console.log('✅ Successfully published audio to group channel');
+            
+        } catch (audioError: any) {
+            console.error('❌ Failed to setup audio track:', audioError);
+            
+            if (audioError.name === 'NOT_SUPPORTED' || audioError.name === 'PERMISSION_DENIED') {
+                alert('Microphone permission is required for voice calls. Please allow microphone access.');
             }
             
-            console.log('✅ Successfully left group channel');
-        } catch (error) {
-            console.error('❌ Error leaving group channel:', error);
+            // Leave channel jika audio setup fails
+            await safeLeaveGroupChannel();
+            throw audioError;
         }
-    };
+        
+        return true;
+        
+    } catch (error: unknown) {
+        console.error('❌ Join group channel error:', error);
+        
+        // PERBAIKAN: Type-safe error handling
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorCode = (error as any)?.code;
+        
+        // Handle UID_CONFLICT secara spesifik
+        if (errorCode === 'UID_CONFLICT' || errorMessage.includes('UID_CONFLICT')) {
+            console.log('🔄 UID conflict detected, retrying with simple approach...');
+            try {
+                await safeLeaveGroupChannel();
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                return await joinGroupChannelSimple(channelName);
+            } catch (retryError: unknown) {
+                // PERBAIKAN: Type-safe retry error handling
+                const retryErrorMessage = retryError instanceof Error ? retryError.message : 'Unknown retry error';
+                const retryErrorCode = (retryError as any)?.code;
+                
+                console.error('❌ UID conflict retry failed:', retryErrorMessage);
+                
+                if (retryErrorCode === 'UID_CONFLICT') {
+                    console.log('🔄 Trying fallback UID strategy...');
+                    await safeLeaveGroupChannel();
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    
+                    return await joinGroupChannelSimple(channelName);
+                }
+                
+                throw retryError;
+            }
+        }
+        
+        // Handle WS_ABORT error
+        if (errorCode === 'WS_ABORT' || errorMessage.includes('WS_ABORT') || errorMessage.includes('LEAVE')) {
+            console.log('🔄 WS_ABORT detected, retrying with delay...');
+            try {
+                await safeLeaveGroupChannel();
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                return await joinGroupChannelSimple(channelName);
+            } catch (retryError: unknown) {
+                console.error('❌ WS_ABORT retry failed:', retryError);
+                // WS_ABORT sering tidak fatal, bisa continue
+                return true;
+            }
+        }
+        
+        // Handle error lainnya
+        if (errorMessage.includes('already in connecting/connected state') || 
+            errorMessage.includes('OPERATION_ABORTED') ||
+            errorCode === 'OPERATION_ABORTED') {
+            
+            console.log('🔄 Operation aborted, cleaning up and retrying...');
+            try {
+                await safeLeaveGroupChannel();
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                return await joinGroupChannel(channelName);
+            } catch (retryError: unknown) {
+                console.error('❌ Group retry failed:', retryError);
+                throw retryError;
+            }
+        }
+        
+        // Handle Agora specific errors
+        if (errorCode) {
+            switch (errorCode) {
+                case 'CANNOT_JOIN_CHANNEL':
+                    alert('Cannot join channel. Please try again.');
+                    break;
+                case 'INVALID_CHANNEL_NAME':
+                    alert('Invalid channel name.');
+                    break;
+                case 'INVALID_TOKEN':
+                    alert('Invalid token. Please refresh the page.');
+                    break;
+                case 'OPERATION_ABORTED':
+                    alert('Join operation was cancelled. Please try again.');
+                    break;
+                case 'UID_CONFLICT':
+                    alert('User already in call. Please try again.');
+                    break;
+                case 'WS_ABORT':
+                    alert('Connection was interrupted. Please try again.');
+                    break;
+                default:
+                    alert('Error joining call: ' + errorMessage);
+            }
+        }
+        
+        throw error;
+    }
+};
+
+// SIMPLE JOIN FUNCTION untuk fallback (type-safe)
+const joinGroupChannelSimple = async (channelName: string): Promise<boolean> => {
+    try {
+        console.log('🔑 [SIMPLE] Requesting Agora group token for channel:', channelName);
+        
+        // Request token
+        const response = await axios.post('/group-call/token', {
+            channel: channelName,
+            uid: '0',
+            role: 'publisher'
+        });
+        
+        const { token, app_id } = response.data;
+        
+        if (!app_id) {
+            throw new Error('Invalid app_id from server');
+        }
+        
+        // Join dengan approach paling simple
+        await groupClient.value.join(app_id, channelName, token || null);
+        console.log('✅ [SIMPLE] Successfully joined channel');
+        
+        // Setup audio track
+        if (groupLocalAudioTrack.value) {
+            try {
+                groupLocalAudioTrack.value.stop();
+                groupLocalAudioTrack.value.close();
+            } catch (e) {
+                // Ignore errors
+            }
+            groupLocalAudioTrack.value = null;
+        }
+        
+        groupLocalAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack();
+        await groupClient.value.publish([groupLocalAudioTrack.value]);
+        console.log('✅ [SIMPLE] Successfully published audio');
+        
+        return true;
+    } catch (error: unknown) {
+        console.error('❌ [SIMPLE] Join failed:', error);
+        throw error;
+    }
+};
+
+// PERBAIKAN: Safe leave function
+const safeLeaveGroupChannel = async () => {
+    try {
+        console.log('🚪 Safely leaving group channel...');
+        
+        // Stop all remote tracks first
+        Object.keys(groupRemoteAudioTracks.value).forEach(uid => {
+            safeUnsubscribeFromUser(Number(uid));
+        });
+        groupRemoteAudioTracks.value = {};
+        
+        // Stop and close local track
+        if (groupLocalAudioTrack.value) {
+            try {
+                groupLocalAudioTrack.value.stop();
+                groupLocalAudioTrack.value.close();
+            } catch (e) {
+                console.warn('Error closing local track:', e);
+            }
+            groupLocalAudioTrack.value = null;
+        }
+        
+        // Leave channel jika connected
+        if (groupClient.value && groupClient.value.connectionState !== 'DISCONNECTED') {
+            await groupClient.value.leave();
+            // PERBAIKAN: Tambahkan delay setelah leave
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        console.log('✅ Successfully left group channel');
+    } catch (error) {
+        console.error('❌ Error leaving group channel:', error);
+    }
+};
+
+    // Ganti semua pemanggilan leaveGroupChannel dengan safeLeaveGroupChannel
+    const leaveGroupChannel = safeLeaveGroupChannel;
 
     // --- IMPROVED START GROUP VOICE CALL ---
     const startGroupVoiceCall = async (group: Chat | null) => {
@@ -470,48 +580,121 @@ export function useGroupCall() {
     };
 
     // --- GROUP CALL ACTIONS ---
-    const acceptGroupCall = async (callId: string) => {
-        await unlockAudioContext();
-        try {
-            console.log('✅ Accepting group call:', callId);
+    const acceptGroupCall = async (callId: string): Promise<void> => {
+    await unlockAudioContext();
+    try {
+        console.log('✅ Accepting group call:', callId);
+        
+        stopGroupCallTimeout();
+        
+        const response = await axios.post('/group-call/answer', {
+            call_id: callId,
+            group_id: groupVoiceCallData.value?.group?.id,
+            accepted: true
+        });
+        
+        console.log('✅ Group call answer response:', response.data);
+        
+        if (groupVoiceCallData.value) {
+            const participantIndex = groupVoiceCallData.value.participants?.findIndex(
+                (p: any) => p.id === currentUserId.value
+            );
             
-            stopGroupCallTimeout();
-            
-            const response = await axios.post('/group-call/answer', {
-                call_id: callId,
-                group_id: groupVoiceCallData.value?.group?.id,
-                accepted: true
-            });
-            
-            console.log('✅ Group call answer response:', response.data);
-            
-            if (groupVoiceCallData.value) {
-                const participantIndex = groupVoiceCallData.value.participants?.findIndex(
-                    (p: any) => p.id === currentUserId.value
-                );
-                
-                if (participantIndex !== undefined && participantIndex !== -1 && groupVoiceCallData.value.participants) {
-                    groupVoiceCallData.value.participants[participantIndex].status = 'accepted';
-                }
-                
-                groupVoiceCallData.value.status = 'accepted';
-                
-                if (groupVoiceCallData.value.channel) {
-                    if (groupClient.value.connectionState !== 'DISCONNECTED') {
-                        await leaveGroupChannel();
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                    
-                    await joinGroupChannel(groupVoiceCallData.value.channel);
-                    console.log('🎉 Callee successfully joined group channel');
-                }
+            if (participantIndex !== undefined && participantIndex !== -1 && groupVoiceCallData.value.participants) {
+                groupVoiceCallData.value.participants[participantIndex].status = 'accepted';
             }
             
-        } catch (error: any) {
-            console.error('❌ Failed to accept group call:', error);
-            alert('Failed to accept call: ' + (error.response?.data?.error || error.message));
+            groupVoiceCallData.value.status = 'accepted';
+            
+            if (groupVoiceCallData.value.channel) {
+                // PERBAIKAN: Approach yang lebih robust untuk join
+                let retryCount = 0;
+                const maxRetries = 2;
+                
+                while (retryCount <= maxRetries) {
+                    try {
+                        // Pastikan state clean sebelum join
+                        if (groupClient.value.connectionState !== 'DISCONNECTED') {
+                            console.log('🔄 Cleaning up previous connection...');
+                            await safeLeaveGroupChannel();
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        }
+                        
+                        await joinGroupChannel(groupVoiceCallData.value.channel);
+                        console.log('🎉 Callee successfully joined group channel');
+                        break;
+                        
+                    } catch (error: unknown) {
+                        retryCount++;
+                        
+                        // PERBAIKAN: Type-safe error handling
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        const errorCode = (error as any)?.code;
+                        
+                        // Handle WS_ABORT secara spesifik
+                        if (errorCode === 'WS_ABORT' || errorMessage.includes('WS_ABORT')) {
+                            console.log(`🔄 WS_ABORT detected, retry ${retryCount}/${maxRetries}`);
+                            
+                            if (retryCount > maxRetries) {
+                                console.error('❌ Max retries exceeded for WS_ABORT');
+                                // WS_ABORT biasanya tidak fatal, continue saja
+                                break;
+                            }
+                            
+                            await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
+                            continue;
+                        }
+                        
+                        // Handle UID_CONFLICT
+                        if (errorCode === 'UID_CONFLICT') {
+                            console.log(`🔄 UID conflict detected, retry ${retryCount}/${maxRetries}`);
+                            
+                            if (retryCount > maxRetries) {
+                                console.error('❌ Max retries exceeded for UID conflict');
+                                alert('Unable to join call due to user conflict. Please try again later.');
+                                throw error;
+                            }
+                            
+                            await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+                            continue;
+                        }
+                        
+                        // Untuk error lainnya
+                        if (retryCount > maxRetries) {
+                            throw error;
+                        }
+                        
+                        console.log(`🔄 Retry ${retryCount}/${maxRetries} for joining channel...`);
+                        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                    }
+                }
+            }
         }
-    };
+        
+    } catch (error: unknown) {
+        console.error('❌ Failed to accept group call:', error);
+        
+        // PERBAIKAN: Type-safe error handling
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorCode = (error as any)?.code;
+        
+        if (errorCode === 'WS_ABORT' || errorMessage.includes('WS_ABORT')) {
+            console.warn('⚠️ WS_ABORT error, but call might still be connected');
+            // WS_ABORT seringkali tidak fatal, bisa continue
+        } else if (errorCode === 'UID_CONFLICT') {
+            alert('You appear to be already in this call. Please wait or refresh the page.');
+        } else if (errorMessage.includes('OPERATION_ABORTED')) {
+            alert('Join operation was cancelled. Please try answering the call again.');
+        } else {
+            alert('Failed to accept call: ' + errorMessage);
+        }
+        
+        // Reset state hanya jika error fatal
+        if (errorCode !== 'WS_ABORT') {
+            resetGroupCallState();
+        }
+    }
+};
 
     const rejectGroupCall = async (callId: string, reason: string = 'Ditolak oleh penerima') => {
         try {

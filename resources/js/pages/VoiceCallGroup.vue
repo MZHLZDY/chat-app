@@ -175,8 +175,8 @@ onUnmounted(() => {
           <div class="text-2xl font-mono text-gray-700 dark:text-gray-200 my-2">{{ formattedCallDuration }}</div>
           <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">Sedang berbicara dengan {{ acceptedParticipants.length }} orang</p>
           
-          <!-- STATISTIK HANYA UNTUK HOST -->
-          <div v-if="isCaller" class="grid grid-cols-3 gap-2 mb-3 text-xs">
+          <!-- SEKARANG HANYA UNTUK HOST -->
+          <div class="grid grid-cols-3 gap-2 mb-3 text-xs">
             <div class="bg-green-100 text-green-800 p-2 rounded">
               <div class="font-bold">{{ acceptedParticipants.length }}</div>
               <div>Bergabung</div>
@@ -206,19 +206,19 @@ onUnmounted(() => {
                   'text-red-500': participant.status === 'rejected' || participant.status === 'left' || participant.status === 'ended'
                 }" class="text-xs font-semibold">
                   {{ 
-                    participant.status === 'accepted' ? '✓ Bergabung' : 
-                    participant.status === 'ringing' ? '⌛ Berdering' : 
-                    participant.status === 'calling' ? '⌛ Memanggil' : 
-                    participant.status === 'rejected' ? '✗ Ditolak' : 
-                    participant.status === 'left' ? '← Keluar' : 
-                    participant.status === 'ended' ? '⏹ Berakhir' : ''
+                    participant.status === 'accepted' ? 'Bergabung' : 
+                    participant.status === 'ringing' ? 'Berdering' : 
+                    participant.status === 'calling' ? 'Memanggil' : 
+                    participant.status === 'rejected' ? 'Diabaikan' : 
+                    participant.status === 'left' ? 'Keluar' : 
+                    participant.status === 'ended' ? 'Berakhir' : ''
                   }}
                 </span>
                 <button 
                   v-if="isCaller && (participant.status === 'left' || participant.status === 'rejected')" 
                   @click="recallParticipant(participant.id)" 
-                  class="bg-green-500 text-white px-2 py-0.5 text-xs rounded-full hover:bg-green-600"
-                  title="Panggil Ulang"
+                  class="text-gray px-2 py-0.5 text-xs rounded-full hover:bg-gray-300"
+                  title="Panggil Lagi"
                 >
                   <Phone class="w-3 h-3"/>
                 </button>
