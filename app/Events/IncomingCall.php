@@ -15,14 +15,13 @@ class IncomingCall implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $caller;
-    public $callee;
-    public $callType;
-    public $channel;
-
     // PERBAIKAN: Gunakan type hint yang lebih flexible
-    public function __construct($caller, $callee, string $callType, string $channel)
-    {
+    public function __construct(
+        public User $caller, 
+        public User $callee, 
+        public string $callType, 
+        public string $channel
+    ) {
         \Log::info('IncomingCall constructor', [
             'caller_id' => $caller->id,
             'callee_id' => $callee->id,
@@ -30,10 +29,10 @@ class IncomingCall implements ShouldBroadcast
             'channel' => $channel
         ]);
 
-        $this->caller = $caller;
-        $this->callee = $callee;
-        $this->callType = $callType;
-        $this->channel = $channel;
+        // $this->caller = $caller;
+        // $this->callee = $callee;
+        // $this->callType = $callType;
+        // $this->channel = $channel;
     }
 
     public function broadcastOn(): array
@@ -54,15 +53,24 @@ class IncomingCall implements ShouldBroadcast
     {
         return [
             'caller' => [
+                'call_id' => uniqid(),
                 'id' => $this->caller->id,
                 'name' => $this->caller->name,
                 'email' => $this->caller->email
             ],
-            'callee_id' => $this->callee->id,
+            'callee' => [
+                'id'=> $this->callee->id,
+                'name'=> $this->callee->name,
+                'email' => $this->callee->email,
+            ],
             'call_type' => $this->callType,
             'channel' => $this->channel,
-            'call_id' => str_replace('call-', '', $this->channel),
             'timestamp' => now()->toISOString()
         ];
+
+        // Log untuk debug
+        \Log::info('Broadcasting data', $data);
+
+        return $data;
     }
 }

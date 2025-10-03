@@ -75,14 +75,14 @@ const deleteType = ref<'me' | 'everyone'>('everyone');
 const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
 // const personalCallStatus = ref<CallStatus>('idle');
-const incomingCall = ref<{ from: any, to: { id: number, name: string } } | null>(null);
+const incomingCall = ref<{ from: any, to: { id: number, name: string }, callId?: string, channel?: string, callType?: string } | null>(null);
 const isMinimized = ref(false);
 const callStatus = ref<CallStatus>('idle');
 const callType = ref< 'none' | 'personal' | 'group'>('none');
 
 let callTimer : any = null;
 
-const startVideoCall = (contact: Chat) => {
+const startVideoCall = async (contact: Chat) => {
   // cek apakah sedang ada call aktif
   if (isCallActive.value) {
     // simpan informasi call yang ingin dibuat
@@ -96,14 +96,31 @@ const startVideoCall = (contact: Chat) => {
   activeContact.value = contact;
   callStatus.value = 'calling';
 
-  // set timeout 30dtk, klo ga diangkat dianggap "missed"
-  callTimer = setTimeout(() => {
-    if (callStatus.value === 'calling') {
-      callStatus.value = 'missed';
-      endCall();
-    }
-  }, 30000);
+  // BE untuk trigger incoming call
+  try {
+    console.log('📞 Memulai panggilan ke:', contact.id);
 
+    const response = await axios.post('/call/invite', {
+      callee_id: contact.id,
+      call_type: 'video'
+    });
+
+    console.log('✅ Panggilan berhasil dimulai:', response.data);
+
+    // set timeout 30dtk, klo ga diangkat dianggap "missed"
+    callTimer = setTimeout(() => {
+      if (callStatus.value === 'calling') {
+        callStatus.value = 'missed';
+        endCall();
+      }
+    }, 30000);
+
+  } catch (error) {
+    console.error('❌ Gagal memulai panggilan:', error);
+    alert('Gagal memulai panggilan. Silakan coba lagi.');
+    endCall();
+    return;
+  }
   // TODO: Init Agora/Video Call Service
 };
 
@@ -117,24 +134,68 @@ const startVideoCall = (contact: Chat) => {
 const receiveIncomingCall = (fromUser: any) => {
   incomingCall.value = {
     from: fromUser,
-    to: { id: currentUserId.value, name: currentUserName.value }
+    to: { id: currentUserId.value, name: currentUserName.value },
+    callId: 'temp-call-id',
+    channel: 'temp-channel',
+    callType: 'video'
   }
 }
 
-const acceptIncomingCall = () => {
-  clearTimeout(callTimer)
-  callStatus.value = 'connected';
-  incomingCall.value = null;
+const acceptIncomingCall = async () => {
+  if (!incomingCall.value) return;
+
+  try {
+    console.log('✅ Menerima panggilan dari');
+
+    await axios.post('/call/answer', {
+      call_id: incomingCall.value.callId || 'temp-call-id',
+      caller_id: incomingCall.value.from.id,
+      accepted: true
+    });
+    
+    clearTimeout(callTimer)
+
+    // Set call partner info untuk personal call
+    callStatus.value = 'connected';
+    callType.value = 'personal'
+    callPartnerId.value = incomingCall.value.from.id;
+
+    incomingCall.value = null;
+
+    console.log('✅ Panggilan berhasil diterima')
+    
+  } catch (error) {
+    console.error('❌ Gagal menerima panggilan:', error);
+    alert('Gagal menerima panggilan. Silakan coba lagi.');
+  }
 }
 
-const rejectIncomingCall = () => {
+const rejectIncomingCall = async () => {
+  if (!incomingCall.value) return;
+
+  try {
+    console.log('❌ Menolak panggilan dari');
+
+    await axios.post('/call/answer', {
+      call_id: incomingCall.value.callId || 'temp-call-id',
+      caller_id: incomingCall.value.from.id,
+      accepted: false,
+      reason: 'User menolak'
+    });
+    
+    console.log('❌ Panggilan berhasil ditolak');
+
+  } catch (error) {
+    console.error('❌ Gagal untuk menolak panggilan:', error);
+  }
+
   callStatus.value = 'rejected';
   incomingCall.value = null;
+
   setTimeout(() => {
     callStatus.value = 'idle';
   }, 2000);
-
-}
+};
 
 const endPersonalCall = () => {
   endCall();
@@ -212,14 +273,36 @@ const leaveGroupCall = () => {
 };
 
 // State End call untuk semua (personal + group)
-const endCall = () => {
+const endCall = async () => {
   clearTimeout(callTimer);
-  callType.value = 'none';
-  callStatus.value = 'idle';
-  callPartnerId.value = null;
-  activeGroupCall.value = null;
-  joinedMembers.value = []; // Reset joined members
-  isMinimized.value = false; // Reset minimize state
+
+  // notfiy BE jika ada active call
+  if ((callStatus.value === 'calling' || callStatus.value === 'connected') &&
+      (callPartnerId.value || activeGroupCall.value)) {
+    
+    try {
+      const participantIds = [];
+
+      if (callType.value === 'personal' && callPartnerId.value) {
+        participantIds.push(callPartnerId.value);
+      } else if (callType.value === 'group' && activeGroupCall.value) {
+        participantIds.push(...activeGroupCall.value.participants.map(p => p.id));
+      }
+
+      if (participantIds.length > 0) {
+        await axios.post('/call/end', {
+          call_id: 'temp-call-id',
+          participant_ids: participantIds,
+          reason: 'User mengakhiri panggilan'
+        });
+
+        console.log('☎️ Notifikasi panggilan diakhiri dikirimkan ke BE')
+      }
+
+    } catch (error) {
+      console.error('❌ Gagal mengirim notifikasi akhiri panggilan ke BE:', error);
+    }
+  }
 };
 
 // --- Modal States ---
@@ -854,6 +937,56 @@ const setupGlobalListeners = () => {
             });
         }
     });
+
+    // listening incoming call
+    echo.private(`user.${currentUserId.value}`)
+      .listen('.incoming-call', (payload: any) => {
+        console.log('🤙 Raw payload diterima:', JSON.stringify(payload, null, 2));
+        console.log('📋 Caller object:', payload.caller);
+        console.log('📋 Caller ID', payload.caller?.id);
+        console.log('📋 Caller name:', payload.caller?.name);
+        console.log('📋 Caller email:', payload.caller?.email);
+
+        // Validasi payload
+        if (!payload.caller || !payload.caller.name) {
+          console.error('❌ Payload caller tidak valid:', payload);
+          return;
+        }
+
+        callStatus.value = 'ringing';
+        incomingCall.value = {
+          from: {
+            id: payload.caller.id,
+            name: payload.caller.name || 'Unknown User',
+            email: payload.caller.email
+          },
+          to: { id: currentUserId.value, name: currentUserName.value },
+          callId: payload.call_id || 'temp',
+          channel: payload.channel,
+          callType: payload.call_type
+        };
+
+        console.log('✅ IncomingCall object set:', incomingCall.value);
+      })
+      .listen('.call-accepted', (payload: any) => {
+        console.log('✅ Panggilan diterima:', payload);
+        if (callStatus.value === 'calling') {
+          callStatus.value = 'connected'
+        }
+      })
+      .listen('.call-rejected', (payload: any) => {
+        console.log('❌ Panggilan ditolak:', payload);
+        if (callStatus.value === 'calling') {
+          callStatus.value = 'rejected';
+          setTimeout(() => {
+            callStatus.value = 'idle';
+            endCall();
+          }, 2000);
+        }
+      })
+      .listen('.call-ended', (payload:any) => {
+        console.log('☎️ Panggilan diakhiri:', payload)
+      })
 };
 
 // --- Initialize ---
@@ -1112,7 +1245,7 @@ const currentCallContactName = computed(() => {
                         <IncomingCallModal
                           v-if="callStatus === 'ringing'"
                           :show="true"
-                          :fromName="incomingCall?.from.name"
+                          :caller-name="incomingCall?.from?.name"
                           @accept="acceptIncomingCall"
                           @reject="rejectIncomingCall"
                         />

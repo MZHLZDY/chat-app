@@ -59,6 +59,49 @@ Route::get('/test-call-broadcast/{userId}', function($userId) {
     }
 })->middleware('auth');
 
+// Test route untuk trigger incoming call
+Route::get('/test-call/{userId}', function($userId) {
+    $caller = auth()->user();
+    $callee = \App\Models\User::find($userId);
+
+    if (!$callee) {
+        return response()->json(['error' => 'User tidak ditemukan'], 404);
+    }
+
+    // Debug Info
+    \Log::info('=== Test call debug ===', [
+        'caller' => [
+            'id' => $caller->id,
+            'name' => $caller->name,
+            'email' => $caller->email
+        ],
+        'callee' => [
+            'id' => $callee->id,
+            'name' => $callee->name,
+            'email' => $callee->email
+        ]
+    ]);
+
+    event(new \App\Events\IncomingCall (
+        caller: $caller,
+        callee: $callee,
+        callType: 'voice',
+        channel: 'call-test-' . time()
+    ));
+
+    return response()->json([
+        'message' => 'Incoming call triggered to' . $callee->name,
+        'caller' => [
+            'id' => $caller->id,
+            'name' => $caller->name
+        ],
+        'callee' => [
+            'id' => $callee->id,
+            'name' => $callee->name
+        ]
+    ]);
+})->middleware('auth');
+
 Route::get('/test-channel-auth', function() {
     try {
         $user = auth()->user();

@@ -24,14 +24,21 @@ class AgoraCallController extends Controller
 
         $caller = $request->user();
         $callee = User::find($request->callee_id);
-        
-        Log::info('Caller and callee', [
-            'caller_id' => $caller->id,
-            'callee_id' => $callee->id
-        ]);
+
+        if (!$callee) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
 
         $callId = uniqid();
         $channel = 'call-' . $callId;
+        
+        Log::info('Caller and callee', [
+            'caller_id' => $caller->id,
+            'caller_name' => $caller->name,
+            'callee_id' => $callee->id,
+            'callee_name' => $callee->name,
+            'channel' => $channel
+        ]);
 
         Log::info('Broadcasting IncomingCall to user.' . $callee->id);
         
