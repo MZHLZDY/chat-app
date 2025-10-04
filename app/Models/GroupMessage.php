@@ -11,7 +11,7 @@ use App\Models\HiddenMessage;
 class GroupMessage extends Model
 {
     use HasFactory, SoftDeletes;
-    protected $fillable = ['group_id','sender_id','message'];
+    protected $fillable = ['group_id','sender_id','message', 'type', 'file_path', 'file_name', 'file_mime_type', 'file_size'];
 
     public function group(): BelongsTo
     {

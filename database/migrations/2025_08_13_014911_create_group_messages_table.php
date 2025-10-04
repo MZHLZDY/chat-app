@@ -11,7 +11,12 @@ return new class extends Migration {
             $table->id();
             $table->foreignId('group_id')->constrained('groups')->onDelete('cascade');
             $table->foreignId('sender_id')->constrained('users')->onDelete('cascade');
-            $table->text('message');
+            $table->text('message')->nullable();
+            $table->string('type')->default('text');
+            $table->string('file_path')->nullable();
+            $table->string('file_name')->nullable();
+            $table->string('file_mime_type')->nullable();
+            $table->integer('file_size')->nullable();;
             $table->timestamps();
         });
     }

@@ -9,6 +9,7 @@ use App\Events\MessageDeleted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
 
 class ChatController extends Controller
@@ -138,5 +139,41 @@ class ChatController extends Controller
             'message' => 'Pesan berhasil dihapus untuk semua orang.',
             'deleted_message_id' => $message->id
         ], 200);
+    }
+
+    public function storeFile(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|max:25600', // Batas 25MB
+            'receiver_id' => 'required|exists:users,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 422);
+        }
+
+        $file = $request->file('file');
+        $path = $file->store('chat_files', 'public');
+        $mime = $file->getMimeType();
+
+        $type = 'file';
+        if (str_starts_with($mime, 'image/')) {
+            $type = 'image';
+        } elseif (str_starts_with($mime, 'video/')) {
+            $type = 'video';
+        }
+        $message = ChatMessage::create([
+            'sender_id'      => auth()->id(),
+            'receiver_id'    => $request->input('receiver_id'),
+            'message'        => $request->input('text'),
+            'type'           => $type,
+            'file_path'      => $path,
+            'file_name'      => $file->getClientOriginalName(),
+            'file_mime_type' => $mime,
+            'file_size'      => $file->getSize(),
+        ]);
+        $message->load('sender');
+        broadcast(new MessageSent($message))->toOthers(); 
+        return response()->json($message, 201);
     }
 }

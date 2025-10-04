@@ -11,7 +11,7 @@ use App\Models\HiddenMessage;
 class ChatMessage extends Model
 {
     use HasFactory, SoftDeletes;
-    protected $fillable = ["sender_id", "receiver_id", "message"];
+    protected $fillable = ["sender_id", "receiver_id", "message", 'type', 'file_path', 'file_name', 'file_mime_type', 'file_size',];
 
     protected $casts = [
         'created_at' => 'datetime',

@@ -52,6 +52,8 @@ const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
 const unreadCounts = ref<{ [key: string]: number }>({});
+const fileInput = ref<HTMLInputElement | null>(null);
+const uploadProgress = ref<number>(0);
 const messageContainer = ref<HTMLElement | null>(null);
 watch(messages, () => {
     scrollToBottom();
@@ -329,6 +331,56 @@ const filteredChats = computed(() => {
 
 
 // --- Helper Functions ---
+const triggerFileInput = () => {
+    fileInput.value?.click();
+};
+
+const onFileSelected = async (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    if (!target.files || target.files.length === 0) {
+        return;
+    }
+
+    const file = target.files[0];
+    uploadProgress.value = 0;
+    const formData = new FormData();
+    formData.append('file', file);
+
+    let endpoint = '';
+    // Tentukan endpoint dan data tambahan berdasarkan tipe chat
+    if (activeContact.value?.type === 'group') {
+        endpoint = `/groups/${activeContact.value.id}/messages/file`;
+    } else { 
+        endpoint = `/messages/file`;
+        formData.append('receiver_id', String(activeContact.value?.id));
+    }
+
+    try {
+        // PERBAIKAN: Gunakan variabel 'endpoint' di sini
+        const response = await axios.post(endpoint, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            },
+            onUploadProgress: (progressEvent) => {
+                if (progressEvent.lengthComputable) {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
+                    uploadProgress.value = percentCompleted;
+                }
+            },
+        });
+
+        addMessage(response.data);
+        
+    } catch (error) {
+        console.error('Gagal mengirim file:', error);
+        alert('Gagal mengirim file. Silakan coba lagi.');
+    } finally {
+        setTimeout(() => {
+            uploadProgress.value = 0;
+        }, 1500);
+    }
+};
+
 const scrollToBottom = () => {
   nextTick(() => {
     if (messageContainer.value) {
@@ -437,7 +489,7 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
     messages.value = response.data.data.reverse().map((m: any) => ({
-      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at, created_at: m.created_at
+      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at, created_at: m.created_at, type: m.type, file_path: m.file_path, file_name: m.file_name, file_mime_type: m.file_mime_type, file_size: m.file_size,
     }));
     messagesPage.value = 1;
     hasMoreMessages.value = !!response.data.next_page_url; 
@@ -450,9 +502,6 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
 
 const handleScroll = (event: Event) => {
     const container = event.target as HTMLElement;
-
-    // Tambahkan pengecekan ini:
-    // Hanya jalankan jika ADA scrollbar (tinggi konten lebih besar dari tinggi wadah)
     if (container.scrollHeight <= container.clientHeight) {
         return;
     }
@@ -483,7 +532,12 @@ const loadMoreMessages = async () => {
             text: m.message, // Mengubah 'message' menjadi 'text'
             time: formatTime(m.created_at),
             read_at: m.read_at,
-            created_at: m.created_at
+            created_at: m.created_at,
+            type: m.type, 
+            file_path: m.file_path, 
+            file_name: m.file_name, 
+            file_mime_type: m.file_mime_type, 
+            file_size: m.file_size
         }));
         // Simpan posisi scroll saat ini
         const container = messageContainer.value;
@@ -557,12 +611,9 @@ const deleteMessageForEveryone = async (message: any) => {
 
 const setupEchoListener = (chat: Chat) => {
     let channelName = '';
-
-    // 1. MEMBUAT NAMA CHANNEL YANG BENAR
     if (chat.type === 'group') {
         channelName = `group.${chat.id}`;
-    } else { // type === 'user'
-        // Menggunakan kedua ID, diurutkan, agar cocok dengan channels.php
+    } else {
         const participants = [currentUserId.value, chat.id];
         participants.sort((a, b) => a - b);
         channelName = `chat.${participants.join('.')}`;
@@ -602,8 +653,6 @@ watch(activeContact, (newContact, oldContact) => {
         window.Echo.leave(oldChannelName);
         console.log(`Meninggalkan channel: ${oldChannelName}`);
     }
-
-    // 3. BERGABUNG KE CHANNEL BARU
     if (newContact) {
         setupEchoListener(newContact);
     }
@@ -644,20 +693,16 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
             });
           updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
           if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
-            // Langsung kirim sinyal "sudah dibaca" ke server
             axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
         }
         } else {
-        // Lek chat e GAK aktif, berarti p  esene durung diwoco
         let unreadChatId: string;
         
-        if (messageData.group_id) { // Lek iki pesan grup
+        if (messageData.group_id) {
             unreadChatId = `group-${messageData.group_id}`;
-        } else { // Lek iki pesan personal
+        } else {
             unreadChatId = `user-${messageData.sender_id}`;
         }
-        
-        // GANTI LOGIKA IKI gawe NGITUNG
         const currentCount = unreadCounts.value[unreadChatId] || 0;
         unreadCounts.value = {
             ...unreadCounts.value,
@@ -1305,48 +1350,106 @@ const currentCallContactName = computed(() => {
                                   </div>
                                 </div>
                                 <div :class="m.sender_id == currentUserId ? 'text-right' : 'text-left'">
-                                    <div @click="m.sender_id == currentUserId ? openDeleteModal(m) : null" :class="[m.sender_id == currentUserId ? 'inline-block bg-green-700 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left cursor-pointer' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left']"> 
+                                    <div @click="m.sender_id == currentUserId ? openDeleteModal(m) : null" :class="[m.sender_id == currentUserId ? 'inline-block bg-green-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left cursor-pointer' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left']"> 
                                         <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
                                             class="text-xs font-semibold mb-1 opacity-75">
                                             {{ m.sender_name }}
                                         </div>
-                                        <div>
-                                            {{ m.text }}
-                                            <div class="text-xs text-black-200 opacity-80 mt-1 flex items-center justify-end">
-                                                <span>{{ m.time }}</span>
-                                                <span v-if="m.sender_id === currentUserId" class="ml-2 flex items-center">
-                                                    <svg v-if="m.read_at" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
-                                                        <path d="M18 6 7 17l-5-5"/>
-                                                        <path d="m22 10-7.5 7.5L13 16"/>
-                                                    </svg>
-                                                    <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                        <path d="M20 6 9 17l-5-5"/>
-                                                    </svg>
-                                                </span>
-                                            </div>
-                                        </div>
+                                      <div v-if="m.type === 'image'" class="flex flex-col space-y-2">
+                                          <a :href="`/storage/${m.file_path}`" target="_blank">
+                                              <img v-if="m.file_path" :src="`/storage/${m.file_path}`" class="w-full rounded-lg cursor-pointer">
+                                              <p v-else class="text-xs italic opacity-75">[Gagal memuat gambar]</p>
+                                          </a>
+                                          <p v-if="m.text">{{ m.text }}</p> 
+                                      </div>
+                                      <div v-else-if="m.type === 'video'" class="flex flex-col space-y-2">
+                                          <video v-if="m.file_path" controls class="w-full rounded-lg">
+                                              <source :src="`/storage/${m.file_path}`" :type="m.file_mime_type">
+                                          </video>
+                                          <p v-else class="text-xs italic opacity-75">[Gagal memuat video]</p>
+                                          <p v-if="m.text">{{ m.text }}</p>
+                                      </div>
+                                      <div v-else-if="m.type === 'file'" class="flex flex-col space-y-2">
+                                          <a v-if="m.file_path" :href="`/storage/${m.file_path}`" target="_blank" download class="flex items-center space-x-3 p-2 bg-gray-500 bg-opacity-20 rounded-lg hover:bg-opacity-30">
+                                              <svg class="w-8 h-8 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                              <div class="flex flex-col text-left">
+                                                  <span class="font-bold">{{ m.file_name }}</span>
+                                                  <span v-if="m.file_size" class="text-xs">{{ (m.file_size / 1024).toFixed(2) }} KB</span>
+                                              </div>
+                                          </a>
+                                          <p v-else class="text-xs italic opacity-75">[Gagal memuat file]</p>
+                                          <p v-if="m.text">{{ m.text }}</p> 
+                                      </div>
+
+                                      <p v-else>
+                                          {{ m.text }}
+                                      </p>
+                                      <div class="text-xs opacity-80 mt-1 flex items-center justify-end gap-1">
+                                          <span>{{ m.time }}</span>
+                                          <span v-if="m.sender_id === currentUserId">
+                                              <svg v-if="m.read_at" xmlns="http://www.w.org/2000/svg" width="16" height="16" class="text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                  <path d="M4 12.75L9 17.75L20 6.75"></path>
+                                                  <path d="M1 12.75L6 17.75L17 6.75"></path>
+                                              </svg>
+                                              <svg v-else-if="m.id" xmlns="http://www.w.org/2000/svg" width="16" height="16" class="text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                  <path d="M4 12.75L9 17.75L20 6.75"></path>
+                                                  <path d="M1 12.75L6 17.75L17 6.75"></path>
+                                              </svg>
+                                          </span>
+                                      </div>
                                     </div>
                                 </div>
                             </template>
                         </template>
                     </div>
                     <!-- input text -->
-                    <div class="p-2 md:p-2 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                    <div class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+                    <div v-if="uploadProgress > 0 && uploadProgress < 100" class="p-2 text-center text-sm bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200">
+                        <p>Mengunggah file... {{ uploadProgress }}%</p>
+                        <div class="w-full bg-gray-200 rounded-full h-1.5 dark:bg-gray-700 mt-1">
+                            <div class="bg-blue-600 h-1.5 rounded-full" :style="{ width: uploadProgress + '%' }"></div>
+                        </div>
+                    </div>
+
+                    <div class="p-2 md:p-2">
                         <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full p-1">
+                            
+                            <button
+                                @click="triggerFileInput"
+                                class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                                </svg>
+                            </button>
+                            
+                            <input 
+                                type="file" 
+                                ref="fileInput" 
+                                @change="onFileSelected" 
+                                hidden
+                            >
+
                             <input
                                 type="text"
                                 v-model="newMessage"
-                                :placeholder="`Ketik pesan ke ${activeContact.name}...`"
+                                :placeholder="`Ketik pesan ke ${activeContact?.name || ''}...`"
                                 @keyup.enter="sendMessage"
                                 class="flex-1 w-full bg-transparent focus:outline-none focus:ring-0 px-3 text-gray-900 dark:text-gray-200"
                             />
+
                             <button
                                 @click="sendMessage"
-                                class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                                class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="m22 2-7 20-4-9-9-4Z"/>
+                                    <path d="M22 2 11 13"/>
+                                </svg>
                             </button>
                         </div>
                     </div>
+                  </div>
                 </div>
                 <!-- blank page -->
                 <div v-else class="hidden md:flex items-center justify-center flex-1 text-gray-500">

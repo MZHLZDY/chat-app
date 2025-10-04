@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class GroupController extends Controller
 {
@@ -92,4 +93,38 @@ class GroupController extends Controller
         ], 200);
     }
 
+    public function storeFile(Request $request, $groupId)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|max:25600',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 422);
+        }
+
+        $file = $request->file('file');
+        $path = $file->store('group_files', 'public');
+        $mime = $file->getMimeType();
+
+        $type = 'file';
+        if (str_starts_with($mime, 'image/')) {
+            $type = 'image';
+        } elseif (str_starts_with($mime, 'video/')) {
+            $type = 'video';
+        }
+        $message = GroupMessage::create([
+            'group_id'       => $groupId,
+            'sender_id'      => auth()->id(),
+            'message'        => $request->input('text'),
+            'type'           => $type,
+            'file_path'      => $path,
+            'file_name'      => $file->getClientOriginalName(),
+            'file_mime_type' => $mime,
+            'file_size'      => $file->getSize(),
+        ]);
+        $message->load('sender');
+        broadcast(new GroupMessageSent($message))->toOthers();
+        return response()->json($message, 201);
+    }
 }

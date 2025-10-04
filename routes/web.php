@@ -125,6 +125,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/chat/unread-counts', [ChatController::class, 'getUnreadCounts']);
     Route::post('/chat/send', [ChatController::class, 'sendMessage']);
     Route::post('chat/messages/read', [ChatController::class, 'MarkAsRead']);
+    Route::post('/messages/file', [ChatController::class, 'storeFile']);
     Route::delete('/messages/{message}', [ChatController::class, 'destroy']);
 
     // groups
@@ -132,6 +133,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/groups', [GroupController::class, 'store']);
     Route::get('/groups/{group}/messages', [GroupController::class, 'messages']);
     Route::post('/groups/{group}/send', [GroupController::class, 'send']);
+    Route::post('/groups/{id}/messages/file', [GroupController::class, 'storeFile']);
     Route::delete('/group-messages/{message}', [GroupController::class, 'destroy']);
 
     // signaling call
