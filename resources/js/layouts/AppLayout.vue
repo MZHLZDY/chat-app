@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usePage } from '@inertiajs/vue3';
-import { onMounted, computed, ref } from 'vue';
+import { onMounted, computed, ref, watch } from 'vue';
 import AppSidebarLayout from '@/layouts/app/AppSidebarLayout.vue';
 import { PhoneCall, PhoneOff, PhoneMissed } from 'lucide-vue-next';
 import IncomingCallModal from '@/pages/IncomingCallModal.vue';
@@ -19,9 +19,14 @@ withDefaults(defineProps<Props>(), {
 const page = usePage<AppPageProps>();
 const currentUserId = computed(() => page.props.auth?.user?.id ?? null);
 const currentUserName = computed(() => page.props.auth.user.name);
+const isCallMinimized = ref(false);
+const callDuration = ref(0);
+let callTimer: NodeJS.Timeout | null = null;
 
+// --- STATE UNTUK NOTIFIKASI VOICE CALL ---
+const { setupListeners } = useCallNotification();
 
-// --- STATE UNTUK PANGGILAN VIDEO PERSONAL (DARI TEMAN ANDA) ---
+// --- STATE UNTUK PANGGILAN VIDEO PERSONAL ---
 const incomingCall = ref<{ from: User } | null>(null);
 const callStatus = ref<'idle' | 'ringing' | 'connected' | 'rejected'>('idle');
 
@@ -33,7 +38,6 @@ const receiveIncomingCall = (from: User) => {
 const acceptIncomingCall = () => {
     callStatus.value = 'connected';
     incomingCall.value = null;
-    // TODO: Buka UI video call di sini
 };
 
 const rejectIncomingCall = () => {
@@ -42,46 +46,7 @@ const rejectIncomingCall = () => {
     setTimeout(() => (callStatus.value = 'idle'), 2000);
 };
 
-// --- Data untuk komponen VoiceCallPersonal Versi Twilio ---
-// const personalCallUIData = computed(() => {
-//     if (!isInCall.value && !outgoingCallvoice.value) return null;
-
-//     // Saat sedang memanggil, kita ambil data dari `outgoingCall`
-//     if (outgoingCallvoice.value) {
-//         return {
-//             isCaller: true,
-//             callee: outgoingCallvoice.value.callee,
-//         };
-//     }
-    
-//     // Saat panggilan sudah terhubung, kita bisa ambil data dari `activeRoom`
-//     if (activeRoom.value) {
-//         const remoteParticipantIdentity = Array.from(activeRoom.value.participants.keys())[0];
-//         // Anda bisa menambahkan logika untuk mencari nama user berdasarkan identity jika perlu
-//         const remoteParticipantName = remoteParticipantIdentity?.split('-')[0].replace('_', ' ');
-
-//         return {
-//             isCaller: true, // Asumsi user ini yang memulai
-//             callee: { name: remoteParticipantName || 'Peserta' },
-//         };
-//     }
-    
-//     return null;
-// });
-
-
-// --- STATE UNTUK PANGGILAN SUARA GRUP (DARI COMPOSABLE) ---
-// const {
-//   isGroupCallActive,
-//   groupCallData,
-//   isGroupCaller,
-//   acceptGroupCall,
-//   rejectGroupCall,
-//   endGroupCall,
-//   handleLeaveGroupCall,
-//   initializeGlobalListeners,
-// } = useGroupCall(); // <-- ini untuk Twilio
-
+// --- COMPOSABLES ---
 const {
     groupVoiceCallData,
     isGroupVoiceCallActive,
@@ -95,8 +60,7 @@ const {
     handleLeaveGroupCall,
     handleRecallParticipant,
     initializeGlobalListeners
-} = useGroupCall(); // <-- ini untuk Agora
-
+} = useGroupCall();
 
 const {
     isInVoiceCall,
@@ -106,17 +70,126 @@ const {
     outgoingCallVoice,
     activeCallData,
     callTimeoutCountdown,
+    isMuted,
+    toggleMute, // ✅ IMPORT FUNGSI MUTE
     answerVoiceCall,
     endVoiceCallWithReason,
     initializePersonalCallListeners,
 } = usePersonalCall();
 
+// ✅ COMPUTED PROPERTIES YANG BENAR
+const isAnyCallActive = computed(() => 
+    isGroupVoiceCallActive.value || isInVoiceCall.value || 
+    !!incomingCallVoice.value || !!outgoingCallVoice.value
+);
 
-// --- GABUNGAN onMounted HOOK ---
+const formattedCallDuration = computed(() => {
+  const minutes = Math.floor(callDuration.value / 60);
+  const seconds = callDuration.value % 60;
+  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+});
+
+const isCallConnected = computed(() => {
+    return groupVoiceCallData.value?.status === 'accepted' || 
+           activeCallData.value?.status === 'connected';
+});
+
+const minimizedWidgetData = computed(() => {
+    if (isGroupVoiceCallActive.value) {
+        return {
+            name: groupVoiceCallData.value?.group?.name || 'Panggilan Grup',
+            duration: formattedCallDuration.value
+        };
+    }
+    if (isInVoiceCall.value && activeCallData.value) {
+        const contactName = activeCallData.value.isCaller
+            ? activeCallData.value.callee?.name
+            : activeCallData.value.caller?.name;
+        return {
+            name: contactName || 'Panggilan Personal',
+            duration: formattedCallDuration.value
+        };
+    }
+    return { name: 'Panggilan', duration: '' };
+});
+
+// ✅ FUNGSI TIMER
+const startCallTimer = () => {
+  if (callTimer) clearInterval(callTimer);
+  callDuration.value = 0;
+  callTimer = setInterval(() => {
+    callDuration.value++;
+  }, 1000);
+};
+
+const stopCallTimer = () => {
+  if (callTimer) {
+    clearInterval(callTimer);
+    callTimer = null;
+  }
+  callDuration.value = 0;
+};
+
+// ✅ HANDLE MUTE TOGGLED - FUNGSI BARU
+const handleMuteToggled = async () => {
+  await toggleMute();
+};
+
+// ✅ FUNGSI MINIMIZE/EXPAND/END CALL
+const handleMinimizeCall = () => {
+  isCallMinimized.value = true;
+};
+
+const handleExpandCall = () => {
+  isCallMinimized.value = false;
+};
+
+const handleEndCallFromWidget = () => {
+  if (isGroupVoiceCallActive.value) {
+    // ✅ PERBAIKAN: Berikan callId yang diperlukan
+    const callId = groupVoiceCallData.value?.callId;
+    if (callId) {
+      isGroupCaller.value ? endGroupCall(callId) : handleLeaveGroupCall();
+    }
+  } else if (isInVoiceCall.value) {
+    endVoiceCallWithReason('Diakhiri dari widget');
+  }
+  isCallMinimized.value = false;
+};
+
+// ✅ WATCHERS YANG BENAR
+watch(isCallConnected, (isConnected) => {
+  if (isConnected) {
+    startCallTimer();
+  }
+});
+
+watch(isAnyCallActive, (isActive) => {
+    if (!isActive) {
+        stopCallTimer();
+    }
+});
+
+// ✅ onMounted HOOK
 onMounted(() => {
-    // Inisialisasi listener untuk Panggilan Suara Grup
     initializeGlobalListeners();
     initializePersonalCallListeners();
+    setupListeners();
+    
+    // Handle notification actions
+    window.addEventListener('call-notification-action', (event: any) => {
+        const { callId, action, callType } = event.detail;
+        
+        if (action === 'accept') {
+            if (callType === 'personal') {
+                // Handle personal call accept
+            } else {
+                // Handle group call accept
+            }
+        } else if (action === 'reject') {
+            // Handle reject call logic
+        }
+    });
 
     // Inisialisasi listener untuk Panggilan Video Personal
     if (!currentUserId.value) return;
@@ -139,82 +212,103 @@ onMounted(() => {
         @reject="rejectIncomingCall"
     />
 
-    <!-- <VoiceCallGroup
-     v-if="isGroupCallActive"
-     :is-visible="isGroupCallActive"
-     :group-call-data="groupCallData"
-     :is-caller="isGroupCaller"
-     :current-user-id="currentUserId"
-     @accept-call="acceptGroupCall"
-     @reject-call="rejectGroupCall"
-     @end-call="endGroupCall"
-     @leave-call="handleLeaveGroupCall"
-     /> --> <!-- <<-- ini untuk twilio -->
+    <!-- ✅ KONDISI YANG BENAR UNTUK RENDER CALL COMPONENTS -->
+    <div v-if="isAnyCallActive">
+        <MinimizeCallWidget
+            v-if="isCallMinimized"
+            :name="minimizedWidgetData.name"
+            :duration="minimizedWidgetData.duration"
+            @expand-call="handleExpandCall"
+            @end-call="handleEndCallFromWidget"
+        />
 
-     <VoiceCallGroup
-        v-if="isGroupVoiceCallActive"
-        :is-visible="isGroupVoiceCallActive"
-        :group-call-data="groupVoiceCallData"
-        :is-caller="isGroupCaller"
-        :current-user-id="currentUserId"
-        :calltimeoutcountdown="groupCallTimeoutCountdown"
-        @accept-call="acceptGroupCall"
-        @reject-call="rejectGroupCall"
-        @end-call="endGroupCall"
-        @cancel-call="cancelGroupCall"
-        @leave-call="handleLeaveGroupCall"
-        @recall-participant="handleRecallParticipant"
-    /> <!-- <<-- ini untuk Agora -->
+        <template v-else>
+            <!-- GROUP CALL -->
+            <VoiceCallGroup
+                v-if="isGroupVoiceCallActive"
+                :is-visible="isGroupVoiceCallActive"
+                :formatted-duration="formattedCallDuration" 
+                :group-call-data="groupVoiceCallData"
+                :is-caller="isGroupCaller"
+                :current-user-id="currentUserId"
+                :calltimeoutcountdown="groupCallTimeoutCountdown"
+                @accept-call="acceptGroupCall"
+                @reject-call="rejectGroupCall"
+                @end-call="endGroupCall"
+                @cancel-call="cancelGroupCall"
+                @leave-call="handleLeaveGroupCall"
+                @recall-participant="handleRecallParticipant"
+                @minimize-call="handleMinimizeCall"  
+            />
 
+            <!-- PERSONAL CALL -->
+            <VoiceCallPersonal
+                v-if="isInVoiceCall && activeCallData"
+                :is-visible="isInVoiceCall"
+                :formatted-duration="formattedCallDuration" 
+                :call-data="activeCallData"
+                :local-audio-track="localAudioTrack"
+                :remote-audio-track="remoteAudioTrack"
+                :is-muted="isMuted"
+                @mute-toggled="handleMuteToggled"
+                @end-call="endVoiceCallWithReason"
+                @minimize-call="handleMinimizeCall"
+            />
+        </template>
+    </div>
+
+    <!-- ✅ INCOMING CALL MODAL UNTUK PERSONAL CALL -->
     <div v-if="incomingCallVoice" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div class="bg-white rounded-lg p-6 w-96 text-center">
-                <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-                  {{ incomingCallVoice.caller?.name?.charAt(0).toUpperCase() || '?' }}
-                </div>
-                <h3 class="text-xl font-bold mb-2">Panggilan {{ incomingCallVoice.callType === 'video' ? 'Video' : 'Suara' }}</h3>
-                <p class="text-gray-600 mb-4">{{ incomingCallVoice.caller?.name || 'Unknown' }} sedang menelpon Anda</p>
-    
-                <div class="flex justify-center gap-4">
-                  <button @click="answerVoiceCall(false, 'Ditolak')"
-                   class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-                   <PhoneOff class="w-7 h-7"/>
-                  </button>
-                  <button @click="answerVoiceCall(true)"
-                   class="bg-green-500 text-white px-6 py-2 rounded-full hover:bg-green-600">
-                   <PhoneCall class="w-7 h-7"/>
-                 </button>
-               </div>
-             </div>
-           </div>
+        <div class="bg-white rounded-lg p-6 w-96 text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+                {{ incomingCallVoice.caller?.name?.charAt(0).toUpperCase() || '?' }}
+            </div>
+            <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+            <p class="text-gray-600 mb-4">{{ incomingCallVoice.caller?.name || 'Unknown' }} sedang menelpon Anda</p>
 
-<div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div class="bg-white rounded-lg p-6 w-96 text-center">
-                <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-                 {{ outgoingCallVoice.callee.name.charAt(0).toUpperCase() }}
-                </div>
+            <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
+                Berakhir dalam {{ callTimeoutCountdown }} detik
+            </div>
 
-                 <p class="text-gray-600 mb-4">{{ outgoingCallVoice.callee.name }}</p>
-                 <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
-
-                 <!-- Countdown Timer -->
-                <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
-                 Berakhir dalam {{ callTimeoutCountdown }} detik
-                </div>
-
-               <div class="animate-pulse text-blue-500 mb-4">Berdering...</div>
-
-                <button @click="endVoiceCallWithReason('Dibatalkan')"
-                  class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600">
-                  <PhoneMissed class="w-7 h-7"/>
+            <div class="flex justify-center gap-4">
+                <button 
+                    @click="answerVoiceCall(false, 'Ditolak')"
+                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
+                >
+                    <PhoneOff class="w-7 h-7"/>
+                </button>
+                <button 
+                    @click="answerVoiceCall(true)"
+                    class="bg-green-500 text-white px-6 py-2 rounded-full hover:bg-green-600"
+                >
+                    <PhoneCall class="w-7 h-7"/>
                 </button>
             </div>
-          </div>
+        </div>
+    </div>
 
-<VoiceCallPersonal
-     :is-visible="isInVoiceCall"
-     :call-data="activeCallData"
-     :local-audio-track="localAudioTrack"
-     :remote-audio-track="remoteAudioTrack"
-     @end-call="endVoiceCallWithReason"
-    />
+    <!-- ✅ OUTGOING CALL MODAL -->
+    <div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-96 text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+                {{ outgoingCallVoice.callee.name.charAt(0).toUpperCase() }}
+            </div>
+
+            <p class="text-gray-600 mb-4">{{ outgoingCallVoice.callee.name }}</p>
+            <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+
+            <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
+                Berakhir dalam {{ callTimeoutCountdown }} detik
+            </div>
+
+            <div class="animate-pulse text-blue-500 mb-4">Berdering...</div>
+
+            <button 
+                @click="endVoiceCallWithReason('Dibatalkan')"
+                class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
+            >
+                <PhoneMissed class="w-7 h-7"/>
+            </button>
+        </div>
+    </div>
 </template>

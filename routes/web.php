@@ -37,7 +37,7 @@ Route::get('/test-call-broadcast/{userId}', function($userId) {
         $callId = uniqid();
         $channel = 'call-' . $callId;
 
-        event(new \App\Events\IncomingCall(
+        event(new \App\Events\IncomingCallVoice(
             caller: $caller,
             callee: $callee,
             callType: 'voice',
@@ -151,6 +151,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/answer', [AgoraCallController::class, 'answerCall']);
         Route::post('/end', [AgoraCallController::class, 'endCall']);
         Route::post('/token', [AgoraCallController::class, 'generateToken']);
+        Route::post('/notification/mark-read', [AgoraCallController::class, 'markNotificationAsRead']);
+        Route::get('/notification/active', [AgoraCallController::class, 'getActiveCallNotifications']);
     });
 
     Route::prefix('group-call')->as('group-call.')->group(function () {

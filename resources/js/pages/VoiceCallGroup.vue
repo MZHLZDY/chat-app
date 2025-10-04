@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue';
-import { PhoneForwarded, PhoneOff, Phone, PhoneCall, PhoneMissed, Mic, Volume2, Volume } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
+import { PhoneForwarded, PhoneOff, Phone, PhoneCall, PhoneMissed, Mic, MicOff, Volume2, VolumeOff, Video, Minimize, Minimize2 } from 'lucide-vue-next';
 
-// Interface untuk tipe data partisipan yang lebih jelas
+// Interface
 interface Participant {
   id: number;
   name: string;
@@ -14,34 +14,29 @@ interface Participant {
 const props = defineProps({
   isVisible: { type: Boolean, required: true },
   groupCallData: { type: Object as () => any, default: null },
-  isCaller: { type: Boolean, default: false }, // Ini menentukan apakah user adalah Host
+  isCaller: { type: Boolean, default: false },
   currentUserId: { type: Number, required: true },
-  callTimeoutCountdown: { type: Number, default: null }
+  callTimeoutCountdown: { type: Number, default: null },
+  // Prop baru untuk menerima durasi dari induk
+  formattedDuration: { type: String, default: '00:00' }
 });
 
 // Emits
 const emit = defineEmits([
-    'accept-call',
-    'reject-call',
-    'end-call',
-    'cancel-call',
-    'leave-call',
-    'recall-participant',
-    'toggle-mute',
-    'toggle-speaker'
+    'accept-call', 'reject-call', 'end-call', 'cancel-call', 'leave-call',
+    'recall-participant', 'toggle-mute', 'toggle-speaker', 'minimize-call'
 ]);
 
-// State lokal
+// State lokal HANYA untuk UI (mute/speaker)
 const isMuted = ref(false);
 const isSpeakerOn = ref(true);
-const callDuration = ref(0);
-let callTimer: NodeJS.Timeout | null = null;
 
-// Computed properties untuk menentukan tampilan UI
+// Computed properties (tanpa timer)
 const isIncomingCall = computed(() => !props.isCaller && props.groupCallData?.status === 'ringing');
 const isOngoingCall = computed(() => props.groupCallData?.status === 'accepted');
 const isOutgoingCall = computed(() => props.isCaller && props.groupCallData?.status === 'calling');
 const isCallEnded = computed(() => props.groupCallData?.status === 'ended');
+const callerId = computed(() => props.groupCallData?.caller?.id || null);
 
 const callTitle = computed(() => {
   if (isIncomingCall.value) return 'Panggilan Grup Masuk';
@@ -51,207 +46,128 @@ const callTitle = computed(() => {
   return 'Panggilan Grup';
 });
 
-const groupName = computed(() => props.groupCallData?.group?.name || 'Grup Tidak Dikenal');
-const callerName = computed(() => props.groupCallData?.caller?.name || 'Tidak Dikenal');
-
-// Computed properties untuk statistik partisipan
+const groupName = computed(() => props.groupCallData?.group?.name || 'Grup');
+const callerName = computed(() => props.groupCallData?.caller?.name || 'Unknown');
 const participants = computed((): Participant[] => props.groupCallData?.participants || []);
 
-const acceptedParticipants = computed(() => 
-  participants.value.filter((p: any) => p.status === 'accepted')
-);
-
-const ringingParticipants = computed(() => 
-  participants.value.filter((p: any) => 
-    p.status === 'ringing' || p.status === 'calling'
-  )
-);
-
-const rejectedParticipants = computed(() => 
-  participants.value.filter((p: any) => 
-    p.status === 'rejected' || p.status === 'ended' || p.status === 'left'
-  )
-);
-
-const formattedCallDuration = computed(() => {
-  const minutes = Math.floor(callDuration.value / 60);
-  const seconds = callDuration.value % 60;
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-});
-
-// Methods untuk emit event ke parent
+// Methods
 const acceptCall = () => emit('accept-call', props.groupCallData?.callId);
 const rejectCall = () => emit('reject-call', props.groupCallData?.callId, 'diabaikan');
 const cancelCall = () => emit('cancel-call', props.groupCallData?.callId);
-const endCall = () => emit('end-call', props.groupCallData?.callId); // Untuk "Bubarkan"
-const leaveCall = () => emit('leave-call'); // Untuk "Keluar"
+const endCall = () => emit('end-call', props.groupCallData?.callId);
+const leaveCall = () => emit('leave-call');
 const recallParticipant = (participantId: number) => emit('recall-participant', participantId);
 const toggleMute = () => { isMuted.value = !isMuted.value; emit('toggle-mute', isMuted.value); };
 const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('toggle-speaker', isSpeakerOn.value); };
-
-// Watcher untuk timer durasi panggilan
-watch(() => isOngoingCall.value, (isOngoing) => {
-  if (isOngoing && !callTimer) {
-    callDuration.value = 0;
-    callTimer = setInterval(() => { callDuration.value++; }, 1000);
-  } else if (!isOngoing && callTimer) {
-    clearInterval(callTimer);
-    callTimer = null;
-  }
-}, { immediate: true });
-
-onUnmounted(() => {
-  if (callTimer) clearInterval(callTimer);
-});
 </script>
 
 <template>
-  <div v-if="isVisible" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-    <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 text-center shadow-2xl">
-      
-      <!-- TAMPILAN UNTUK PENERIMA PANGGILAN (INCOMING CALL) -->
-      <div v-if="isIncomingCall">
-        <h3 class="text-xl font-bold mb-2 dark:text-white">Panggilan Grup Masuk</h3>
-        <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto my-4 flex items-center justify-center text-white text-3xl font-bold">G</div>
-        <p class="font-semibold dark:text-gray-200">{{ groupName }}</p>
-        <p class="text-gray-600 dark:text-gray-300 mb-6">{{ callerName }} mengundang Anda</p>
-        <div class="flex justify-center gap-4">
-            <button @click="rejectCall" class="bg-red-500 text-white p-3 rounded-full hover:bg-red-600 flex items-center justify-center gap-2 px-6">
-                <PhoneOff class="w-5 h-5"/> <span>Abaikan</span>
-            </button>
-            <button @click="acceptCall" class="bg-green-500 text-white p-3 rounded-full hover:bg-green-600 flex items-center justify-center gap-2 px-6">
-                <PhoneCall class="w-5 h-5"/> <span>Gabung</span>
-            </button>
+  <div v-if="isVisible" class="fixed inset-0 bg-gray-900 flex flex-col p-4 z-[100] text-white">
+    <button
+      v-if="isOngoingCall"
+      @click="$emit('minimize-call')"
+      class="absolute top-4 left-4 text-gray-300 hover:text-white transition-opacity z-30"
+      title="Minimize Panggilan"
+    >
+      <Minimize class="w-6 h-6" />
+    </button>
+
+    <div v-if="isIncomingCall" class="flex flex-col items-center justify-center h-full text-center">
+      <h3 class="text-2xl font-bold mb-2">Panggilan Grup Masuk</h3>
+      <p class="text-gray-300 mb-6">{{ callerName }} mengundang Anda ke grup</p>
+      <div class="w-28 h-28 bg-blue-500 rounded-full mx-auto my-4 flex items-center justify-center text-white text-5xl font-bold">
+        {{ groupName.charAt(0).toUpperCase() }}
+      </div>
+      <p class="text-xl font-semibold mt-2">{{ groupName }}</p>
+      <div class="absolute bottom-10 flex w-full justify-center gap-10">
+        <div class="flex flex-col items-center gap-2">
+          <button @click="rejectCall" class="bg-red-500 text-white w-16 h-16 rounded-full hover:bg-red-600 flex items-center justify-center">
+            <PhoneOff class="w-8 h-8"/>
+          </button>
+          <span>Abaikan</span>
+        </div>
+        <div class="flex flex-col items-center gap-2">
+          <button @click="acceptCall" class="bg-green-500 text-white w-16 h-16 rounded-full hover:bg-green-600 flex items-center justify-center">
+            <PhoneCall class="w-8 h-8"/>
+          </button>
+          <span>Gabung</span>
         </div>
       </div>
-      
-      <!-- TAMPILAN UNTUK HOST (OUTGOING CALL) DAN PANGGILAN BERJALAN -->
-      <div v-else>
-        <!-- COUNTDOWN TIMER HANYA UNTUK HOST YANG SEDANG MEMANGGIL -->
-        <div v-if="isOutgoingCall && callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
+    </div>
+
+    <div v-else class="flex flex-col h-full">
+      <div class="text-center pt-8 pb-4">
+        <h3 class="text-xl font-bold">{{ callTitle }}</h3>
+        <p v-if="!isCallEnded" class="font-semibold text-gray-300">{{ groupName }}</p>
+        <div v-if="isOngoingCall" class="text-2xl font-mono mt-2">{{ formattedDuration }}</div>
+        <div v-if="isOutgoingCall && callTimeoutCountdown !== null" class="text-red-500 font-semibold mt-2 animate-pulse">
           Berakhir dalam {{ callTimeoutCountdown }} detik
         </div>
-        
-        <h3 class="text-xl font-bold mb-2 dark:text-white">{{ callTitle }}</h3>
-        
-        <!-- ICON GRUP (HANYA TAMPIL JIKA BUKAN PANGGILAN BERAKHIR) -->
-        <div v-if="!isCallEnded" class="w-20 h-20 bg-blue-500 rounded-full mx-auto my-4 flex items-center justify-center text-white text-3xl font-bold">G</div>
-        
-        <p class="font-semibold dark:text-gray-200">{{ groupName }}</p>
+      </div>
 
-       <!-- Di bagian outgoing call (host) -->
-<div v-if="isOutgoingCall">
-  <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Memanggil {{ participants.length }} anggota grup</p>
-  
-  <!-- TAMPILAN STATUS HOST -->
-  <div class="mb-3 p-2 bg-green-100 text-green-800 rounded text-sm">
-    <strong>Anda (Host)</strong> - ✓ Bergabung
-  </div>
-  
-  <div class="grid grid-cols-3 gap-2 mb-4 text-xs">
-    <div class="bg-green-100 text-green-800 p-2 rounded">
-      <div class="font-bold">{{ acceptedParticipants.length }}</div>
-      <div>Bergabung</div>
-    </div>
-    <div class="bg-yellow-100 text-yellow-800 p-2 rounded">
-      <div class="font-bold">{{ ringingParticipants.length }}</div>
-      <div>Memanggil</div>
-    </div>
-    <div class="bg-red-100 text-red-800 p-2 rounded">
-      <div class="font-bold">{{ rejectedParticipants.length }}</div>
-      <div>Menolak</div>
-    </div>
-  </div>
-  
-  <div class="flex justify-center mt-4">
-    <button @click="cancelCall" class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600 flex items-center justify-center gap-2">
-      <PhoneMissed class="w-5 h-5"/> <span>Batalkan</span>
-    </button>
-  </div>
-</div>
-
-        <!-- TAMPILAN UNTUK PANGGILAN YANG SEDANG BERJALAN -->
-        <div v-if="isOngoingCall">
-          <div class="text-2xl font-mono text-gray-700 dark:text-gray-200 my-2">{{ formattedCallDuration }}</div>
-          <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">Sedang berbicara dengan {{ acceptedParticipants.length }} orang</p>
-          
-          <!-- SEKARANG HANYA UNTUK HOST -->
-          <div class="grid grid-cols-3 gap-2 mb-3 text-xs">
-            <div class="bg-green-100 text-green-800 p-2 rounded">
-              <div class="font-bold">{{ acceptedParticipants.length }}</div>
-              <div>Bergabung</div>
+      <div class="flex-grow overflow-y-auto">
+        <div v-if="isCallEnded" class="flex items-center justify-center h-full">
+            <div class="text-center">
+                <p class="text-gray-300 my-4 text-lg">{{ groupCallData?.reason || 'Panggilan telah berakhir' }}</p>
             </div>
-            <div class="bg-yellow-100 text-yellow-800 p-2 rounded">
-              <div class="font-bold">{{ ringingParticipants.length }}</div>
-              <div>Memanggil</div>
+        </div>
+        <div v-else class="grid grid-cols-2 gap-3 p-2 max-w-md mx-auto">
+          <div 
+            v-for="participant in participants" 
+            :key="participant.id"
+            class="relative bg-gray-800 p-4 rounded-lg flex flex-col items-center justify-center aspect-square"
+            :class="{ 'border-2 border-green-500': participant.id === currentUserId && participant.status === 'accepted' }"
+          >
+            <button 
+              v-if="isCaller && (participant.status === 'left' || participant.status === 'rejected')" 
+              @click="recallParticipant(participant.id)" 
+              class="absolute top-2 right-2 z-20 bg-green-600 text-white p-1.5 rounded-full hover:bg-green-700"
+              title="Panggil Lagi"
+            >
+              <Phone class="w-4 h-4"/>
+            </button>
+            <div v-if="participant.status !== 'accepted'" class="absolute inset-0 bg-black bg-opacity-60 rounded-lg flex items-center justify-center z-10">
+              <span v-if="participant.status === 'ringing' || participant.status === 'calling'" class="text-yellow-400 font-semibold">Memanggil...</span>
+              <span v-else class="text-red-400 font-semibold">{{ participant.status === 'rejected' ? 'Diabaikan' : 'Keluar' }}</span>
             </div>
-            <div class="bg-red-100 text-red-800 p-2 rounded">
-              <div class="font-bold">{{ rejectedParticipants.length }}</div>
-              <div>Keluar</div>
+            <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-2">
+              {{ participant.name.charAt(0).toUpperCase() }}
             </div>
-          </div>
-
-          <!-- DAFTAR PESERTA -->
-          <div class="max-h-32 overflow-y-auto mb-4 border-t border-b dark:border-gray-700">
-            <div v-for="participant in participants" :key="participant.id" class="flex items-center justify-between p-2 text-sm">
-              <span class="truncate">
-                {{ participant.name }}
-                <span v-if="participant.id === currentUserId" class="text-xs text-gray-500"> (Anda)</span>
-                <span v-else-if="participant.id === groupCallData?.caller?.id" class="text-xs text-blue-500 font-semibold"> (Host)</span>
-              </span>
-              <div class="flex items-center gap-2">
-                <span :class="{ 
-                  'text-green-500': participant.status === 'accepted', 
-                  'text-yellow-500': participant.status === 'ringing' || participant.status === 'calling', 
-                  'text-red-500': participant.status === 'rejected' || participant.status === 'left' || participant.status === 'ended'
-                }" class="text-xs font-semibold">
-                  {{ 
-                    participant.status === 'accepted' ? 'Bergabung' : 
-                    participant.status === 'ringing' ? 'Berdering' : 
-                    participant.status === 'calling' ? 'Memanggil' : 
-                    participant.status === 'rejected' ? 'Diabaikan' : 
-                    participant.status === 'left' ? 'Keluar' : 
-                    participant.status === 'ended' ? 'Berakhir' : ''
-                  }}
-                </span>
-                <button 
-                  v-if="isCaller && (participant.status === 'left' || participant.status === 'rejected')" 
-                  @click="recallParticipant(participant.id)" 
-                  class="text-gray px-2 py-0.5 text-xs rounded-full hover:bg-gray-300"
-                  title="Panggil Lagi"
-                >
-                  <Phone class="w-3 h-3"/>
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <!-- TOMBOL AKSI -->
-          <div class="flex justify-center gap-4">
-            <button @click="toggleMute" :class="['p-3 rounded-full', isMuted ? 'bg-red-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white']" title="Mute">
-              <Mic class="w-5 h-5"/>
-            </button>
-            
-            <button v-if="isCaller" @click="endCall" class="bg-red-500 text-white p-3 rounded-full hover:bg-red-600 flex items-center justify-center gap-2 px-6" title="Bubarkan Panggilan">
-              <PhoneForwarded class="w-5 h-5"/> <span>Bubarkan</span>
-            </button>
-            
-            <button v-else @click="leaveCall" class="bg-red-500 text-white p-3 rounded-full hover:bg-red-600 flex items-center justify-center gap-2 px-6" title="Keluar dari Panggilan">
-              <PhoneForwarded class="w-5 h-5"/> <span>Keluar</span>
-            </button>
-            
-            <button @click="toggleSpeaker" :class="['p-3 rounded-full', isSpeakerOn ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-white']" title="Speaker">
-              <Volume2 class="w-5 h-5"/>
-            </button>
+            <p class="text-white font-semibold text-sm truncate w-full text-center">
+              {{ participant.name }}
+              <span v-if="participant.id === currentUserId" class="text-xs font-semibold text-blue-400">(Anda)</span>
+              <span v-else-if="participant.id === callerId" class="text-xs font-semibold text-yellow-400">(Host)</span>
+            </p>
           </div>
         </div>
+      </div>
 
-        <!-- TAMPILAN UNTUK PANGGILAN YANG BERAKHIR -->
-        <div v-if="isCallEnded">
-          <p class="text-gray-600 dark:text-gray-300 my-4">{{ groupCallData?.reason || 'Panggilan telah berakhir' }}</p>
-          <button @click="endCall" class="bg-blue-500 text-white px-6 py-2 rounded-full hover:bg-blue-600">Tutup</button>
+      <div class="py-6">
+        <div v-if="isOutgoingCall" class="flex justify-center">
+          <button @click="cancelCall" class="bg-red-500 text-white w-16 h-16 rounded-full hover:bg-red-600 flex items-center justify-center gap-2">
+            <PhoneMissed class="w-8 h-8"/>
+          </button>
         </div>
-
+        <div v-if="isOngoingCall" class="flex justify-center items-center gap-5">
+          <button @click="toggleMute" :class="['w-12 h-12 rounded-full flex items-center justify-center', isMuted ? 'bg-red-500 text-white' : 'bg-gray-700 text-white']">
+            <MicOff v-if="isMuted" class="w-6 h-6"/><Mic v-else class="w-6 h-6"/>
+          </button>
+          <button @click="toggleSpeaker" :class="['w-12 h-12 rounded-full flex items-center justify-center', isSpeakerOn ? 'bg-blue-500' : 'bg-gray-700']">
+            <Volume2 v-if="isSpeakerOn" class="w-6 h-6"/><VolumeOff v-else class="w-6 h-6"/>
+          </button>
+          <button v-if="isCaller" @click="endCall" class="bg-red-500 text-white w-16 h-16 rounded-full hover:bg-red-600 flex items-center justify-center">
+            <PhoneForwarded class="w-7 h-7"/>
+          </button>
+          <button v-else @click="leaveCall" class="bg-red-500 text-white w-16 h-16 rounded-full hover:bg-red-600 flex items-center justify-center">
+            <PhoneForwarded class="w-7 h-7"/>
+          </button>
+          <button @click="" class="bg-gray-700 text-white p-3 rounded-full hover:bg-gray-800" title="Beralih ke Video Call?">
+          <Video class="w-6 h-6"/>
+        </button>
+        </div>
+        <div v-if="isCallEnded" class="flex justify-center">
+          <button @click="endCall" class="bg-blue-500 text-white px-8 py-3 rounded-full hover:bg-blue-600">Tutup</button>
+        </div>
       </div>
     </div>
   </div>

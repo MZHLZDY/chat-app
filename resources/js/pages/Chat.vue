@@ -71,8 +71,9 @@ const userBackgroundUrl = computed<string>(() => page.props.auth.user.background
 
 
 // --- Call State ---
-const { startVoiceCall } = usePersonalCall();
-const { startGroupVoiceCall } = useGroupCall();
+const { startVoiceCall, isPersonalCallActive } = usePersonalCall();
+const { startGroupVoiceCall, isGroupVoiceCallActive } = useGroupCall();
+const isAnyCallInProgress = computed(() => isPersonalCallActive.value || isGroupVoiceCallActive.value);
 
 // --- Personal Video Call State ---
 const activeCall = ref<null | { contactName: string }>(null);
@@ -1314,11 +1315,12 @@ const currentCallContactName = computed(() => {
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
                     <button
-                             v-if="activeContact.type === 'user'"
-                             @click="startVoiceCall(activeContact)" title="Voice Call Group"
-                             class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
-                             <Phone class="w-5 h-5 ..."/>
-                            </button>
+                      v-if="activeContact.type === 'user'"
+                      @click="startVoiceCall(activeContact)" title="Voice Call Personal"
+                      :disabled="isAnyCallInProgress"
+                       class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <Phone class="w-5 h-5 ..."/>
+                    </button>
                   </div>
 
                   <!-- navbar group -->
@@ -1346,6 +1348,7 @@ const currentCallContactName = computed(() => {
                     <button
                        v-if="activeContact.type === 'group'"
                        @click="startGroupVoiceCall(activeContact)" title="Voice Call Group"
+                       :disabled="isAnyCallInProgress"
                        class="flex ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                        <Phone class="w-5 h-5 ..."/>
                     </button>

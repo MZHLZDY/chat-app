@@ -6,6 +6,7 @@ import axios from 'axios';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import type { Chat, User, Contact } from '@/types/index';
 import { echo } from '../echo.js';
+import { useCallNotification } from '@/composables/useCallNotification';
 
 interface PageProps {
     auth: {
@@ -28,11 +29,14 @@ const outgoingCallVoice = ref<any>(null);
 const activeCallData = ref<any>(null);
 const callTimeoutRef = ref<NodeJS.Timeout | null>(null);
 const callStartTime = ref<number | null>(null);
-const callTimeoutCountdown = ref<number | null>(null);
-const isMuted = ref(false); 
+const callTimeoutCountdown = ref<number | null>(null); 
 let countdownInterval: NodeJS.Timeout | null = null;
 let incomingCallTimeout: NodeJS.Timeout | null = null;
 let personalCallListenersInitialized = false;
+const isMuted = ref(false);
+const audioContextUnlocked = ref(false);
+let notificationDebounceTimeout: NodeJS.Timeout | null = null;
+let connectionMonitoringInterval: NodeJS.Timeout | null = null;
 
 const subscribedUsers = ref<Set<number>>(new Set());
 
@@ -40,6 +44,8 @@ export function usePersonalCall() {
     const page = usePage<PageProps>();
     const currentUserId = computed(() => page.props.auth.user.id);
     const currentUserName = computed(() => page.props.auth.user.name);
+    const { sendPersonalCallNotification, closeNotification } = useCallNotification();
+    const isPersonalCallActive = computed(() => isInVoiceCall.value || !!outgoingCallVoice.value || !!incomingCallVoice.value);
 
     // Inisialisasi client Agora
     const initializeAgoraClient = () => {
@@ -51,6 +57,26 @@ export function usePersonalCall() {
             console.log('🎧 Agora client initialized');
         }
         return client.value;
+    };
+
+    const handleIncomingCallNotification = async (data: any) => {
+        const notificationKey = `personal-${data.call_id}-${currentUserId.value}`;
+        
+        // Debounce notifikasi - tunggu 300ms
+        if (notificationDebounceTimeout) {
+            clearTimeout(notificationDebounceTimeout);
+        }
+        
+        notificationDebounceTimeout = setTimeout(async () => {
+            try {
+                if (!isInVoiceCall.value && !incomingCallVoice.value) {
+                    await sendPersonalCallNotification(data);
+                    console.log('📢 Notifikasi panggilan personal dikirim');
+                }
+            } catch (error) {
+                console.warn('Gagal mengirim notifikasi personal:', error);
+            }
+        }, 300);
     };
 
     const unlockAudioContext = async () => {
@@ -131,23 +157,415 @@ export function usePersonalCall() {
         return () => clearInterval(monitorInterval);
     };
 
-    const toggleMute = async () => {
-        if (!localAudioTrack.value) return;
+// Fungsi toggleMute yang diperbaiki
+const toggleMute = async () => {
+    if (!localAudioTrack.value) {
+        console.warn('❌ Tidak ada local audio track untuk di-mute');
+        return;
+    }
+
+    try {
+        // ✅ Pastikan audio context sudah di-unlock sebelum unmute
+        if (!isMuted.value && !audioContextUnlocked.value) {
+            console.log('🔓 Unlocking audio context sebelum unmute...');
+            await unlockAudioContext();
+            audioContextUnlocked.value = true;
+        }
+
+        const newMuteState = !isMuted.value;
+        
+        console.log(`🎤 Mengubah status mute dari ${isMuted.value} ke ${newMuteState}`);
+        
+        // ✅ METHOD 1: Gunakan setEnabled (primary method)
+        await localAudioTrack.value.setEnabled(!newMuteState);
+        
+        // ✅ METHOD 2: Backup - setVolume untuk memastikan
+        if (newMuteState) {
+            localAudioTrack.value.setVolume(0);
+        } else {
+            localAudioTrack.value.setVolume(100);
+            
+            // ✅ METHOD 3: Re-publish track jika diperlukan
+            setTimeout(async () => {
+                try {
+                    if (client.value && client.value.connectionState === 'CONNECTED') {
+                        await client.value.unpublish([localAudioTrack.value]);
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await client.value.publish([localAudioTrack.value]);
+                        console.log('✅ Audio track re-published setelah unmute');
+                    }
+                } catch (rePublishError) {
+                    console.warn('⚠️ Gagal re-publish audio track:', rePublishError);
+                }
+            }, 200);
+        }
+        
+        isMuted.value = newMuteState;
+        
+        // ✅ Play test sound saat unmute untuk konfirmasi
+        if (!newMuteState) {
+            playUnmuteConfirmationSound();
+        }
+        
+        console.log(`✅ Audio ${isMuted.value ? 'dimatikan' : 'dinyalakan'} berhasil`);
+        
+    } catch (error) {
+        console.error('❌ Gagal mengubah status mute:', error);
+        // Rollback state jika gagal
         isMuted.value = !isMuted.value;
+    }
+};
+
+// ✅ FUNGSI BARU: Konfirmasi unmute dengan sound
+const playUnmuteConfirmationSound = () => {
+    if (typeof window !== 'undefined') {
         try {
-            // Ubah status enabled pada track audio
-            await localAudioTrack.value.setEnabled(!isMuted.value);
-            console.log(`🎤 Audio ${isMuted.value ? 'dimatikan' : 'dinyalakan'}`);
-        } catch (error) {
-            console.error("Gagal mengubah status mute:", error);
-            isMuted.value = !isMuted.value; // Kembalikan state jika gagal
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.value = 600;
+            gainNode.gain.value = 0.05; // Sangat pelan agar tidak mengganggu
+            
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1);
+            
+            console.log('🔊 Play unmute confirmation sound');
+        } catch (e) {
+            console.log('ℹ️ Tidak bisa play unmute sound (browser limitation)');
+        }
+    }
+};
+
+// ✅ FUNGSI BARU: Force unmute dengan reset komprehensif
+const forceUnmuteAudio = async () => {
+    console.log('🔄 FORCE UNMUTE: Memulai proses unmute paksa...');
+    
+    if (!localAudioTrack.value) {
+        console.warn('❌ Tidak ada audio track untuk force unmute');
+        return false;
+    }
+
+    try {
+        // 1. Stop track lama
+        try {
+            localAudioTrack.value.stop();
+            localAudioTrack.value.close();
+        } catch (e) {
+            // Ignore stop errors
+        }
+
+        // 2. Unpublish dari channel
+        if (client.value && client.value.connectionState === 'CONNECTED') {
+            await client.value.unpublish([localAudioTrack.value]);
+        }
+
+        // 3. Buat track baru
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await unlockAudioContext();
+        
+        localAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack({
+            encoderConfig: 'speech_standard',
+            AEC: true,
+            ANS: true,
+            AGC: true
+        });
+
+        // 4. Publish track baru
+        if (client.value && client.value.connectionState === 'CONNECTED') {
+            await client.value.publish([localAudioTrack.value]);
+        }
+
+        // 5. Set state
+        localAudioTrack.value.setVolume(100);
+        await localAudioTrack.value.setEnabled(true);
+        isMuted.value = false;
+        audioContextUnlocked.value = true;
+
+        console.log('✅ FORCE UNMUTE: Berhasil membuat audio track baru');
+        return true;
+
+    } catch (error) {
+        console.error('❌ FORCE UNMUTE: Gagal:', error);
+        return false;
+    }
+};
+
+// ✅ PERBAIKAN: Enhanced toggleMute dengan fallback
+const toggleMuteEnhanced = async () => {
+    if (!localAudioTrack.value) {
+        console.warn('❌ Tidak ada audio track');
+        return;
+    }
+
+    const desiredMuteState = !isMuted.value;
+
+    try {
+        // Jika mau unmute, coba force unmute jika diperlukan
+        if (desiredMuteState === false) {
+            console.log('🔄 Attempting to unmute dengan enhanced method...');
+            
+            // Coba method normal dulu
+            await localAudioTrack.value.setEnabled(true);
+            localAudioTrack.value.setVolume(100);
+            
+            // Test apakah audio bekerja
+            const testSuccess = await testAudioWorking();
+            
+            if (!testSuccess) {
+                console.warn('⚠️ Unmute normal gagal, mencoba force unmute...');
+                await forceUnmuteAudio();
+            }
+        } else {
+            // Untuk mute, cukup gunakan method normal
+            await localAudioTrack.value.setEnabled(false);
+            localAudioTrack.value.setVolume(0);
+        }
+        
+        isMuted.value = desiredMuteState;
+        console.log(`✅ Enhanced mute: ${isMuted.value ? 'MUTED' : 'UNMUTED'}`);
+        
+    } catch (error) {
+        console.error('❌ Enhanced mute gagal:', error);
+    }
+};
+
+// ✅ FUNGSI BARU: Test apakah audio benar-benar bekerja
+const testAudioWorking = async (): Promise<boolean> => {
+    if (!localAudioTrack.value) return false;
+
+    try {
+        const volumeLevel = localAudioTrack.value.getVolumeLevel();
+        const isEnabled = localAudioTrack.value.enabled;
+        
+        console.log('🎵 Audio test:', {
+            volumeLevel: volumeLevel.toFixed(3),
+            enabled: isEnabled,
+            trackState: localAudioTrack.value.mediaStreamTrack.readyState
+        });
+        
+        return isEnabled && volumeLevel > 0;
+    } catch (error) {
+        console.warn('❌ Audio test failed:', error);
+        return false;
+    }
+};
+
+    // ✅ FUNGSI BARU: Konfirmasi audio working
+    const confirmAudioWorking = (userId: number) => {
+        console.log(`🎉🎉🎉 AUDIO CONNECTED SUCCESSFULLY dengan user ${userId} 🎉🎉🎉`);
+        
+        // Optional: Play success sound
+        if (typeof window !== 'undefined') {
+            try {
+                const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 800;
+                gainNode.gain.value = 0.1;
+                
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.1);
+            } catch (e) {
+                // Ignore audio context errors
+            }
+        }
+    };
+
+    // ✅ FUNGSI BARU: Subscribe dengan validasi ekstra ketat
+    const subscribeToUserWithRetry = async (user: any, mediaType: string, retryCount = 0) => {
+        const userId = user.uid;
+        const maxRetries = 2;
+        const baseDelay = 1000;
+
+        try {
+            console.log(`🔍 Subscribe attempt ${retryCount + 1}/${maxRetries} for user ${userId}...`);
+            
+            // ✅ VALIDASI EKSTRA: Cek connection state
+            if (client.value.connectionState !== 'CONNECTED') {
+                console.warn(`⚠️ Client not connected, waiting...`);
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, baseDelay));
+                    return subscribeToUserWithRetry(user, mediaType, retryCount + 1);
+                }
+                return;
+            }
+            
+            // ✅ VALIDASI EKSTRA: Cek user benar-benar ada di remoteUsers
+            const remoteUsers = client.value.remoteUsers;
+            const userInChannel = remoteUsers.some((u: any) => u.uid === userId);
+            
+            if (!userInChannel) {
+                console.warn(`⚠️ User ${userId} not in remoteUsers, waiting...`);
+                if (retryCount < maxRetries) {
+                    await new Promise(resolve => setTimeout(resolve, baseDelay));
+                    return subscribeToUserWithRetry(user, mediaType, retryCount + 1);
+                }
+                return;
+            }
+
+            console.log(`✅ Conditions met, attempting subscribe to user ${userId}...`);
+            
+            // ✅ LAKUKAN SUBSCRIBE
+            await client.value.subscribe(user, mediaType);
+            
+            // ✅ CEK: Apakah audio track tersedia setelah subscribe?
+            if (user.audioTrack) {
+                // ✅ TANDAI USER SUDAH DI-SUBSCRIBE
+                subscribedUsers.value.add(userId);
+                
+                remoteAudioTrack.value[userId] = user.audioTrack;
+                
+                // ✅ PLAY AUDIO
+                setTimeout(() => {
+                    try {
+                        user.audioTrack.play();
+                        console.log(`🎉 BERHASIL! Audio dari user ${userId} sedang diputar`);
+                        
+                        // ✅ KONFIRMASI FINAL
+                        confirmAudioWorking(userId);
+                    } catch (playError) {
+                        console.warn(`⚠️ Gagal memutar audio dari ${userId}:`, playError);
+                    }
+                }, 500);
+                
+                console.log(`✅ Subscribe BERHASIL pada attempt ${retryCount + 1} untuk user ${userId}`);
+                return true;
+            } else {
+                throw new Error('Audio track tidak ditemukan setelah subscribe');
+            }
+            
+        } catch (error: any) {
+            console.warn(`❌ Subscribe attempt ${retryCount + 1} gagal: ${error.message}`);
+            
+            // ✅ AUTO-RETRY UNTUK SEMUA ERROR
+            if (retryCount < maxRetries) {
+                const delay = baseDelay * (retryCount + 1);
+                console.log(`🔄 Retry ${retryCount + 1}/${maxRetries} in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return subscribeToUserWithRetry(user, mediaType, retryCount + 1);
+            } else {
+                console.error(`❌ Gagal total subscribe ke user ${userId} setelah ${maxRetries} percobaan`);
+                return false;
+            }
+        }
+    };
+
+    // ✅ FUNGSI BARU: Manual trigger untuk subscribe
+    const manuallyTriggerSubscribe = async (immediate = false) => {
+      console.log('🔊 MANUAL SUBSCRIBE: Starting...');
+    
+      if (!client.value || client.value.connectionState !== 'CONNECTED') {
+          console.warn('⚠️ Client not ready for manual subscribe');
+          return;
+      }
+
+      const remoteUsers = client.value.remoteUsers;
+      console.log(`👥 MANUAL SUBSCRIBE: Found ${remoteUsers.length} remote users`);
+    
+      if (remoteUsers.length === 0) {
+          console.log('⏳ No remote users yet, will retry in 1s...');
+          // ⚡ RETRY CEPAT jika belum ada user
+          setTimeout(() => manuallyTriggerSubscribe(true), 1000);
+          return;
+        }
+
+      // ⚡ SUBSCRIBE KE SEMUA USER SECARA PARALEL
+      const subscribePromises = remoteUsers.map(user => 
+         fastSubscribeToUser(user)
+      );
+    
+      const results = await Promise.allSettled(subscribePromises);
+      const successCount = results.filter(result => result.status === 'fulfilled').length;
+    
+      console.log(`✅ MANUAL SUBSCRIBE: ${successCount}/${remoteUsers.length} users subscribed`);
+    
+      // ⚡ JIKA GAGAL, RETRY SEKALI LAGI
+      if (successCount === 0 && remoteUsers.length > 0) {
+          console.log('🔄 Manual subscribe failed, retrying in 500ms...');
+          setTimeout(() => manuallyTriggerSubscribe(true), 500);
+      }
+    };
+
+    const fastSubscribeToUser = async (user: any): Promise<boolean> => {
+    const userId = user.uid;
+    
+    // Skip jika sudah subscribed
+    if (subscribedUsers.value.has(userId)) {
+        console.log(`✅ User ${userId} already subscribed`);
+        return true;
+    }
+
+    try {
+        console.log(`⚡ FAST SUBSCRIBE: Attempting subscribe to user ${userId}`);
+        
+        // ⚡ LANGSUNG SUBSCRIBE TANPA VALIDASI BERLEBIHAN
+        await client.value.subscribe(user, 'audio');
+        
+        if (user.audioTrack) {
+            subscribedUsers.value.add(userId);
+            remoteAudioTrack.value[userId] = user.audioTrack;
+            
+            // ⚡ PLAY IMMEDIATELY
+            try {
+                user.audioTrack.play();
+                console.log(`🎉 FAST SUCCESS: Audio dari user ${userId} BERHASIL!`);
+                return true;
+            } catch (playError) {
+                console.warn(`⚠️ Play failed for ${userId}:`, playError);
+                return false;
+            }
+        } else {
+            console.warn(`⚠️ No audio track for user ${userId}`);
+            return false;
+        }
+        
+    } catch (error: any) {
+        console.warn(`❌ Fast subscribe failed for ${userId}:`, error.message);
+        return false;
+    }
+};
+
+    // ✅ FUNGSI: Monitor connection status
+    const monitorConnectionStatus = () => {
+        if (!client.value) return;
+        
+        console.log('🔍 Connection Status:', {
+            connectionState: client.value.connectionState,
+            remoteUsers: client.value.remoteUsers.map((u: any) => ({
+                uid: u.uid,
+                hasAudio: u.hasAudio,
+                audioTrack: !!u.audioTrack
+            })),
+            subscribedUsers: Array.from(subscribedUsers.value)
+        });
+    };
+
+    const startConnectionMonitoring = () => {
+        if (connectionMonitoringInterval) clearInterval(connectionMonitoringInterval);
+        connectionMonitoringInterval = setInterval(monitorConnectionStatus, 3000);
+    };
+
+    const stopConnectionMonitoring = () => {
+        if (connectionMonitoringInterval) {
+            clearInterval(connectionMonitoringInterval);
+            connectionMonitoringInterval = null;
         }
     };
 
     const resetVoiceCallState = () => {
         console.log('🔄 RESET VOICE CALL STATE - Memulai reset...');
         
-        // ✅ RESET subscribed users
+        // ✅ RESET subscribed users dan mute/unmute
+        isMuted.value = false;
+        audioContextUnlocked.value = false;
         subscribedUsers.value.clear();
         
         if (callTimeoutRef.value) {
@@ -156,6 +574,7 @@ export function usePersonalCall() {
             console.log('⏰ Timer timeout dihapus');
         }
         stopCallTimeout();
+        stopConnectionMonitoring();
 
         if (incomingCallTimeout) {
             clearTimeout(incomingCallTimeout);
@@ -166,6 +585,11 @@ export function usePersonalCall() {
         isInVoiceCall.value = false;
         voiceCallType.value = null;
         callTimeoutCountdown.value = null;
+
+        if (notificationDebounceTimeout) {
+            clearTimeout(notificationDebounceTimeout);
+            notificationDebounceTimeout = null;
+        }
         
         console.log('📊 State flags direset');
         
@@ -231,100 +655,44 @@ export function usePersonalCall() {
 
         console.log('🎧 Setting up audio listeners for Agora client');
 
-        // Hapus event listeners lama untuk menghindari duplikasi
+        // Hapus event listeners lama
         client.value.removeAllListeners();
 
-        // ✅ PERBAIKAN: User published event dengan validasi yang lebih ketat
-        client.value.on('user-published', async (user: any, mediaType: string) => {
-            if (mediaType !== 'audio') return;
+        // ✅ PERBAIKAN BESAR: Gunakan user-joined sebagai primary trigger
+        // client.value.on('user-joined', async (user: any) => {
+        //     const userId = user.uid;
+        //     console.log(`👤 USER JOINED CHANNEL: ${userId} - Starting subscription process...`);
             
-            const userId = user.uid;
-            console.log(`🔊 User published audio: ${userId}`);
+        //     if (subscribedUsers.value.has(userId)) {
+        //         console.log(`⚠️ User ${userId} already subscribed, skipping...`);
+        //         return;
+        //     }
+
+        //     // ✅ TUNGGU LEBIH LAMA untuk pastikan user benar-benar ready
+        //     console.log(`⏳ Quick wait 1s for user ${userId}...`);
+        //     await new Promise(resolve => setTimeout(resolve, 1000));
+
+        //     await subscribeToUserWithRetry(user, 'audio');
+        // });
+
+        // // ✅ BACKUP: Tetap pertahankan user-published sebagai fallback
+        // client.value.on('user-published', async (user: any, mediaType: string) => {
+        //     if (mediaType !== 'audio') return;
             
-            // ✅ CEK: Apakah user sudah di-subscribe?
-            if (subscribedUsers.value.has(userId)) {
-                console.log(`⚠️ User ${userId} sudah di-subscribe, skip...`);
-                return;
-            }
+        //     const userId = user.uid;
+        //     console.log(`🔊 User published audio: ${userId} (Fallback trigger)`);
             
-            // ✅ CEK: Apakah user masih di channel?
-            if (!user || user.uid === undefined) {
-                console.warn('⚠️ Invalid user object, skipping subscribe');
-                return;
-            }
+        //     if (subscribedUsers.value.has(userId)) {
+        //         console.log(`⚠️ User ${userId} already subscribed, skipping...`);
+        //         return;
+        //     }
 
-            // ✅ TUNGGU SEBENTAR sebelum subscribe (hindari race condition)
-            await new Promise(resolve => setTimeout(resolve, 1000));
+        //     // Jika user-joined belum trigger, coba subscribe
+        //     console.log(`⏳ Fallback: Waiting 2 seconds for user ${userId}...`);
+        //     await new Promise(resolve => setTimeout(resolve, 2000));
 
-            // ✅ LOGIKA SUBSCRIBE DENGAN ERROR HANDLING YANG LEBIH BAIK
-            const maxRetries = 3;
-            const retryDelay = 1000;
-
-            for (let attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    console.log(`🔍 Mencoba subscribe ke user ${userId}, percobaan ke-${attempt}...`);
-                    
-                    // ✅ CEK: Apakah client masih terhubung?
-                    if (client.value.connectionState !== 'CONNECTED') {
-                        console.warn(`⚠️ Client not connected, cannot subscribe to user ${userId}`);
-                        return;
-                    }
-                    
-                    // ✅ CEK: Apakah user masih available?
-                    const remoteUsers = client.value.remoteUsers;
-                    const userStillInChannel = remoteUsers.some((u: any) => u.uid === userId);
-                    
-                    if (!userStillInChannel) {
-                        console.warn(`⚠️ User ${userId} sudah keluar dari channel, skip subscribe`);
-                        return;
-                    }
-                    
-                    // ✅ LAKUKAN SUBSCRIBE
-                    await client.value.subscribe(user, 'audio');
-                    
-                    // ✅ CEK: Apakah audio track tersedia setelah subscribe?
-                    if (user.audioTrack) {
-                        // ✅ TANDAI USER SUDAH DI-SUBSCRIBE
-                        subscribedUsers.value.add(userId);
-                        
-                        remoteAudioTrack.value[userId] = user.audioTrack;
-                        
-                        // ✅ TUNGGU SEBENTAR SEBELUM PLAY (hindari race condition)
-                        setTimeout(() => {
-                            try {
-                                user.audioTrack.play();
-                                console.log(`✅ Berhasil memutar audio dari user: ${userId}`);
-                            } catch (playError) {
-                                console.warn(`⚠️ Gagal memutar audio dari ${userId}:`, playError);
-                            }
-                        }, 500);
-                        
-                        console.log(`✅ Berhasil subscribe ke user: ${userId}`);
-                        return; // Berhasil, keluar dari loop
-                    } else {
-                        throw new Error('Audio track tidak ditemukan setelah subscribe berhasil');
-                    }
-                    
-                } catch (error: any) {
-                    console.warn(`❌ Gagal subscribe percobaan ke-${attempt} untuk user ${userId}:`, error);
-                    
-                    // ✅ HANDLE ERROR SPECIFIC
-                    if (error.code === 'CANNOT_SUBSCRIBE_STREAM' || 
-                        error.message?.includes('not in the channel')) {
-                        console.warn(`⚠️ User ${userId} tidak dalam channel, stop retry`);
-                        return;
-                    }
-                    
-                    if (attempt < maxRetries) {
-                        console.log(`🔄 Menunggu ${retryDelay}ms sebelum retry...`);
-                        await new Promise(resolve => setTimeout(resolve, retryDelay));
-                    } else {
-                        console.error(`❌ Gagal total subscribe ke user ${userId} setelah ${maxRetries} percobaan`);
-                        // Jangan alert di sini, biarkan flow continue
-                    }
-                }
-            }
-        });
+        //     await subscribeToUserWithRetry(user, 'audio');
+        // });
         
         // ✅ PERBAIKAN: User unpublished event
         client.value.on('user-unpublished', (user: any, mediaType: string) => {
@@ -332,7 +700,6 @@ export function usePersonalCall() {
                 const userId = user.uid;
                 console.log(`🔇 User unpublished audio: ${userId}`);
                 
-                // ✅ HAPUS DARI SUBSCRIBED USERS
                 subscribedUsers.value.delete(userId);
                 
                 if (remoteAudioTrack.value[userId]) {
@@ -351,7 +718,6 @@ export function usePersonalCall() {
             const userId = user.uid;
             console.log(`👋 User ${userId} left channel: ${reason}`);
             
-            // ✅ HAPUS DARI SUBSCRIBED USERS
             subscribedUsers.value.delete(userId);
             
             if (remoteAudioTrack.value[userId]) {
@@ -362,26 +728,15 @@ export function usePersonalCall() {
                 }
                 delete remoteAudioTrack.value[userId];
             }
-            
-            // ✅ RESET JIKA TIDAK ADA USER LAGI
-            if (Object.keys(remoteAudioTrack.value).length === 0 && 
-                client.value.remoteUsers.length === 0) {
-                console.log('📞 Tidak ada user lain di channel, reset state');
-                // Jangan reset otomatis, biarkan user yang memutuskan
-            }
         });
 
-        // ✅ LISTENER LAINNYA TETAP SAMA
+        // ✅ LISTENER LAINNYA
         client.value.on('connection-state-change', (curState: string, prevState: string) => {
             console.log('🔗 Connection state changed:', prevState, '→', curState);
         });
         
         client.value.on('network-quality', (quality: any) => {
             console.log('📶 Network quality:', quality);
-        });
-
-        client.value.on('user-joined', (user: any) => {
-            console.log('👤 User joined channel:', user.uid);
         });
 
         client.value.on('exception', (event: any) => {
@@ -395,7 +750,6 @@ export function usePersonalCall() {
         try {
             console.log('🔍 Checking codec support...');
             
-            // --- PERBAIKAN 1: Mengubah getSupportedCodecs menjadi getSupportedCodec ---
             const support = await AgoraRTC.getSupportedCodec(); 
             console.log('✅ Supported codecs:', support);
             
@@ -529,261 +883,226 @@ export function usePersonalCall() {
         }
     };
 
+    const joinChannel = async (channelName: string) => { 
+    try {
+        console.log('🎯 OPTIMIZED JOIN PROCESS:', channelName);
 
-const joinChannel = async (channelName: string) => { 
+        isMuted.value = false;
+        audioContextUnlocked.value = false;
+        subscribedUsers.value.clear();
+        
+        // 1. Quick cleanup
+        if (client.value && client.value.connectionState !== 'DISCONNECTED') {
+            await client.value.leave();
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        // 2. New client & simple listeners
+        client.value = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+        setupAudioListeners(); // ⚡ YANG SUDAH DISIMPLE
+
+        // 3. Join channel
+        const response = await axios.post('/call/token', {
+            channel: channelName,
+            uid: currentUserId.value.toString(),
+        });
+        
+        const { app_id, token, uid } = response.data;
+        await client.value.join(app_id, channelName, token, uid);
+        console.log(`✅ JOINED channel: ${channelName}`);
+
+        // 4. Setup audio track
+        if (localAudioTrack.value) {
+            try {
+                localAudioTrack.value.stop();
+                localAudioTrack.value.close();
+            } catch (e) {}
+        }
+        
+        localAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack();
+        await client.value.publish([localAudioTrack.value]);
+        console.log('✅ AUDIO published');
+
+        isInVoiceCall.value = true;
+
+        // ⚡ 5. TRIGGER MANUAL SUBSCRIBE LEBIH CEPAT & MULTIPLE TIMES
+        console.log('🔊 STARTING FAST SUBSCRIBE PROCESS...');
+        
+        // ⚡ TRIGGER PERTAMA: Segera setelah join
+        setTimeout(() => manuallyTriggerSubscribe(true), 800);
+        
+        // ⚡ TRIGGER KEDUA: Backup setelah 2 detik  
+        setTimeout(() => {
+            console.log('🔊 BACKUP SUBSCRIBE TRIGGER');
+            manuallyTriggerSubscribe(true);
+        }, 2000);
+        
+        // ⚡ TRIGGER KETIGA: Final attempt setelah 4 detik
+        setTimeout(() => {
+            console.log('🔊 FINAL SUBSCRIBE TRIGGER');
+            manuallyTriggerSubscribe(true);
+        }, 4000);
+
+        console.log('🎉 OPTIMIZED JOIN: Process started with fast subscribe triggers');
+        return true;
+                
+    } catch (error: any) {
+        console.error('❌ Optimized join failed:', error);
+        resetVoiceCallState();
+        throw error;
+    }
+};
+
+    const startVoiceCall = async (contact: Chat | null) => {
+        if (!contact || contact.type !== 'user') {
+            console.log('No active contact or contact is not a user');
+            return;
+        }
+
+        await unlockAudioContext();
+        await checkCodecSupport();
+
+        const hasAudioPermission = await checkAudioPermissions();
+        if (!hasAudioPermission) {
+            alert('Tidak dapat mengakses microphone. Mohon berikan izin microphone.');
+            return;
+        }
+
         try {
-            console.log('🎯 Memulai proses join channel:', channelName);
+            console.log('🚀 Starting voice call to:', contact.name);
             
-            // ✅ RESET SUBSCRIBED USERS SEBELUM JOIN BARU
-            subscribedUsers.value.clear();
-            
-            // 1. Bersihkan koneksi sebelumnya
-            if (client.value && client.value.connectionState !== 'DISCONNECTED') {
-                console.log('🔄 Membersihkan koneksi sebelumnya...');
-                await client.value.leave();
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            // Reset state sebelumnya
+            if (isInVoiceCall.value || outgoingCallVoice.value || incomingCallVoice.value) {
+                resetVoiceCallState();
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
-
-            // 2. Buat client baru
-            client.value = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
             
-            // 3. Setup listeners SEBELUM join
-            setupAudioListeners();
-
-            // 4. Minta token
-            const response = await axios.post('/call/token', {
-                channel: channelName,
-                uid: currentUserId.value.toString(),
+            stopCallTimeout();
+            
+            // Kirim undangan panggilan
+            const response = await axios.post('/call/invite', {
+                callee_id: contact.id,
+                call_type: 'voice'
             });
             
-            const { app_id, token, uid } = response.data;
-            if (!app_id) throw new Error('App ID tidak ditemukan dari server');
+            console.log('📞 Call invite response:', response.data);
             
-            console.log('🔑 Token received, joining channel...');
-            
-            // 5. Join channel dengan timeout
-            const joinPromise = client.value.join(app_id, channelName, token, uid);
-            const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Join timeout setelah 10 detik')), 10000)
-            );
-            
-            await Promise.race([joinPromise, timeoutPromise]);
-            console.log(`✅ Berhasil join ke channel: ${channelName}`);
-
-            // 6. Setup audio track
-            console.log('🎵 Setting up audio track...');
-            
-            if (localAudioTrack.value) {
-                try {
-                    localAudioTrack.value.stop();
-                    localAudioTrack.value.close();
-                } catch (error) {
-                    console.warn('Error closing existing track:', error);
-                }
-                localAudioTrack.value = null;
+            if (!response.data.call_id || !response.data.channel) {
+                throw new Error('Invalid response from server - missing call_id or channel');
             }
+            
+            const { call_id, channel } = response.data;
+            
+            // Setup outgoing call data dengan status 'calling'
+            outgoingCallVoice.value = {
+                callId: call_id,
+                callee: contact,
+                callType: 'voice',
+                channel: channel,
+                status: 'calling'
+            };
 
-            // Buat track baru
-            try {
-                localAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack({
-                    encoderConfig: 'music_standard',
-                    AEC: true,
-                    ANS: true,
-                    AGC: true
-                });
-                console.log('✅ Audio track created successfully');
-            } catch (error) {
-                console.warn('Music standard failed, trying basic config...');
-                localAudioTrack.value = await AgoraRTC.createMicrophoneAudioTrack();
-                console.log('✅ Audio track created with basic config');
-            }
-
-            // Pastikan track enabled
-            await localAudioTrack.value.setEnabled(true);
-            isMuted.value = false;
-
-            // 7. Publish track
-            console.log('📤 Publishing audio track...');
-            await client.value.publish([localAudioTrack.value]);
-            console.log('🎤 Audio track published successfully');
-
-            // 8. Test audio playback
-            try {
-                const volume = localAudioTrack.value.getVolumeLevel();
-                console.log('📊 Audio level:', volume);
-            } catch (levelError) {
-                console.warn('Cannot get audio level:', levelError);
-            }
-
-            isInVoiceCall.value = true;
-            console.log('🎉 Join channel process completed successfully');
-            return true;
-                
+            activeCallData.value = {
+                callId: call_id,
+                channel: channel,
+                caller: { id: currentUserId.value, name: currentUserName.value },
+                callee: { id: contact.id, name: contact.name },
+                callType: 'voice',
+                isCaller: true,
+                status: 'calling'
+            };
+            
+            callStartTime.value = Date.now();
+            startCallTimeout(30);
+            
+            console.log('✅ Panggilan berhasil dimulai, menunggu penerima...');
+            
         } catch (error: any) {
-            console.error('❌ Gagal dalam proses join channel:', error);
-            
-            // Debug detailed error
-            if (error.code) {
-                console.error('Agora error code:', error.code);
-            }
-            if (error.message) {
-                console.error('Error message:', error.message);
-            }
-            
-            const errorMessage = error.message || 'Error tidak diketahui';
-            alert(`Gagal terhubung ke panggilan: ${errorMessage}`);
+            console.error('❌ Failed to start call:', error);
+            stopCallTimeout();
+            alert('Gagal memulai panggilan: ' + (error.message || 'Unknown error'));
             resetVoiceCallState();
-            throw error;
         }
     };
 
-    const startVoiceCall = async (contact: Chat | null) => {
-    if (!contact || contact.type !== 'user') {
-        console.log('No active contact or contact is not a user');
-        return;
-    }
-
-    await unlockAudioContext();
-    await checkCodecSupport();
-
-    const hasAudioPermission = await checkAudioPermissions();
-    if (!hasAudioPermission) {
-        alert('Tidak dapat mengakses microphone. Mohon berikan izin microphone.');
-        return;
-    }
-
-    try {
-        console.log('🚀 Starting voice call to:', contact.name);
-        
-        // Reset state sebelumnya
-        if (isInVoiceCall.value || outgoingCallVoice.value || incomingCallVoice.value) {
-            resetVoiceCallState();
-            await new Promise(resolve => setTimeout(resolve, 300));
+    const answerVoiceCall = async (accepted: boolean, reason?: string) => {
+        const callData = incomingCallVoice.value;
+        if (!callData) {
+            console.error('❌ Tidak ada panggilan masuk untuk dijawab.');
+            return;
         }
-        
-        stopCallTimeout();
-        
-        // Kirim undangan panggilan
-        const response = await axios.post('/call/invite', {
-            callee_id: contact.id,
-            call_type: 'voice'
-        });
-        
-        console.log('📞 Call invite response:', response.data);
-        
-        if (!response.data.call_id || !response.data.channel) {
-            throw new Error('Invalid response from server - missing call_id or channel');
-        }
-        
-        const { call_id, channel } = response.data;
-        
-        // ✅ PERBAIKAN: CALLER TIDAK JOIN CHANNEL DULUAN!
-        // Hanya setup outgoing call data, TANPA join channel
-        
-        // Setup outgoing call data dengan status 'calling'
-        outgoingCallVoice.value = {
-            callId: call_id,
-            callee: contact,
-            callType: 'voice',
-            channel: channel,
-            status: 'calling' // Status masih memanggil, belum terhubung
-        };
 
-        activeCallData.value = {
-            callId: call_id,
-            channel: channel,
-            caller: { id: currentUserId.value, name: currentUserName.value },
-            callee: { id: contact.id, name: contact.name },
-            callType: 'voice',
-            isCaller: true,
-            status: 'calling' // Tambahkan status
-        };
-        
-        callStartTime.value = Date.now();
-        startCallTimeout(30);
-        
-        console.log('✅ Panggilan berhasil dimulai, menunggu penerima...');
-        
-    } catch (error: any) {
-        console.error('❌ Failed to start call:', error);
-        stopCallTimeout();
-        alert('Gagal memulai panggilan: ' + (error.message || 'Unknown error'));
-        resetVoiceCallState();
-    }
-};
+        closeNotification(callData.callId, 'personal');
 
-const answerVoiceCall = async (accepted: boolean, reason?: string) => {
-    const callData = incomingCallVoice.value;
-    if (!callData) {
-        console.error('❌ Tidak ada panggilan masuk untuk dijawab.');
-        return;
-    }
+        // Hapus UI panggilan masuk terlebih dahulu
+        incomingCallVoice.value = null;
 
-    // Hapus UI panggilan masuk terlebih dahulu
-    incomingCallVoice.value = null;
+        try {
+            // 1. Kirim jawaban ke backend
+            await axios.post('/call/answer', {
+                call_id: callData.callId,
+                caller_id: callData.caller.id,
+                accepted: accepted,
+                reason: accepted ? null : (reason || 'Ditolak')
+            });
 
-    try {
-        // 1. Kirim jawaban ke backend
-        await axios.post('/call/answer', {
-            call_id: callData.callId,
-            caller_id: callData.caller.id,
-            accepted: accepted,
-            reason: accepted ? null : (reason || 'Ditolak')
-        });
+            console.log(`✅ Jawaban panggilan (accepted: ${accepted}) berhasil dikirim.`);
 
-        console.log(`✅ Jawaban panggilan (accepted: ${accepted}) berhasil dikirim.`);
+            if (accepted) {
+                console.log('📞 Panggilan diterima, bergabung ke channel:', callData.channel);
 
-        if (accepted) {
-            console.log('📞 Panggilan diterima, bergabung ke channel:', callData.channel);
+                // ✅ CALLEE JOIN CHANNEL SETELAH MENERIMA PANGGILAN
+                await joinChannel(callData.channel);
 
-            // ✅ CALLEE JOIN CHANNEL SETELAH MENERIMA PANGGILAN
-            await joinChannel(callData.channel);
+                // Setup state untuk callee
+                isInVoiceCall.value = true;
+                activeCallData.value = {
+                    callId: callData.callId,
+                    channel: callData.channel,
+                    caller: callData.caller,
+                    callee: { id: currentUserId.value, name: currentUserName.value },
+                    callType: 'voice',
+                    isCaller: false,
+                    status: 'connected'
+                };
+            } else {
+                resetVoiceCallState();
+            }
 
-            // Setup state untuk callee
-            isInVoiceCall.value = true;
-            activeCallData.value = {
-                callId: callData.callId,
-                channel: callData.channel,
-                caller: callData.caller,
-                callee: { id: currentUserId.value, name: currentUserName.value },
-                callType: 'voice',
-                isCaller: false,
-                status: 'connected' // Status sudah terhubung
-            };
-        } else {
+        } catch (error: any) {
+            console.error('❌ Gagal merespons panggilan:', error);
+            alert('Gagal merespons panggilan.');
             resetVoiceCallState();
         }
+    };
 
-    } catch (error: any) {
-        console.error('❌ Gagal merespons panggilan:', error);
-        alert('Gagal merespons panggilan.');
-        resetVoiceCallState();
-    }
-};
+    // ✅ PERBAIKAN: Function khusus untuk caller join channel setelah panggilan diterima
+    const joinCallAsCaller = async () => {
+        if (!outgoingCallVoice.value || !activeCallData.value) {
+            console.error('❌ Tidak ada data panggilan untuk caller');
+            return;
+        }
 
-// ✅ PERBAIKAN: Function khusus untuk caller join channel setelah panggilan diterima
-const joinCallAsCaller = async () => {
-    if (!outgoingCallVoice.value || !activeCallData.value) {
-        console.error('❌ Tidak ada data panggilan untuk caller');
-        return;
-    }
-
-    try {
-        console.log('🎯 Caller joining channel setelah panggilan diterima...');
-        
-        await joinChannel(activeCallData.value.channel);
-        
-        // Update status menjadi connected
-        activeCallData.value.status = 'connected';
-        outgoingCallVoice.value.status = 'connected';
-        
-        console.log('✅ Caller berhasil join channel setelah panggilan diterima');
-    } catch (error) {
-        console.error('❌ Gagal join channel sebagai caller:', error);
-        alert('Gagal terhubung ke panggilan.');
-        resetVoiceCallState();
-    }
-};
+        try {
+            console.log('🎯 Caller joining channel setelah panggilan diterima...');
+            
+            // ✅ TUNGGU SEBENTAR SEBELUM JOIN (beri waktu callee untuk join dulu)
+            console.log('⏳ Quick wait 1.5 detik untuk memastikan callee join...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            await joinChannel(activeCallData.value.channel);
+            
+            // Update status menjadi connected
+            activeCallData.value.status = 'connected';
+            outgoingCallVoice.value.status = 'connected';
+            
+            console.log('✅ Caller berhasil join channel setelah panggilan diterima');
+        } catch (error) {
+            console.error('❌ Gagal join channel sebagai caller:', error);
+            alert('Gagal terhubung ke panggilan.');
+            resetVoiceCallState();
+        }
+    };
 
     const endVoiceCallWithReason = async (reason?: string) => {
         console.log('📞 Mengakhiri panggilan dengan alasan:', reason);
@@ -904,6 +1223,8 @@ const joinCallAsCaller = async () => {
             };
             
             console.log('📞 Panggilan masuk diproses:', incomingCallVoice.value);
+
+            handleIncomingCallNotification(data);
             
             // Setup timeout untuk panggilan masuk (30 detik)
             if (incomingCallTimeout) {
@@ -921,6 +1242,8 @@ const joinCallAsCaller = async () => {
         // Listener untuk panggilan diakhiri
         privateChannel.listen('.call-ended', (data: any) => {
             console.log('📞 CALL ENDED EVENT DITERIMA:', data);
+
+            closeNotification(data.call_id, 'personal');
             
             // Hentikan timeout incoming call
             if (incomingCallTimeout) {
@@ -934,50 +1257,50 @@ const joinCallAsCaller = async () => {
             // Tampilkan alert jika panggilan diakhiri oleh lawan
             if (data.ended_by && data.ended_by.id !== currentUserId.value) {
                 let endedByName = data.ended_by.name || `User ${data.ended_by.id}`;
-                const reason = data.reason ? ` - Alasan: ${data.reason}` : '';
-                alert(`Panggilan diakhiri oleh ${endedByName}${reason}`);
+                // const reason = data.reason ? ` - Alasan: ${data.reason}` : '';
+                alert(`Panggilan diakhiri oleh ${endedByName}`);
             }
         });
         
         // Listener untuk panggilan diterima (UNTUK CALLER)
         privateChannel.listen('.call-accepted', async (data: any) => {
-        console.log('✅ EVENT .call-accepted DITERIMA oleh CALLER:', data);
+            console.log('✅ EVENT .call-accepted DITERIMA oleh CALLER:', data);
 
-        // Hentikan timeout outgoing call
-        if (callTimeoutRef.value) {
-            clearTimeout(callTimeoutRef.value);
-            callTimeoutRef.value = null;
-        }
-        stopCallTimeout();
-
-        // ✅ PERBAIKAN: CALLER JOIN CHANNEL SETELAH MENDAPAT KONFIRMASI
-        if (outgoingCallVoice.value && outgoingCallVoice.value.callId === data.call_id) {
-            console.log('🎯 Caller menerima konfirmasi, sekarang join channel...');
-            
-            try {
-                await joinCallAsCaller();
-                
-                // Update state
-                outgoingCallVoice.value.status = 'connected';
-                isInVoiceCall.value = true;
-
-                activeCallData.value = {
-                    callId: data.call_id,
-                    channel: data.channel,
-                    caller: data.caller,
-                    callee: data.callee,
-                    callType: 'voice',
-                    isCaller: true,
-                    status: 'connected'
-                };
-
-                console.log('✅ Panggilan terhubung! Caller dan callee sudah di channel.');
-            } catch (error) {
-                console.error('❌ Caller gagal join channel:', error);
-                resetVoiceCallState();
+            // Hentikan timeout outgoing call
+            if (callTimeoutRef.value) {
+                clearTimeout(callTimeoutRef.value);
+                callTimeoutRef.value = null;
             }
-        }
-    })
+            stopCallTimeout();
+
+            // ✅ PERBAIKAN: CALLER JOIN CHANNEL SETELAH MENDAPAT KONFIRMASI
+            if (outgoingCallVoice.value && outgoingCallVoice.value.callId === data.call_id) {
+                console.log('🎯 Caller menerima konfirmasi, sekarang join channel...');
+                
+                try {
+                    await joinCallAsCaller();
+                    
+                    // Update state
+                    outgoingCallVoice.value.status = 'connected';
+                    isInVoiceCall.value = true;
+
+                    activeCallData.value = {
+                        callId: data.call_id,
+                        channel: data.channel,
+                        caller: data.caller,
+                        callee: data.callee,
+                        callType: 'voice',
+                        isCaller: true,
+                        status: 'connected'
+                    };
+
+                    console.log('✅ Panggilan terhubung! Caller dan callee sudah di channel.');
+                } catch (error) {
+                    console.error('❌ Caller gagal join channel:', error);
+                    resetVoiceCallState();
+                }
+            }
+        });
         
         // Listener untuk panggilan ditolak
         privateChannel.listen('.call-rejected', (data: any) => {
@@ -1033,9 +1356,6 @@ const joinCallAsCaller = async () => {
         personalCallListenersInitialized = true;
     };
 
-    /**
-     * Handle incoming call timeout
-     */
     const handleIncomingCallTimeout = async (callId: string) => {
         console.log('⏰ Handling incoming call timeout for:', callId);
         
@@ -1119,10 +1439,14 @@ const joinCallAsCaller = async () => {
         if (callTimeoutRef.value) {
             clearTimeout(callTimeoutRef.value);
         }
+        if (connectionMonitoringInterval) {
+            clearInterval(connectionMonitoringInterval);
+        }
         resetVoiceCallState();
     });
 
     return {
+        isPersonalCallActive,
         isInVoiceCall, 
         localAudioTrack, 
         remoteAudioTrack, 
@@ -1130,11 +1454,16 @@ const joinCallAsCaller = async () => {
         outgoingCallVoice, 
         activeCallData, 
         client,
+        isMuted,
         startVoiceCall, 
         answerVoiceCall, 
         endVoiceCallWithReason,
         initializePersonalCallListeners, 
         callTimeoutCountdown,
-        resetVoiceCallState
+        resetVoiceCallState,
+        toggleMute: toggleMuteEnhanced,
+        forceUnmuteAudio,
+        manuallyTriggerSubscribe, // ⚡ Export untuk manual trigger
+        fastSubscribeToUser // ✅ Export untuk debugging
     };
 }
