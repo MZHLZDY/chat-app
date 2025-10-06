@@ -51,6 +51,7 @@ const activeContactDetails = computed(() => {
 const messages = ref<any[]>([]);
 const newMessage = ref('');
 const onlineUsers = ref<number[]>([]); 
+const notificationData = ref<any | null>(null);
 const unreadCounts = ref<{ [key: string]: number }>({});
 const fileInput = ref<HTMLInputElement | null>(null);
 const uploadProgress = ref<number>(0);
@@ -321,13 +322,53 @@ const allChats = computed((): Chat[] => [
 // search query
 const filteredChats = computed(() => {
     if (!searchQuery.value) {
-        return allChats.value; // Lek kotak pencarian kosong, tampilno kabeh
+        return allChats.value;
     }
-    // Lek onok isine, saringen berdasarkan jeneng
     return allChats.value.filter(chat =>
         chat.name.toLowerCase().includes(searchQuery.value.toLowerCase())
     );
 });
+
+const notificationAvatarUrl = computed(() => {
+  if (!notificationData.value?.sender?.name) return '';
+  const name = notificationData.value.sender.name.replace(/\s/g, '+');
+  return `https://ui-avatars.com/api/?name=${name}&background=random&color=fff&bold=true`;
+});
+
+// Fungsi untuk MENAMPILKAN notifikasi dengan data pesan yang masuk
+const showNotification = (message: any) => {
+  notificationData.value = message;
+  setTimeout(() => {
+    notificationData.value = null;
+  }, 5000);
+};
+
+const hideNotification = () => {
+  notificationData.value = null;
+};
+
+const handleNotificationClick = () => {
+  const message = notificationData.value;
+  if (!message) return;
+
+  let chatToOpen: Chat | undefined;
+  if (message.group_id) {
+  const group = groups.value.find(g => g.id === message.group_id);
+    if (group) {
+      chatToOpen = { ...group, type: 'group' };
+    }
+  } else {
+    const contact = contacts.value.find(c => c.id === message.sender_id);
+    if (contact) {
+      chatToOpen = { ...contact, type: 'user' };
+    }
+  }
+  if (chatToOpen) {
+    selectContact(chatToOpen);
+  }
+
+  hideNotification();
+};
 
 
 // --- Helper Functions ---
@@ -347,7 +388,6 @@ const onFileSelected = async (event: Event) => {
     formData.append('file', file);
 
     let endpoint = '';
-    // Tentukan endpoint dan data tambahan berdasarkan tipe chat
     if (activeContact.value?.type === 'group') {
         endpoint = `/groups/${activeContact.value.id}/messages/file`;
     } else { 
@@ -356,14 +396,13 @@ const onFileSelected = async (event: Event) => {
     }
 
     try {
-        // PERBAIKAN: Gunakan variabel 'endpoint' di sini
         const response = await axios.post(endpoint, formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
             onUploadProgress: (progressEvent) => {
-                if (progressEvent.lengthComputable) {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
+                if (progressEvent.lengthComputable && progressEvent.total) {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
                     uploadProgress.value = percentCompleted;
                 }
             },
@@ -937,44 +976,40 @@ const setupGlobalListeners = () => {
     });
 
     echo.private(`notifications.${currentUserId.value}`)
-        .listen('.MessageSent', (eventData: any) => {
-            const messageData = eventData.message;
+    .listen('.MessageSent', (eventData: any) => {
+        const messageData = eventData.message;
+        const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
 
-            // Cek disik, opo chat teko pengirim iki lagi aktif dibuka?
-            const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
+        updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
 
-            // Lek chat e GAK lagi aktif, baru dewe munculno notif unread
-            if (!isChatCurrentlyActive) {
-                const unreadChatId = `user-${messageData.sender_id}`;
-                const currentCount = unreadCounts.value[unreadChatId] || 0;
-                unreadCounts.value = {
-                    ...unreadCounts.value,
-                    [unreadChatId]: currentCount + 1
-                };
-              updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
-            }
-        })
-        .listen('.GroupMessageSent', (eventData: any) => { // <-- TAMBAHNO IKI
-            const messageData = eventData.message ? eventData.message : eventData;
+        if (!isChatCurrentlyActive) {
+            const unreadChatId = `user-${messageData.sender_id}`;
+            const currentCount = unreadCounts.value[unreadChatId] || 0;
+            unreadCounts.value[unreadChatId] = currentCount + 1;
 
-            // Cek disik, opo grup e lagi aktif dibuka?
-            const isGroupChatCurrentlyActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;
+            showNotification(messageData);
+        } else {
+            axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
+        }
+    })
+    .listen('.GroupMessageSent', (eventData: any) => {
+        const messageData = eventData.message ? eventData.message : eventData;
+        const isGroupChatCurrentlyActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;
+        
+        if (messageData.sender_id === currentUserId.value) return;
 
-            // Lek GAK aktif, baru munculno notif unread
-            if (!isGroupChatCurrentlyActive) {
-                const unreadChatId = `group-${messageData.group_id}`;
-                const currentCount = unreadCounts.value[unreadChatId] || 0;
-                unreadCounts.value = {
-                    ...unreadCounts.value,
-                    [unreadChatId]: currentCount + 1
-                };
-                updateLatestGroupMessage(messageData.group_id, messageData);
-            }
-        })
-        .listen('.MessageRead', (eventData: any) => {
-        // Cek jika chat yang relevan sedang aktif
+        updateLatestGroupMessage(messageData.group_id, messageData);
+
+        if (!isGroupChatCurrentlyActive) {
+            const unreadChatId = `group-${messageData.group_id}`;
+            const currentCount = unreadCounts.value[unreadChatId] || 0;
+            unreadCounts.value[unreadChatId] = currentCount + 1;
+
+            showNotification(messageData);
+        }
+    })  
+    .listen('.MessageRead', (eventData: any) => {
         if (activeContact.value && activeContact.value.id === eventData.readerId) {
-            // Update status pesan di state `messages`
             messages.value.forEach(msg => {
                 if (msg.sender_id === currentUserId.value && !msg.read_at) {
                     msg.read_at = new Date().toISOString();
@@ -1128,6 +1163,45 @@ const currentCallContactName = computed(() => {
 <template>
     <Head title="Chat" />
     <AppLayout>
+      <transition
+            enter-active-class="transform ease-out duration-300 transition"
+            enter-from-class="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
+            enter-to-class="translate-y-0 opacity-100 sm:translate-x-0"
+            leave-active-class="transition ease-in duration-100"
+            leave-from-class="opacity-100"
+            leave-to-class="opacity-0">
+            
+            <div v-if="notificationData" class="fixed top-5 right-5 w-full max-w-sm z-50">
+                <div @click="handleNotificationClick" class="bg-white dark:bg-gray-800 shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden cursor-pointer">
+                    <div class="p-4">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0">
+                                <img class="h-10 w-10 rounded-full" :src="notificationAvatarUrl" alt="Avatar">
+                            </div>
+                            <div class="ml-3 w-0 flex-1 pt-0.5">
+                                <p class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                    {{ notificationData.sender?.name || 'Grup' }}
+                                    <span v-if="notificationData.group" class="font-normal text-gray-500">
+                                        di {{ notificationData.group.name }}
+                                    </span>
+                                </p>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+                                    {{ notificationData.message || notificationData.text }}
+                                </p>
+                            </div>
+                            <div class="ml-4 flex-shrink-0 flex">
+                                <button @click.stop="hideNotification" class="bg-white dark:bg-gray-800 rounded-md inline-flex text-gray-400 hover:text-gray-500 focus:outline-none">
+                                    <span class="sr-only">Close</span>
+                                    <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
         <div class="flex h-[89vh] rounded-xl overflow-hidden shadow-lg bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 relative">
           <!-- sidebar bagian atas -->
             <div class="w-full md:w-1/4 bg-gray-100 dark:bg-gray-800 border-r dark:border-gray-700 flex flex-col h-full absolute md:static inset-0 transition-transform duration-300 ease-in-out"
