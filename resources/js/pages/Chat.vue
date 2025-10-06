@@ -831,7 +831,7 @@ const selectContact = (contact: Chat) => {
       
       } else if (callType.value === 'group') {
         // jika sedang call group
-        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+        if (contact.type === 'group' && contact.id === activeGroupCall.value?.groupId) {
           // pindah ke grup yang sama dengan call -> restore
           shouldRestore = true;
         } else {
@@ -847,33 +847,6 @@ const selectContact = (contact: Chat) => {
       }
     }
 
-        // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
-    if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-      let shouldEndCall = false;
-      
-      if (callType.value === 'personal') {
-        // Jika sedang call personal, end call jika:
-        // 1. Pindah ke group chat (apapun groupnya)
-        // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
-        if (contact.type === 'group' || (contact.type === 'user' && contact.id !== callPartnerId.value)) {
-          shouldEndCall = true;
-        }
-      } else if (callType.value === 'group') {
-        // jika sedang call group
-        if (contact.type === 'group' && contact.id === activeGroupCall.value?.groupId) {
-          // pindah ke grup yang sama dengan call -> restore
-          shouldRestore = true;
-        } else {
-          // pindah ke chat yang berbeda dengan call -> minimize
-          shouldMinimize = true;
-        }
-      }
-      
-      if (shouldEndCall) {
-        endCall();
-      }
-    }
-
     isLoadingMessages.value = true;
     activeContact.value = contact;
     messages.value = [];
@@ -885,6 +858,7 @@ const selectContact = (contact: Chat) => {
       axios.post('/chat/messages/read', { sender_id: contact.id });
     }
 };
+
 
 // handler untuk OutgoingCallModal events
 const handleOutgoingCallTimeout = () => {
