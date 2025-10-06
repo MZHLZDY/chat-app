@@ -16,7 +16,7 @@ const props = defineProps({
 });
 
 // Emits
-const emit = defineEmits(['end-call', 'mute-toggled', 'speaker-toggled', 'minimize-call']);
+const emit = defineEmits(['end-call', 'mute-toggled', 'speaker-toggled', 'minimize-call', 'switch-to-video']);
 
 // State lokal UI speaker
 const isSpeakerOn = ref(false);
@@ -113,8 +113,8 @@ const endCall = () => emit('end-call', 'Panggilan diakhiri');
           </button>
 
           <button 
-            @click="" 
-            class="w-20 h-20 bg-gray-700 text-white rounded-full hover:bg-green-800 flex items-center justify-center transform hover:scale-105 transition-transform"
+            @click="$emit('switch-to-video')" 
+            class="w-16 h-16 bg-gray-700 text-white rounded-full hover:bg-green-800 flex items-center justify-center transform hover:scale-105 transition-transform"
             title="Beralih ke Video Call?">
             <Video class="w-8 h-8"/>
           </button>

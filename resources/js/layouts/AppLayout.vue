@@ -46,6 +46,27 @@ const rejectIncomingCall = () => {
     setTimeout(() => (callStatus.value = 'idle'), 2000);
 };
 
+const handleSwitchToVideo = () => {
+  if (!activeCallData.value) return;
+
+  console.log('🔄 Memulai proses beralih ke panggilan video...');
+
+  // 1. Dapatkan informasi kontak dari panggilan suara yang sedang aktif
+  const contactToCall = activeCallData.value.isCaller
+    ? activeCallData.value.callee
+    : activeCallData.value.caller;
+
+  // 2. Akhiri panggilan suara saat ini
+  endVoiceCallWithReason('Beralih ke panggilan video');
+
+  // 3. Kirim event global yang bisa didengar oleh Chat.vue
+  if (contactToCall) {
+    window.dispatchEvent(new CustomEvent('start-video-call-request', {
+      detail: { contact: contactToCall }
+    }));
+  }
+};
+
 // --- COMPOSABLES ---
 const {
     groupVoiceCallData,
@@ -195,6 +216,9 @@ onMounted(() => {
     if (!currentUserId.value) return;
     echo.private(`call.${currentUserId.value}`)
         .listen('.IncomingCall', (payload: any) => {
+            if (payload.callType === 'voice') {
+                return; 
+            }
             receiveIncomingCall(payload.from);
         });
 });
@@ -253,6 +277,7 @@ onMounted(() => {
                 @mute-toggled="handleMuteToggled"
                 @end-call="endVoiceCallWithReason"
                 @minimize-call="handleMinimizeCall"
+                @switch-to-video="handleSwitchToVideo"
             />
         </template>
     </div>

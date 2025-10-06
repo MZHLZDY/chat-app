@@ -859,7 +859,6 @@ const selectContact = (contact: Chat) => {
     }
 };
 
-
 // handler untuk OutgoingCallModal events
 const handleOutgoingCallTimeout = () => {
   callStatus.value = 'missed';
@@ -1056,12 +1055,61 @@ const setupGlobalListeners = () => {
             });
         }
     });
-}
 
-const setupGroupCallListeners = (groupId: number) => {
-  // Ambil fungsi dari composable dan langsung panggil
-  const { setupDynamicGroupListeners } = useGroupCall();
-  setupDynamicGroupListeners(groupId);
+    // listening incoming call
+    echo.private(`user.${currentUserId.value}`)
+      .listen('.incoming-call', (payload: any) => {
+        console.log('🤙 Raw payload diterima:', JSON.stringify(payload, null, 2));
+        console.log('📋 Caller object:', payload.caller);
+        console.log('📋 Caller ID', payload.caller?.id);
+        console.log('📋 Caller name:', payload.caller?.name);
+        console.log('📋 Caller email:', payload.caller?.email);
+
+        if (payload.call_type === 'voice') {
+          console.log('🎤 Panggilan suara terdeteksi, diabaikan oleh listener');
+          return;
+        }
+
+        // Validasi payload
+        if (!payload.caller || !payload.caller.name) {
+          console.error('❌ Payload caller tidak valid:', payload);
+          return;
+        }
+
+        callStatus.value = 'ringing';
+        incomingCall.value = {
+          from: {
+            id: payload.caller.id,
+            name: payload.caller.name || 'Unknown User',
+            email: payload.caller.email
+          },
+          to: { id: currentUserId.value, name: currentUserName.value },
+          callId: payload.call_id || 'temp',
+          channel: payload.channel,
+          callType: payload.call_type
+        };
+
+        console.log('✅ IncomingCall object set:', incomingCall.value);
+      })
+      .listen('.call-accepted', (payload: any) => {
+        console.log('✅ Panggilan diterima:', payload);
+        if (callStatus.value === 'calling') {
+          callStatus.value = 'connected'
+        }
+      })
+      .listen('.call-rejected', (payload: any) => {
+        console.log('❌ Panggilan ditolak:', payload);
+        if (callStatus.value === 'calling') {
+          callStatus.value = 'rejected';
+          setTimeout(() => {
+            callStatus.value = 'idle';
+            endCall();
+          }, 2000);
+        }
+      })
+      .listen('.call-ended', (payload:any) => {
+        console.log('☎️ Panggilan diakhiri:', payload)
+      })
 };
 
 // --- Initialize ---
@@ -1071,15 +1119,22 @@ onMounted(() => {
   loadAllUsers();
   loadUnreadCounts();
   setupGlobalListeners();
-  setupGroupCallListeners;
 
   // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
     loadContacts();
   }, 30000); // 30 detik
 
+  window.addEventListener('start-video-call-request', (event: any) => {
+    console.log('📞 Menerima permintaan untuk memulai video call dari AppLayout.');
+    if (event.detail && event.detail.contact) {
+      startVideoCall(event.detail.contact);
+    }
+  });
+
   onUnmounted(() => {
     clearInterval(pollingInterval);
+    window.removeEventListener('start-video-call-request', () => {});
   });
 });
 
@@ -1318,7 +1373,6 @@ const currentCallContactName = computed(() => {
                     <button @click="startGroupCall(activeContact.id, activeContact.name, (activeContact.members || []).map(m => ({...m, status: 'calling'})))"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
-
                     <button
                        v-if="activeContact.type === 'group'"
                        @click="startGroupVoiceCall(activeContact)" title="Voice Call Group"
@@ -1329,7 +1383,7 @@ const currentCallContactName = computed(() => {
                   </div>
                   <div v-if="isCallActive && isMinimized"@click="restoreVideoCall"class="absolute right-14 top-3 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-full shadow-lg cursor-pointer flex items-center gap-2 transition-all duration-200 z-10">
                   </div>
-                  
+
                         <!-- minimize call button -->
                         <div v-if="isCallActive && isMinimized"
                             @click="restoreVideoCall"

@@ -1194,10 +1194,15 @@ const testAudioWorking = async (): Promise<boolean> => {
         privateChannel.listen('.incoming-call', (data: any) => {
             console.log('📞 EVENT incoming-call DITERIMA:', data);
             
-            // Abaikan jika sedang dalam panggilan
+            if (data.call_type === 'video') {
+              console.log('📹 Panggilan video terdeteksi, diabaikan oleh usePersonalCall.');
+              return;
+            }
+    
+            // Abaikan jika sedang dalam panggilan suara lain
             if (isInVoiceCall.value) {
-                console.log('⚠️ Sedang dalam panggilan, abaikan incoming call');
-                return;
+              console.log('⚠️ Sedang dalam panggilan, abaikan incoming call');
+              return;
             }
             
             if (!data.caller) {
