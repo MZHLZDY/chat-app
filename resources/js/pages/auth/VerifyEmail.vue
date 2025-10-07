@@ -1,36 +1,49 @@
 <script setup lang="ts">
-import TextLink from '@/components/TextLink.vue';
-import { Button } from '@/components/ui/button';
-import AuthLayout from '@/layouts/AuthLayout.vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import { LoaderCircle } from 'lucide-vue-next';
+import AuthLayout from '@/layouts/AuthLayout.vue';
+import { Button } from '@/components/ui/button';
+import TextLink from '@/components/TextLink.vue';
 
-defineProps<{
+// --- Props ---
+const props = defineProps<{
     status?: string;
 }>();
 
+// --- State & Logic ---
 const form = useForm({});
+const verificationLinkSent = computed(() => props.status === 'verification-link-sent');
 
 const submit = () => {
     form.post(route('verification.send'));
 };
+
+const pageTitle = 'Verifikasi Email';
+const layoutTitle = 'Satu Langkah Terakhir!';
+const layoutDescription = 'Kami telah mengirimkan tautan ke email Anda. Silakan klik untuk memverifikasi akun Anda.';
+const successMessage = 'Tautan verifikasi baru telah berhasil dikirim ke alamat email Anda.';
+const resendButtonText = 'Kirim Ulang Email Verifikasi';
+const logoutButtonText = 'Logout';
 </script>
 
 <template>
-    <AuthLayout title="Verify email" description="Please verify your email address by clicking on the link we just emailed to you.">
-        <Head title="Email verification" />
+    <AuthLayout :title="layoutTitle" :description="layoutDescription">
+        <Head :title="pageTitle" />
 
-        <div v-if="status === 'verification-link-sent'" class="mb-4 text-center text-sm font-medium text-green-600">
-            A new verification link has been sent to the email address you provided during registration.
+        <div v-if="verificationLinkSent" class="mb-4 text-center text-sm font-medium text-green-600 dark:text-green-400">
+            {{ successMessage }}
         </div>
 
         <form @submit.prevent="submit" class="space-y-6 text-center">
-            <Button :disabled="form.processing" variant="secondary">
-                <LoaderCircle v-if="form.processing" class="h-4 w-4 animate-spin" />
-                Resend verification email
+            <Button :disabled="form.processing" variant="secondary" class="w-full">
+                <LoaderCircle v-if="form.processing" class="mr-2 h-4 w-4 animate-spin" />
+                {{ resendButtonText }}
             </Button>
 
-            <TextLink :href="route('logout')" method="post" as="button" class="mx-auto block text-sm"> Log out </TextLink>
+            <TextLink :href="route('logout')" method="post" as="button" class="mx-auto block text-sm">
+                {{ logoutButtonText }}
+            </TextLink>
         </form>
     </AuthLayout>
 </template>

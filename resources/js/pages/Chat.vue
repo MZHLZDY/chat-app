@@ -965,7 +965,6 @@ const setupGlobalListeners = () => {
       }
     });
 
-  // Listener iki opsional lek awakmu nggawe sistem logout event
   echo.channel('users-status')
     .listen('.UserStatusChanged', (event: any) => {
         const updatedUser = event.user;
@@ -1424,41 +1423,51 @@ const currentCallContactName = computed(() => {
                                   </div>
                                 </div>
                                 <div :class="m.sender_id == currentUserId ? 'text-right' : 'text-left'">
-                                    <div @click="m.sender_id == currentUserId ? openDeleteModal(m) : null" :class="[m.sender_id == currentUserId ? 'inline-block bg-green-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left cursor-pointer' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left']"> 
-                                        <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId"
-                                            class="text-xs font-semibold mb-1 opacity-75">
-                                            {{ m.sender_name }}
-                                        </div>
-                                      <div v-if="m.type === 'image'" class="flex flex-col space-y-2">
-                                          <a :href="`/storage/${m.file_path}`" target="_blank">
-                                              <img v-if="m.file_path" :src="`/storage/${m.file_path}`" class="w-full rounded-lg cursor-pointer">
-                                              <p v-else class="text-xs italic opacity-75">[Gagal memuat gambar]</p>
-                                          </a>
-                                          <p v-if="m.text">{{ m.text }}</p> 
-                                      </div>
-                                      <div v-else-if="m.type === 'video'" class="flex flex-col space-y-2">
-                                          <video v-if="m.file_path" controls class="w-full rounded-lg">
-                                              <source :src="`/storage/${m.file_path}`" :type="m.file_mime_type">
-                                          </video>
-                                          <p v-else class="text-xs italic opacity-75">[Gagal memuat video]</p>
-                                          <p v-if="m.text">{{ m.text }}</p>
-                                      </div>
-                                      <div v-else-if="m.type === 'file'" class="flex flex-col space-y-2">
-                                          <a v-if="m.file_path" :href="`/storage/${m.file_path}`" target="_blank" download class="flex items-center space-x-3 p-2 bg-gray-500 bg-opacity-20 rounded-lg hover:bg-opacity-30">
-                                              <svg class="w-8 h-8 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                                              <div class="flex flex-col text-left">
-                                                  <span class="font-bold">{{ m.file_name }}</span>
-                                                  <span v-if="m.file_size" class="text-xs">{{ (m.file_size / 1024).toFixed(2) }} KB</span>
-                                              </div>
-                                          </a>
-                                          <p v-else class="text-xs italic opacity-75">[Gagal memuat file]</p>
-                                          <p v-if="m.text">{{ m.text }}</p> 
-                                      </div>
+                                  <div :class="[m.sender_id == currentUserId ? 'inline-block bg-green-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left']"
+                                  @click.self="m.sender_id === currentUserId ? openDeleteModal(m) : null"
+                                  @contextmenu.prevent="m.sender_id === currentUserId ? openDeleteModal(m) : null">
+                                  <div v-if="activeContact.type === 'group' && m.sender_id !== currentUserId" class="text-xs font-semibold mb-1 opacity-75"> 
+                                    {{ m.sender_name }} 
+                                  </div>
 
-                                      <p v-else>
-                                          {{ m.text }}
-                                      </p>
-                                      <div class="text-xs opacity-80 mt-1 flex items-center justify-end gap-1">
+                                  <div v-if="m.type === 'image'" class="flex flex-col space-y-2">
+                                    <a :href="`/storage/${m.file_path}`" target="_blank">
+                                      <img v-if="m.file_path" :src="`/storage/${m.file_path}`" class="w-full rounded-lg cursor-pointer">
+                                      <p v-else class="text-xs italic opacity-75">[Gagal memuat gambar]</p>
+                                    </a>
+                                    <p v-if="m.text">{{ m.text }}</p> 
+                                  </div>
+                                  
+                                  <div v-else-if="m.type === 'video'" class="flex flex-col space-y-2">
+                                    <video v-if="m.file_path" controls class="w-full rounded-lg">
+                                      <source :src="`/storage/${m.file_path}`" :type="m.file_mime_type">
+                                    </video>
+                                    <p v-else class="text-xs italic opacity-75">[Gagal memuat video]</p>
+                                    <p v-if="m.text">{{ m.text }}</p>
+                                  </div>
+                                  
+                                  <div v-else-if="m.type === 'file'" class="flex flex-col space-y-2">
+                                    <a v-if="m.file_path" :href="`/storage/${m.file_path}`" target="_blank" download class="flex items-center space-x-3 p-2 bg-gray-500 bg-opacity-20 rounded-lg hover:bg-opacity-30">
+                                      <svg class="w-8 h-8 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                      </svg>
+                                      <div class="flex flex-col text-left">
+                                        <span class="font-bold">
+                                          {{ m.file_name }}
+                                        </span>
+                                        <span v-if="m.file_size" class="text-xs">{{ (m.file_size / 1024).toFixed(2) }} KB</span>
+                                      </div>
+                                    </a>
+                                    <p v-else class="text-xs italic opacity-75">[Gagal memuat file]</p>
+                                    <p v-if="m.text">
+                                      {{ m.text }}
+                                    </p> 
+                                  </div>
+
+                                  <p v-else>
+                                    {{ m.text }}
+                                  </p>
+                                    <div class="text-xs opacity-80 mt-1 flex items-center justify-end gap-1">
                                           <span>{{ m.time }}</span>
                                           <span v-if="m.sender_id === currentUserId">
                                               <svg v-if="m.read_at" xmlns="http://www.w.org/2000/svg" width="16" height="16" class="text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1466,13 +1475,13 @@ const currentCallContactName = computed(() => {
                                                   <path d="M1 12.75L6 17.75L17 6.75"></path>
                                               </svg>
                                               <svg v-else-if="m.id" xmlns="http://www.w.org/2000/svg" width="16" height="16" class="text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                                  <path d="M4 12.75L9 17.75L20 6.75"></path>
-                                                  <path d="M1 12.75L6 17.75L17 6.75"></path>
-                                              </svg>
-                                          </span>
-                                      </div>
+                                                <path d="M4 12.75L9 17.75L20 6.75"></path>
+                                                <path d="M1 12.75L6 17.75L17 6.75"></path>
+                                            </svg>
+                                        </span>
                                     </div>
                                 </div>
+                              </div>
                             </template>
                         </template>
                     </div>
