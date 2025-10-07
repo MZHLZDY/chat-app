@@ -35,6 +35,11 @@ return [
         ],
     ],
 
+    'vapid' => [
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+    ],
+
     // 'twilio' => [
     //     'account_sid' => env('TWILIO_ACCOUNT_SID'),
     //     'auth_token' => env('TWILIO_AUTH_TOKEN'),

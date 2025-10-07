@@ -70,9 +70,10 @@ const userBackgroundPath = computed<string | null>(() => page.props.auth.user.ba
 const userBackgroundUrl = computed<string>(() => page.props.auth.user.background_image_url);
 
 
-// --- Agora Call State ---
-const { startVoiceCall } = usePersonalCall();
-const { startGroupVoiceCall, setupDynamicGroupListeners, leaveDynamicGroupChannel } = useGroupCall();
+// --- Call State ---
+const { startVoiceCall, isPersonalCallActive } = usePersonalCall();
+const { startGroupVoiceCall, isGroupVoiceCallActive } = useGroupCall();
+const isAnyCallInProgress = computed(() => isPersonalCallActive.value || isGroupVoiceCallActive.value);
 
 // --- Personal Video Call State ---
 const activeCall = ref<null | { contactName: string }>(null);
@@ -830,7 +831,7 @@ const selectContact = (contact: Chat) => {
       
       } else if (callType.value === 'group') {
         // jika sedang call group
-        if (contact.type === 'user' && contact.id === callPartnerId.value) {
+        if (contact.type === 'group' && contact.id === activeGroupCall.value?.groupId) {
           // pindah ke grup yang sama dengan call -> restore
           shouldRestore = true;
         } else {
@@ -843,33 +844,6 @@ const selectContact = (contact: Chat) => {
         isMinimized.value = true;
       } else if (shouldRestore) {
         isMinimized.value = false;
-      }
-    }
-
-        // reset call UI saat pindah chat (kecuali ke chat yang sama dengan call yang sedang berlangsung)
-    if (callStatus.value === 'calling' || callStatus.value === 'connected') {
-      let shouldEndCall = false;
-      
-      if (callType.value === 'personal') {
-        // Jika sedang call personal, end call jika:
-        // 1. Pindah ke group chat (apapun groupnya)
-        // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
-        if (contact.type === 'group' || (contact.type === 'user' && contact.id !== callPartnerId.value)) {
-          shouldEndCall = true;
-        }
-      } else if (callType.value === 'group') {
-        // jika sedang call group
-        if (contact.type === 'group' && contact.id === activeGroupCall.value?.groupId) {
-          // pindah ke grup yang sama dengan call -> restore
-          shouldRestore = true;
-        } else {
-          // pindah ke chat yang berbeda dengan call -> minimize
-          shouldMinimize = true;
-        }
-      }
-      
-      if (shouldEndCall) {
-        endCall();
       }
     }
 
@@ -1081,12 +1055,62 @@ const setupGlobalListeners = () => {
             });
         }
     });
-}
 
-const setupGroupCallListeners = (groupId: number) => {
-  // Ambil fungsi dari composable dan langsung panggil
-  const { setupDynamicGroupListeners } = useGroupCall();
-  setupDynamicGroupListeners(groupId);
+    // listening incoming call
+    echo.private(`user.${currentUserId.value}`)
+      .listen('.incoming-call', (payload: any) => {
+        console.log('🤙 Raw payload diterima:', JSON.stringify(payload, null, 2));
+        console.log('📋 Caller object:', payload.caller);
+        console.log('📋 Caller ID', payload.caller?.id);
+        console.log('📋 Caller name:', payload.caller?.name);
+        console.log('📋 Caller email:', payload.caller?.email);
+
+        // Detektor Telepon Suara
+        if (payload.call_type === 'voice') {
+          console.log('🎤 Panggilan suara terdeteksi, diabaikan oleh listener.');
+          return;
+        }
+
+        // Validasi payload
+        if (!payload.caller || !payload.caller.name) {
+          console.error('❌ Payload caller tidak valid:', payload);
+          return;
+        }
+
+        callStatus.value = 'ringing';
+        incomingCall.value = {
+          from: {
+            id: payload.caller.id,
+            name: payload.caller.name || 'Unknown User',
+            email: payload.caller.email
+          },
+          to: { id: currentUserId.value, name: currentUserName.value },
+          callId: payload.call_id || 'temp',
+          channel: payload.channel,
+          callType: payload.call_type
+        };
+
+        console.log('✅ IncomingCall object set:', incomingCall.value);
+      })
+      .listen('.call-accepted', (payload: any) => {
+        console.log('✅ Panggilan diterima:', payload);
+        if (callStatus.value === 'calling') {
+          callStatus.value = 'connected'
+        }
+      })
+      .listen('.call-rejected', (payload: any) => {
+        console.log('❌ Panggilan ditolak:', payload);
+        if (callStatus.value === 'calling') {
+          callStatus.value = 'rejected';
+          setTimeout(() => {
+            callStatus.value = 'idle';
+            endCall();
+          }, 2000);
+        }
+      })
+      .listen('.call-ended', (payload:any) => {
+        console.log('☎️ Panggilan diakhiri:', payload)
+      })
 };
 
 // --- Initialize ---
@@ -1096,7 +1120,6 @@ onMounted(() => {
   loadAllUsers();
   loadUnreadCounts();
   setupGlobalListeners();
-  setupGroupCallListeners;
 
   // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
@@ -1313,6 +1336,13 @@ const currentCallContactName = computed(() => {
                     <button @click="startVideoCall(activeContact)"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
+                    <button
+                      v-if="activeContact.type === 'user'"
+                      @click="startVoiceCall(activeContact)" title="Voice Call Personal"
+                      :disabled="isAnyCallInProgress"
+                       class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <Phone class="w-5 h-5 ..."/>
+                    </button>
                   </div>
 
                   <!-- navbar group -->
@@ -1335,6 +1365,13 @@ const currentCallContactName = computed(() => {
                     
                     <button @click="startGroupCall(activeContact.id, activeContact.name, (activeContact.members || []).map(m => ({...m, status: 'calling'})))"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
+                    </button>
+                    <button
+                       v-if="activeContact.type === 'group'"
+                       @click="startGroupVoiceCall(activeContact)" title="Voice Call Group"
+                       :disabled="isAnyCallInProgress"
+                       class="flex ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                       <Phone class="w-5 h-5 ..."/>
                     </button>
                   </div>
                   <div v-if="isCallActive && isMinimized"@click="restoreVideoCall"class="absolute right-14 top-3 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-full shadow-lg cursor-pointer flex items-center gap-2 transition-all duration-200 z-10">

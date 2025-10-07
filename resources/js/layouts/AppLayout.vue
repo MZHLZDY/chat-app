@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { usePage } from '@inertiajs/vue3';
 import { onMounted, computed, ref, watch } from 'vue';
+import axios from 'axios';
 import AppSidebarLayout from '@/layouts/app/AppSidebarLayout.vue';
 import { PhoneCall, PhoneOff, PhoneMissed } from 'lucide-vue-next';
 import IncomingCallModal from '@/pages/IncomingCallModal.vue';
@@ -21,10 +22,10 @@ const currentUserId = computed(() => page.props.auth?.user?.id ?? null);
 const currentUserName = computed(() => page.props.auth.user.name);
 const isCallMinimized = ref(false);
 const callDuration = ref(0);
-let callTimer: NodeJS.Timeout | null = null;
+let callTimer: ReturnType<typeof setTimeout> | null = null;
 
 // --- STATE UNTUK NOTIFIKASI VOICE CALL ---
-const { setupListeners } = useCallNotification();
+const { requestPermission, setupListeners } = useCallNotification();
 
 // --- STATE UNTUK PANGGILAN VIDEO PERSONAL ---
 const incomingCall = ref<{ from: User } | null>(null);
@@ -92,7 +93,7 @@ const {
     activeCallData,
     callTimeoutCountdown,
     isMuted,
-    toggleMute, // ✅ IMPORT FUNGSI MUTE
+    toggleMute, 
     answerVoiceCall,
     endVoiceCallWithReason,
     initializePersonalCallListeners,
@@ -133,6 +134,61 @@ const minimizedWidgetData = computed(() => {
     }
     return { name: 'Panggilan', duration: '' };
 });
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+// 👇 TAMBAHKAN FUNGSI UTAMA UNTUK SUBSCRIBE
+const requestPermissionAndSubscribe = async () => {
+    // 1. Minta izin notifikasi
+    const permissionGranted = await requestPermission();
+    if (!permissionGranted) {
+        console.warn('⚠️ Izin notifikasi tidak diberikan oleh pengguna.');
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        let subscription = await registration.pushManager.getSubscription();
+
+        // 2. Jika belum ada subscription, buat baru
+        if (!subscription) {
+            const vapidPublicKey = page.props.vapid_public_key as string;
+            if (!vapidPublicKey) {
+                console.error('❌ VAPID Public Key tidak ditemukan!');
+                return;
+            }
+
+            const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+            
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: convertedVapidKey,
+            });
+        }
+        
+        // 3. Kirim subscription ke backend untuk disimpan
+        console.log('📦 Mengirim subscription ke server...');
+        await axios.post('/push-subscriptions/store', subscription);
+
+        console.log('✅ Berhasil subscribe ke push notification.');
+
+    } catch (error) {
+        console.error('❌ Gagal subscribe ke push notification:', error);
+    }
+};
 
 // ✅ FUNGSI TIMER
 const startCallTimer = () => {
@@ -196,6 +252,7 @@ onMounted(() => {
     initializeGlobalListeners();
     initializePersonalCallListeners();
     setupListeners();
+    requestPermissionAndSubscribe();
     
     // Handle notification actions
     window.addEventListener('call-notification-action', (event: any) => {

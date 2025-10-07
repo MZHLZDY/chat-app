@@ -27,16 +27,16 @@ const client = ref<any>(null);
 const incomingCallVoice = ref<any>(null);
 const outgoingCallVoice = ref<any>(null);
 const activeCallData = ref<any>(null);
-const callTimeoutRef = ref<NodeJS.Timeout | null>(null);
+const callTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
 const callStartTime = ref<number | null>(null);
 const callTimeoutCountdown = ref<number | null>(null); 
-let countdownInterval: NodeJS.Timeout | null = null;
-let incomingCallTimeout: NodeJS.Timeout | null = null;
+let countdownInterval: ReturnType<typeof setInterval> | null = null;
+let incomingCallTimeout: ReturnType<typeof setTimeout> | null = null;
 let personalCallListenersInitialized = false;
 const isMuted = ref(false);
 const audioContextUnlocked = ref(false);
-let notificationDebounceTimeout: NodeJS.Timeout | null = null;
-let connectionMonitoringInterval: NodeJS.Timeout | null = null;
+let notificationDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
+let connectionMonitoringInterval: ReturnType<typeof setInterval> | null = null;
 
 const subscribedUsers = ref<Set<number>>(new Set());
 

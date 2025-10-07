@@ -10,11 +10,12 @@ use Illuminate\Notifications\Notifiable;
 use App\Notifications\VerifyEmailNotification;
 use App\Models\ChatMessage;
 use Laravel\Sanctum\HasApiTokens;
+use NotificationChannels\WebPush\HasPushSubscriptions;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasPushSubscriptions, HasFactory, Notifiable;
 
     /**
      * The attributes that are mass assignable.

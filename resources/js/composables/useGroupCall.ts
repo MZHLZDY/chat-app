@@ -12,9 +12,9 @@ const isGroupVoiceCallActive = ref(false);
 const isGroupCaller = ref(false);
 const groupCallTimeoutCountdown = ref<number | null>(null);
 const activeGroupChannel = ref<string | null>(null);
-const groupCallTimeoutRef = ref<NodeJS.Timeout | null>(null);
+const groupCallTimeoutRef = ref<ReturnType<typeof setTimeout> | null>(null);
 const { sendGroupCallNotification, closeNotification } = useCallNotification();
-let groupCallCountdownInterval: NodeJS.Timeout | null = null;
+let groupCallCountdownInterval: ReturnType<typeof setTimeout> | null = null;
 
 // Agora RTC instances
 const groupClient = ref<any>(AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' }));

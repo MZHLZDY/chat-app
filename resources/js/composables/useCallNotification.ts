@@ -6,7 +6,7 @@ export class CallNotificationManager {
     private registration: ServiceWorkerRegistration | null;
     private notificationQueue: Array<{type: string, data: any, timestamp: number}>;
     private isProcessing: boolean;
-    private closeTimeout: NodeJS.Timeout | null;
+    private closeTimeout: ReturnType<typeof setTimeout> | null;
 
     constructor() {
         this.isSupported = 'Notification' in window;
