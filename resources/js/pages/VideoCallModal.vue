@@ -222,7 +222,7 @@ watch(
 
                 <!-- End Call -->
                 <button
-                    @click="handleEnd"
+                    @click="() => { console.log('☎️ Tombol panggilan diakhiri ditekan')  ; $emit('end'); }"
                     class="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition"
                 >
                     <PhoneOff class="w-6 h-6"/>

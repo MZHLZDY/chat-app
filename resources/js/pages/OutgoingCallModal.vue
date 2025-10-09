@@ -32,6 +32,57 @@ const emit = defineEmits<{
     (e: "accepted", id: number): void;
 }>();
 
+// State untuk countdown
+const countdown = ref(30);
+let countdownInterval: number | null = null;
+
+// Fungsi untuk start countdown
+const startCountdown = () => {
+    countdown.value = 30;
+
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+
+    countdownInterval = window.setInterval(() => {
+        countdown.value--;
+
+        if (countdown.value <= 0) {
+            clearInterval(countdownInterval!);
+            emit("timeout");
+        }
+    }, 1000);
+};
+
+// Watch props show untuk start/stop countdown
+watch(
+    () => props.show,
+    (newValue) => {
+        if (newValue) {
+            startCountdown();
+        } else {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+        }
+    },
+    { immediate: true }
+);
+
+// Cleanup on unmount
+onMounted(() => {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+});
+
+const cancel = () => {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+    emit('cancel');
+};
+
 // state untuk anggota grup
 const memberState = ref<Participants[]>([]);
 

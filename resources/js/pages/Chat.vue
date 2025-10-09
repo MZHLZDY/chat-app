@@ -306,6 +306,17 @@ const endCall = async () => {
       console.error('❌ Gagal mengirim notifikasi akhiri panggilan ke BE:', error);
     }
   }
+
+  // Reset semua state dengan benar
+  callType.value = 'none';
+  callStatus.value = 'idle';
+  callPartnerId.value = null;
+  activeGroupCall.value = null;
+  joinedMembers.value = [];
+  isMinimized.value = false;
+  incomingCall.value = null;
+
+  console.log('✅ Panggilan diakhiri, semua state direset');
 };
 
 // --- Modal States ---
@@ -1361,8 +1372,7 @@ const currentCallContactName = computed(() => {
 
                         <!-- Incoming Call Modal -->
                         <IncomingCallModal
-                          v-if="callStatus === 'ringing'"
-                          :show="true"
+                          :show="callStatus === 'ringing'"
                           :caller-name="incomingCall?.from?.name"
                           @accept="acceptIncomingCall"
                           @reject="rejectIncomingCall"
