@@ -64,7 +64,7 @@ class ChatController extends Controller
                 $query->where('user_id', $authId);
             })
             
-            ->with('sender:id,name', 'parentMessage.sender:id,name')
+            ->with('sender:id,name', 'parentMessage.sender:id,name', 'callEvent')
             ->orderByDesc('created_at')
             ->simplePaginate(50);
 
@@ -176,4 +176,6 @@ class ChatController extends Controller
         broadcast(new MessageSent($message))->toOthers(); 
         return response()->json($message, 201);
     }
+
+    
 }

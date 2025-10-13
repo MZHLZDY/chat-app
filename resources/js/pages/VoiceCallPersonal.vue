@@ -42,7 +42,21 @@ const toggleSpeaker = () => {
   isSpeakerOn.value = !isSpeakerOn.value;
   emit('speaker-toggled', isSpeakerOn.value);
 };
-const endCall = () => emit('end-call', 'Panggilan diakhiri');
+
+// ✅ PERBAIKAN: Fungsi endCall yang lebih baik
+const endCall = () => {
+  console.log('📞 Tombol End Call ditekan di VoiceCallPersonal');
+  
+  // ✅ Langsung emit dengan reason yang jelas
+  emit('end-call', 'Panggilan diakhiri oleh pengguna');
+};
+
+// ✅ FUNGSI BARU: Handle switch to video dengan end call
+const switchToVideo = () => {
+  console.log('🎥 Switch to video ditekan');
+  emit('end-call', 'Beralih ke panggilan video');
+  emit('switch-to-video');
+};
 
 </script>
 
@@ -96,9 +110,11 @@ const endCall = () => emit('end-call', 'Panggilan diakhiri');
             <Mic v-else class="w-8 h-8"/>
           </button>
 
+          <!-- ✅ TOMBOL END CALL YANG DIPERBAIKI -->
           <button 
             @click="endCall" 
-            class="w-20 h-20 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center transform hover:scale-105 transition-transform">
+            class="w-20 h-20 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center transform hover:scale-105 transition-transform"
+            :disabled="!isConnected">
             <PhoneForwarded class="w-10 h-10"/>
           </button>
 
@@ -112,10 +128,12 @@ const endCall = () => emit('end-call', 'Panggilan diakhiri');
             <VolumeOff v-else class="w-8 h-8"/>
           </button>
 
+          <!-- ✅ TOMBOL SWITCH TO VIDEO YANG DIPERBAIKI -->
           <button 
-            @click="$emit('switch-to-video')" 
+            @click="switchToVideo" 
             class="w-16 h-16 bg-gray-700 text-white rounded-full hover:bg-green-800 flex items-center justify-center transform hover:scale-105 transition-transform"
-            title="Beralih ke Video Call?">
+            :disabled="!isConnected"
+            title="Beralih ke Video Call">
             <Video class="w-8 h-8"/>
           </button>
         </div>

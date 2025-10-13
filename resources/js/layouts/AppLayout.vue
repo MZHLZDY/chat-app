@@ -324,17 +324,18 @@ onMounted(() => {
 
             <!-- PERSONAL CALL -->
             <VoiceCallPersonal
-                v-if="isInVoiceCall && activeCallData"
-                :is-visible="isInVoiceCall"
-                :formatted-duration="formattedCallDuration" 
-                :call-data="activeCallData"
-                :local-audio-track="localAudioTrack"
-                :remote-audio-track="remoteAudioTrack"
-                :is-muted="isMuted"
-                @mute-toggled="handleMuteToggled"
-                @end-call="endVoiceCallWithReason"
-                @minimize-call="handleMinimizeCall"
-                @switch-to-video="handleSwitchToVideo"
+              v-if="isInVoiceCall && activeCallData"
+              :is-visible="isInVoiceCall"
+              :formatted-duration="formattedCallDuration" 
+              :call-data="activeCallData"
+              :local-audio-track="localAudioTrack"
+              :remote-audio-track="remoteAudioTrack"
+              :is-muted="isMuted"
+              @answer-call="answerVoiceCall"
+              @mute-toggled="handleMuteToggled"
+              @end-call="endVoiceCallWithReason"
+              @minimize-call="handleMinimizeCall"
+              @switch-to-video="handleSwitchToVideo"
             />
         </template>
     </div>
@@ -354,11 +355,12 @@ onMounted(() => {
 
             <div class="flex justify-center gap-4">
                 <button 
-                    @click="answerVoiceCall(false, 'Ditolak')"
-                    class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
+                  @click="answerVoiceCall(false, 'Ditolak')"
+                  class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
                 >
-                    <PhoneOff class="w-7 h-7"/>
+                  <PhoneOff class="w-7 h-7"/>
                 </button>
+
                 <button 
                     @click="answerVoiceCall(true)"
                     class="bg-green-500 text-white px-6 py-2 rounded-full hover:bg-green-600"
@@ -370,27 +372,55 @@ onMounted(() => {
     </div>
 
     <!-- ✅ OUTGOING CALL MODAL -->
-    <div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg p-6 w-96 text-center">
-            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-                {{ outgoingCallVoice.callee.name.charAt(0).toUpperCase() }}
-            </div>
-
-            <p class="text-gray-600 mb-4">{{ outgoingCallVoice.callee.name }}</p>
-            <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
-
-            <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
-                Berakhir dalam {{ callTimeoutCountdown }} detik
-            </div>
-
-            <div class="animate-pulse text-blue-500 mb-4">Berdering...</div>
-
-            <button 
-                @click="endVoiceCallWithReason('Dibatalkan')"
-                class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
-            >
-                <PhoneMissed class="w-7 h-7"/>
-            </button>
+<!-- ✅ OUTGOING CALL MODAL -->
+<div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling' && outgoingCallVoice.callee" 
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-96 text-center">
+        <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+            {{ outgoingCallVoice.callee.name?.charAt(0).toUpperCase() || '?' }}
         </div>
+
+        <p class="text-gray-600 mb-4">{{ outgoingCallVoice.callee.name || 'Unknown' }}</p>
+        <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+
+        <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
+            Berakhir dalam {{ callTimeoutCountdown }} detik
+        </div>
+
+        <div class="animate-pulse text-blue-500 mb-4">Berdering...</div>
+
+        <button 
+            @click="endVoiceCallWithReason('Dibatalkan')"
+            class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
+        >
+            <PhoneMissed class="w-7 h-7"/>
+        </button>
     </div>
+</div>
+
+<!-- ✅ FALLBACK UI JIKA DATA TIDAK LENGKAP -->
+<div v-else-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" 
+     class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 w-96 text-center">
+        <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+            ?
+        </div>
+
+        <p class="text-gray-600 mb-4">Menghubungi...</p>
+        <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+
+        <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
+            Berakhir dalam {{ callTimeoutCountdown }} detik
+        </div>
+
+        <div class="animate-pulse text-blue-500 mb-4">Berdering...</div>
+
+        <button 
+            @click="endVoiceCallWithReason('Dibatalkan')"
+            class="bg-red-500 text-white px-6 py-2 rounded-full hover:bg-red-600"
+        >
+            <PhoneMissed class="w-7 h-7"/>
+        </button>
+    </div>
+</div>
 </template>

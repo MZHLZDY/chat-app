@@ -1,56 +1,55 @@
 <?php
+// app/Events/CallAccepted.php
 
 namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User;
 
 class CallAccepted implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(
-        public int $callerId,
-        public User $callee,
-        public string $channel,
-        public string $callId
-    ) {}
+    public $callerId;
+    public $callee;
+    public $channel;
+    public $callId;
+    public $message;
 
-    public function broadcastOn(): array
+    public function __construct($callerId, $callee, $channel, $callId, $message = null)
     {
-        return [
-            new PrivateChannel('user.' . $this->callerId),
-            new PrivateChannel('user.' . $this->callee->id),
-        ];
+        $this->callerId = $callerId;
+        $this->callee = $callee;
+        $this->channel = $channel;
+        $this->callId = $callId;
+        $this->message = $message;
     }
 
-    public function broadcastAs(): string
+    public function broadcastOn()
+    {
+        return new PrivateChannel('user.' . $this->callerId);
+    }
+
+    public function broadcastAs()
     {
         return 'call-accepted';
     }
 
-    public function broadcastWith(): array
+    public function broadcastWith()
     {
-        // ✅ HINDARI QUERY DATABASE DI EVENT - Kirim data yang sudah ada
         return [
             'call_id' => $this->callId,
-            'caller' => [
-                'id' => $this->callerId,
-                // Nama caller harus dikirim dari controller, bukan query di sini
-                'name' => $this->callerId // Ini akan diperbaiki di controller
-            ],
+            'channel' => $this->channel,
             'callee' => [
                 'id' => $this->callee->id,
-                'name' => $this->callee->name,
-                // HAPUS email karena tidak diperlukan untuk call UI
+                'name' => $this->callee->name
             ],
-            'channel' => $this->channel,
+            'caller_id' => $this->callerId,
+            'message' => $this->message,
             'timestamp' => now()->toISOString()
         ];
     }

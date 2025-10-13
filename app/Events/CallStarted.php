@@ -1,4 +1,5 @@
 <?php
+// app/Events/CallStarted.php
 
 namespace App\Events;
 
@@ -8,49 +9,33 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User;
 
 class CallStarted implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(
-     public string $callId,
-     public string $callType,
-     public string $channel,
-     public User $caller // Terima object User lengkap
-    ) {}
+    public $callId;
+    public $callType;
+    public $channel;
+    public $caller;
+    public $message;
 
-    public function broadcastOn(): array
+    public function __construct($callId, $callType, $channel, $caller, $message = null)
     {
-        return [
-            new PrivateChannel('user.' . $this->caller->id),
-        ];
+        $this->callId = $callId;
+        $this->callType = $callType;
+        $this->channel = $channel;
+        $this->caller = $caller;
+        $this->message = $message;
     }
 
-    public function broadcastAs(): string
+    public function broadcastOn()
+    {
+        return new PrivateChannel('user.' . $this->caller->id);
+    }
+
+    public function broadcastAs()
     {
         return 'call-started';
     }
-
-    public function broadcastWith(): array
-    {
-        return [
-            'call_id' => $this->callId,
-            'call_type' => $this->callType,
-            'channel' => $this->channel,
-            'caller' => [
-                'id' => $this->caller->id,
-                'name' => $this->caller->name
-            ],
-            // 'callee' => [
-            //     'id' => $this->callee->id,
-            //     'name' => $this->callee->name,
-            //     'email' => $this->callee->email
-            // ],
-            'timestamp' => now()->toISOString()
-        ];
-    }
 }
-
-

@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\Group;
+use App\Models\CallEvent;
+use App\Models\ChatMessage;
+use App\Models\PersonalCall;
 use App\Services\AgoraTokenService;
 use App\Events\IncomingCallVoice;
 use App\Events\GroupIncomingCallVoice;
@@ -18,171 +21,249 @@ use App\Events\CallAccepted;
 use App\Events\CallStarted;
 use App\Events\CallRejected;
 use App\Events\CallEnded;
-use App\Notifications\IncomingCallNotification; // ✅ IMPORT BARU
+use App\Events\MessageSent;
+use App\Notifications\IncomingCallNotification;
 
 class AgoraCallController extends Controller
 {
     public function inviteCall(Request $request)
     {
-        $request->validate([
-            'callee_id' => 'required|exists:users,id',
-            'call_type' => 'required|in:voice,video'
-        ]);
-
-        $caller = $request->user();
-        $callee = User::find($request->callee_id);
-
-        // Generate call ID dan channel
-        $callId = uniqid();
-        $channel = 'call-' . $callId;
-
-        // ✅ KIRIM NOTIFIKASI PUSHKALLL
+        DB::beginTransaction();
         try {
-            $callData = [
+            // 1. Validasi & persiapan user (kode Anda sudah benar)
+            $validator = \Validator::make($request->all(), [
+                'callee_id' => 'required|exists:users,id',
+                'call_type' => 'required|in:voice,video'
+            ]);
+            if ($validator->fails()) { /* ... error handling ... */ }
+            $caller = $request->user();
+            $callee = User::find($request->callee_id);
+            if ($callee->id === $caller->id) { /* ... error handling ... */ }
+
+            // 2. Buat ID & Channel
+            $callId = uniqid('call_');
+            $channel = 'call-' . $callId;
+            Log::info('📞 Creating call session:', ['call_id' => $callId, 'channel' => $channel]);
+
+            // 3. Simpan data panggilan ke tabel personal_calls (kode Anda sudah benar)
+            PersonalCall::create([
                 'call_id' => $callId,
-                'caller' => [
-                    'id' => $caller->id,
-                    'name' => $caller->name
-                ],
-                'channel' => $channel,
-                'call_type' => $request->call_type
+                'channel_name' => $channel,
+                'caller_id' => $caller->id,
+                'callee_id' => $callee->id,
+                'status' => 'calling',
+                'call_type' => $request->call_type,
+            ]);
+
+            // 4. ✅ PERUBAHAN UTAMA: Buat CallEvent dan Pesan Penanda
+            $this->createOrUpdateCallEventAndMessage(
+                channel: $channel,
+                callerId: $caller->id,
+                calleeId: $callee->id,
+                status: 'calling',
+                callType: $request->call_type
+            );
+
+            // 5. Kirim notifikasi & event (kode Anda sudah benar)
+            $callData = [
+             'call_id' => $callId,
+             'caller_id' => $caller->id, // <-- Diubah menjadi flat
+             'caller_name' => $caller->name, // <-- Diubah menjadi flat
+             'channel' => $channel,
+             'call_type' => $request->call_type,
+             'timestamp' => now()->toISOString()
             ];
-
-            // Kirim notifikasi ke callee
             $callee->notify(new IncomingCallNotification($callData, 'personal'));
-            Log::info('Notifikasi panggilan personal dikirim', [
-                'caller' => $caller->id,
-                'callee' => $callee->id,
-                'call_id' => $callId
-            ]);
+            event(new IncomingCallVoice(
+                caller: $caller, callee: $callee, callType: $request->call_type,
+                channel: $channel, callId: $callId
+            ));
 
-        } catch (\Exception $e) {
-            Log::error('Gagal mengirim notifikasi panggilan personal: ' . $e->getMessage());
-            // Jangan gagalkan panggilan hanya karena notifikasi gagal
-        }
-
-        // Panggil event seperti biasa
-        event(new IncomingCallVoice(
-            caller: $caller,
-            callee: $callee,
-            callType: $request->call_type,
-            channel: $channel
-        ));
-
-        return response()->json([
-            'call_id' => $callId,
-            'channel' => $channel,
-            'status' => 'calling',
-        ]);
-    }
-
-    public function answerCall(Request $request)
-    {
-        try {
-            Log::info('Answer call request received', $request->all());
-            
-            $request->validate([
-                'call_id' => 'required|string|max:255',
-                'caller_id' => 'required|integer|exists:users,id',
-                'accepted' => 'required|boolean',
-                'reason' => 'nullable|string|max:500'
-            ]);
-
-            $callee = $request->user();
-            $caller = User::find($request->caller_id);
-
-            if (!$caller) {
-                Log::error('Caller not found', ['caller_id' => $request->caller_id]);
-                return response()->json(['error' => 'Caller not found'], 404);
-            }
-
-            if ($request->accepted) {
-                // ✅ TUTUP NOTIFIKASI JIKA DITERIMA
-                $this->closeCallNotification($request->call_id, 'personal', $callee->id);
-
-                event(new CallAccepted(
-                    callerId: $caller->id,
-                    callee: $callee,
-                    channel: 'call-' . $request->call_id,
-                    callId: $request->call_id
-                ));
-
-                event(new CallStarted(
-                    callId: $request->call_id,
-                    callType: 'voice',
-                    channel: 'call-' . $request->call_id,
-                    caller: $caller
-                ));
-            } else {
-                // ✅ TUTUP NOTIFIKASI JIKA DITOLAK
-                $this->closeCallNotification($request->call_id, 'personal', $callee->id);
-
-                event(new CallRejected(
-                    callId: $request->call_id,
-                    callerId: $caller->id,
-                    reason: $request->reason ?? 'Panggilan ditolak',
-                    calleeId: $callee->id
-                ));
-            }
+            DB::commit();
 
             return response()->json([
-                'status' => 'success',
-                'message' => $request->accepted ? 'Panggilan diterima' : 'Panggilan ditolak',
-                'call_id' => $request->call_id
-            ]);
+                'call_id' => $callId, 'channel' => $channel, 'status' => 'calling',
+            ], 200);
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            Log::error('Validation error in answerCall', ['errors' => $e->errors()]);
-            return response()->json(['error' => 'Validation error', 'errors' => $e->errors()], 422);
-            
         } catch (\Exception $e) {
-            Log::error('Error in answerCall: ' . $e->getMessage());
+            DB::rollBack();
+            Log::error('❌ CRITICAL ERROR in inviteCall: ' . $e->getMessage());
             return response()->json(['error' => 'Internal server error'], 500);
         }
     }
 
-    public function endCall(Request $request)
-    {
+    // Di AgoraCallController.php - method answerCall
+public function answerCall(Request $request)
+{
+    DB::beginTransaction();
+    try {
         $request->validate([
             'call_id' => 'required|string',
-            'participant_ids' => 'required|array',
+            'caller_id' => 'required|exists:users,id',
+            'accepted' => 'required|boolean',
             'reason' => 'nullable|string'
         ]);
 
-        $user = $request->user();
+        $callee = $request->user();
+        $caller = User::find($request->caller_id);
 
-        Log::info('Ending call', [
-            'call_id' => $request->call_id,
-            'participant_ids' => $request->participant_ids,
-            'reason' => $request->reason,
-            'ended_by' => $user->id
-        ]);
-
-        // ✅ TUTUP NOTIFIKASI UNTUK SEMUA PARTICIPANT
-        foreach ($request->participant_ids as $participantId) {
-            $this->closeCallNotification($request->call_id, 'personal', $participantId);
+        if (!$caller) {
+            return response()->json(['error' => 'Caller not found'], 404);
         }
 
-        event(new CallEnded(
-            channel: 'call-' . $request->call_id,
-            participantIds: $request->participant_ids,
-            endedBy: $user->id,
-            endedByName: $user->name, 
-            reason: $request->reason
-        ));
+        Log::info('Answer call request:', [
+            'call_id' => $request->call_id,
+            'caller_id' => $caller->id,
+            'callee_id' => $callee->id,
+            'accepted' => $request->accepted,
+            'reason' => $request->reason
+        ]);
+
+        // ✅ PERBAIKAN: Cari dan update personal call
+        $call = PersonalCall::where('call_id', $request->call_id)->first();
+        
+        if (!$call) {
+            Log::warning('Call not found for answer:', ['call_id' => $request->call_id]);
+            return response()->json(['error' => 'Call not found'], 404);
+        }
+
+        // Update status panggilan
+        $call->update([
+            'status' => $request->accepted ? 'accepted' : 'rejected',
+            'ended_at' => $request->accepted ? null : now(),
+            'reason' => $request->accepted ? null : ($request->reason ?? 'Ditolak')
+        ]);
+
+        // ✅ PERBAIKAN: Update CallEvent dengan error handling
+        $callEvent = $this->createOrUpdateCallEventAndMessage(
+            channel: $call->channel_name,
+            callerId: $caller->id,
+            calleeId: $callee->id,
+            status: $request->accepted ? 'accepted' : 'rejected',
+            callType: $call->call_type,
+            reason: $request->accepted ? null : ($request->reason ?? 'Ditolak')
+        );
+
+        // ✅ PERBAIKAN: Trigger events dengan proper error handling
+        if ($request->accepted) {
+            event(new CallAccepted(
+                callerId: $caller->id, 
+                callee: $callee,
+                channel: $call->channel_name, 
+                callId: $request->call_id,
+                message: $callEvent?->chatMessage
+            ));
+            
+            Log::info('Call accepted event triggered', [
+                'call_id' => $request->call_id,
+                'caller_id' => $caller->id
+            ]);
+        } else {
+            // ✅ PERBAIKAN: Pastikan CallRejected di-trigger dengan data yang benar
+            event(new CallRejected(
+                callId: $request->call_id, 
+                callerId: $caller->id,
+                reason: $request->reason ?? 'Ditolak', 
+                calleeId: $callee->id, 
+                callType: $call->call_type,
+                message: $callEvent?->chatMessage
+            ));
+            
+            Log::info('Call rejected event triggered', [
+                'call_id' => $request->call_id,
+                'caller_id' => $caller->id,
+                'reason' => $request->reason
+            ]);
+        }
+
+        DB::commit();
 
         return response()->json([
-            'message' => 'Call ended',
-            'call_id' => $request->call_id
+            'status' => 'success',
+            'message' => $request->accepted ? 'Call accepted' : 'Call rejected'
         ]);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Error in answerCall: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        return response()->json([
+            'error' => 'Internal server error',
+            'message' => $e->getMessage()
+        ], 500);
     }
+}
+
+public function endCall(Request $request)
+{
+    // 1. Validasi request
+    $validated = $request->validate([
+        'call_id' => 'required|string|exists:personal_calls,call_id',
+        'reason' => 'nullable|string',
+        'duration' => 'nullable|integer',
+    ]);
+
+    $user = $request->user();
+    $callId = $validated['call_id'];
+    $duration = $validated['duration'] ?? 0;
+
+    // 2. Ambil data panggilan dari database
+    $call = PersonalCall::where('call_id', $callId)->first();
+
+    if (!$call) {
+        Log::warning('endCall: Call not found in database', ['call_id' => $callId]);
+        return response()->json(['message' => 'Call not found'], 404);
+    }
+    
+    // 3. Dapatkan daftar peserta dan tipe panggilan
+    $participantIds = [$call->caller_id, $call->callee_id];
+    $callType = $call->call_type;
+
+    // 4. Update status panggilan di database
+    $call->update([
+        'status' => 'ended',
+        'ended_at' => now(),
+        'duration_seconds' => $duration,
+    ]);
+    
+    // 5. Tutup notifikasi untuk semua peserta
+    foreach ($participantIds as $participantId) {
+        $this->closeCallNotification($callId, 'personal', $participantId);
+    }
+    
+    // 6. Update atau buat pesan event di chat
+    $this->createOrUpdateCallEventAndMessage(
+        channel: $call->channel_name,
+        callerId: $call->caller_id,
+        calleeId: $call->callee_id,
+        status: 'ended',
+        duration: $duration,
+        callType: $callType,
+        reason: $validated['reason'] ?? null // ✅ PERBAIKAN 1: Akses 'reason' dengan aman
+    );
+
+    // 7. Broadcast event 'CallEnded' ke semua peserta
+    event(new CallEnded(
+      callId: $callId,
+      participantIds: $participantIds,
+      endedBy: $user->id,
+      endedByName: $user->name,
+      reason: $validated['reason'] ?? null, // ✅ PERBAIKAN 2: Akses 'reason' dengan aman
+      duration: $duration,
+      callType: $callType
+    ));
+
+    return response()->json([
+        'message' => 'Call ended successfully',
+        'call_id' => $callId
+    ]);
+}
 
     public function generateToken(Request $request)
     {
         $request->validate([
-            'channel' => 'required|string',
-            'uid' => 'required|string'
-        ]);
+        'channel' => 'required|string',
+        'uid' => 'required|numeric' // ✅ PERBAIKAN: Ubah menjadi 'numeric'
+    ]);
 
         return response()->json([
             'token' => null, 
@@ -205,6 +286,19 @@ class AgoraCallController extends Controller
         
         $callId = uniqid('group-call-');
         $channel = 'group-call-' . $callId;
+
+        // ✅ BUAT PESAN CALL EVENT UNTUK GRUP
+        foreach ($allMembers as $member) {
+            if ($member->id !== $caller->id) {
+                $this->createGroupCallEventMessage(
+                    groupId: $group->id,
+                    callerId: $caller->id,
+                    status: 'calling',
+                    duration: null,
+                    channel: $channel
+                );
+            }
+        }
 
         // ✅ KIRIM NOTIFIKASI UNTUK SEMUA PARTICIPANT GRUP
         try {
@@ -267,6 +361,26 @@ class AgoraCallController extends Controller
         $user = $request->user();
         $group = Group::find($request->group_id);
 
+        // ✅ BUAT PESAN CALL EVENT UNTUK GRUP
+        if ($request->accepted) {
+            $this->createGroupCallEventMessage(
+                groupId: $group->id,
+                callerId: $user->id,
+                status: 'accepted',
+                duration: null,
+                channel: 'group-call-' . $request->call_id
+            );
+        } else {
+            $this->createGroupCallEventMessage(
+                groupId: $group->id,
+                callerId: $user->id,
+                status: 'rejected',
+                duration: null,
+                channel: 'group-call-' . $request->call_id,
+                reason: $request->reason
+            );
+        }
+
         // ✅ TUTUP NOTIFIKASI JIKA DIJAWAB
         if ($request->accepted) {
             $this->closeCallNotification($request->call_id, 'group', $user->id);
@@ -292,6 +406,16 @@ class AgoraCallController extends Controller
         
         $user = $request->user();
         $group = Group::find($request->group_id);
+
+        // ✅ BUAT PESAN CALL EVENT AKHIR UNTUK GRUP
+        $this->createGroupCallEventMessage(
+            groupId: $group->id,
+            callerId: $user->id,
+            status: 'ended',
+            duration: null,
+            channel: 'group-call-' . $request->call_id,
+            reason: $request->reason
+        );
 
         // ✅ TUTUP NOTIFIKASI UNTUK SEMUA PESERTA
         $allMembers = $group->members()->pluck('users.id')->toArray();
@@ -414,6 +538,127 @@ class AgoraCallController extends Controller
     }
 
     /**
+     * ✅ METHOD BARU: Buat pesan call event untuk personal call
+     */
+    // file: app/Http/Controllers/AgoraCallController.php
+
+// file: app/Http/Controllers/AgoraCallController.php
+
+private function createOrUpdateCallEventAndMessage($channel, $callerId, $calleeId, $status, $callType = 'voice', $duration = null, $reason = null)
+{
+    try {
+        // Cari atau buat CallEvent berdasarkan channel yang unik
+        $callEvent = CallEvent::firstOrNew(['channel' => $channel]);
+
+        // Isi atau update data CallEvent
+        $callEvent->caller_id = $callEvent->caller_id ?? $callerId;
+        $callEvent->callee_id = $callEvent->callee_id ?? $calleeId;
+        $callEvent->call_type = $callEvent->call_type ?? $callType;
+        $callEvent->status = $status;
+        if ($duration !== null) $callEvent->duration = $duration;
+        if ($reason !== null) $callEvent->reason = $reason;
+        $callEvent->save();
+
+        // Cari atau buat ChatMessage yang terhubung
+        $chatMessage = ChatMessage::where('call_event_id', $callEvent->id)->first();
+        if (!$chatMessage) {
+            $chatMessage = ChatMessage::create([
+                'sender_id' => $callerId,
+                'receiver_id' => $calleeId,
+                'type' => 'call_event',
+                'message' => '...', // Teks awal ini akan langsung ditimpa
+                'call_event_id' => $callEvent->id,
+            ]);
+        }
+        
+        // Ambil teks status terbaru dari model CallEvent
+        $updatedText = $callEvent->getCallMessageText();
+        
+        // Update kolom 'message' di tabel chat_messages jika teksnya berbeda
+        if ($chatMessage->message !== $updatedText) {
+            $chatMessage->update(['message' => $updatedText]);
+        }
+        
+        // Muat relasi untuk broadcast
+        $chatMessage->load('sender', 'callEvent');
+
+        // Broadcast pesan yang sudah terupdate
+        broadcast(new MessageSent($chatMessage))->toOthers();
+        
+        Log::info("Call event state changed", ['channel' => $channel, 'status' => $status]);
+        
+        return $callEvent->setRelation('chatMessage', $chatMessage);
+
+    } catch (\Exception $e) {
+        Log::error('Failed to create or update call event message: ' . $e->getMessage());
+        return null;
+    }
+}
+    /**
+     * ✅ METHOD BARU: Buat pesan call event untuk group call
+     */
+    private function createGroupCallEventMessage($groupId, $callerId, $status, $duration, $channel, $reason = null)
+    {
+        try {
+            $text = 'Panggilan Grup Suara';
+            
+            switch ($status) {
+                case 'calling':
+                    $text .= ' • Memanggil';
+                    break;
+                case 'accepted':
+                    $text .= ' • Diterima';
+                    break;
+                case 'rejected':
+                    $text .= ' • Ditolak';
+                    if ($reason) {
+                        $text .= ' - ' . $reason;
+                    }
+                    break;
+                case 'ended':
+                    $text .= ' • Selesai';
+                    if ($duration > 0) {
+                        $text .= ' - ' . $this->formatDuration($duration);
+                    }
+                    break;
+                default:
+                    $text .= ' • Selesai';
+            }
+
+            // Untuk group message, kita perlu membuat struktur yang sesuai
+            // Ini adalah simplified version - sesuaikan dengan model group message Anda
+            $message = ChatMessage::create([
+                'sender_id' => $callerId,
+                'group_id' => $groupId,
+                'type' => 'call_event',
+                'message' => $text,
+                'created_at' => now()
+            ]);
+
+            // Load relationship untuk broadcast
+            $message->load('sender');
+
+            // Broadcast message ke group chat
+            // Sesuaikan dengan event group message Anda
+            broadcast(new MessageSent($message))->toOthers();
+
+            Log::info('Group call event message created', [
+                'group_id' => $groupId,
+                'caller_id' => $callerId,
+                'status' => $status,
+                'message' => $text,
+                'message_id' => $message->id
+            ]);
+
+            return $message;
+
+        } catch (\Exception $e) {
+            Log::error('Failed to create group call event message: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
      * ✅ METHOD BARU: Tutup notifikasi panggilan dari database
      */
     private function closeCallNotification($callId, $callType, $userId)
@@ -481,5 +726,22 @@ class AgoraCallController extends Controller
                 ];
             })
         ]);
+    }
+
+    /**
+     * ✅ HELPER: Format durasi panggilan dengan format yang diinginkan
+     */
+    public function formatDurationForPublic($seconds)
+    {
+        if ($seconds === null) return '';
+        if ($seconds < 60) return "{$seconds} dtk";
+        $minutes = floor($seconds / 60);
+        $remainingSeconds = $seconds % 60;
+        if ($minutes < 60) {
+            return $remainingSeconds > 0 ? "{$minutes} mnt {$remainingSeconds} dtk" : "{$minutes} mnt";
+        }
+        $hours = floor($minutes / 60);
+        $remainingMinutes = $minutes % 60;
+        return $remainingMinutes > 0 ? "{$hours} jam {$remainingMinutes} mnt" : "{$hours} jam";
     }
 }

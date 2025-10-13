@@ -9,7 +9,6 @@ use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User;
 
 class IncomingCallVoice implements ShouldBroadcast
 {
@@ -19,49 +18,37 @@ class IncomingCallVoice implements ShouldBroadcast
     public $callee;
     public $callType;
     public $channel;
+    public $callId;
 
-    // PERBAIKAN: Gunakan type hint yang lebih flexible
-    public function __construct($caller, $callee, string $callType, string $channel)
+    public function __construct($caller, $callee, $callType, $channel, $callId)
     {
-        \Log::info('IncomingCall constructor', [
-            'caller_id' => $caller->id,
-            'callee_id' => $callee->id,
-            'call_type' => $callType,
-            'channel' => $channel
-        ]);
-
         $this->caller = $caller;
         $this->callee = $callee;
         $this->callType = $callType;
         $this->channel = $channel;
+        $this->callId = $callId;
     }
 
-    public function broadcastOn(): array
+    public function broadcastOn()
     {
-        \Log::info('Broadcasting to channel: user.' . $this->callee->id);
-        
-        return [
-            new PrivateChannel('user.' . $this->callee->id),
-        ];
+        return new PrivateChannel('user.' . $this->callee->id);
     }
 
-    public function broadcastAs(): string
+    public function broadcastAs()
     {
         return 'incoming-call';
     }
 
-    public function broadcastWith(): array
+    public function broadcastWith()
     {
         return [
+            'call_id' => $this->callId,
             'caller' => [
                 'id' => $this->caller->id,
-                'name' => $this->caller->name,
-                'email' => $this->caller->email
+                'name' => $this->caller->name
             ],
-            'callee_id' => $this->callee->id,
             'call_type' => $this->callType,
             'channel' => $this->channel,
-            'call_id' => str_replace('call-', '', $this->channel),
             'timestamp' => now()->toISOString()
         ];
     }

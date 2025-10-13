@@ -36,4 +36,17 @@ class ChatMessage extends Model
     {
         return $this->belongsTo(self::class, 'reply_to_message_id');
     }
+    public function callEvent(): BelongsTo
+    {
+        return $this->belongsTo(CallEvent::class);
+    }
+
+    public function getCallMessageText(): string
+    {
+        if ($this->type !== 'call_event' || !$this->callEvent) {
+          return $this->message;
+        }
+
+      return $this->callEvent->getCallMessageText();
+    }
 }

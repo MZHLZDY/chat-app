@@ -538,15 +538,32 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
   try {
     const endpoint = type === 'group' ? `/groups/${contactId}/messages` : `/chat/${contactId}/messages`;
     const response = await axios.get(endpoint);
-    messages.value = response.data.data.reverse().map((m: any) => ({
-      id: m.id, sender_id: m.sender_id, sender_name: m.sender?.name || 'Unknown', text: m.message, time: formatTime(m.created_at), read_at: m.read_at, created_at: m.created_at, type: m.type, file_path: m.file_path, file_name: m.file_name, file_mime_type: m.file_mime_type, file_size: m.file_size,
-    }));
+    
+    messages.value = response.data.data.reverse().map((m: any) => {
+      const baseMessage = {
+        id: m.id,
+        sender_id: m.sender_id,
+        sender_name: m.sender?.name || 'Unknown',
+        text: m.message,
+        time: formatTime(m.created_at),
+        read_at: m.read_at,
+        created_at: m.created_at,
+        type: m.type,
+        file_path: m.file_path,
+        file_name: m.file_name,
+        file_mime_type: m.file_mime_type,
+        file_size: m.file_size,
+      };
+
+      return baseMessage;
+    });
+    
     messagesPage.value = 1;
     hasMoreMessages.value = !!response.data.next_page_url; 
   } catch (e) { 
     console.error("Gagal memuat pesan:", e); 
   } finally {
-        isLoadingMessages.value = false;
+    isLoadingMessages.value = false;
   }
 };
 
@@ -973,6 +990,41 @@ const createGroup = async () => {
     console.error('Gagal membuat grup:', e);
     alert('Gagal membuat grup!');
   }
+};
+
+const parseCallEventMessage = (message: string) => {
+  try {
+    return JSON.parse(message);
+  } catch (e) {
+    return null;
+  }
+};
+
+const formatDuration = (seconds: number | null) => {
+  if (seconds === null || seconds < 0) return '';
+  if (seconds < 60) return `${seconds} dtk`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes} mnt`;
+};
+
+// Tambahkan method ini di bagian methods/setup Chat.vue
+const formatCallEventMessage = (message: any) => {
+  if (!message.text && !message.message) return 'Panggilan Suara';
+  
+  const text = message.text || message.message;
+  
+  // Jika sudah dalam format yang diinginkan, langsung return
+  if (text.includes('Panggilan Suara')) {
+    return text;
+  }
+  
+  // Format untuk berbagai jenis status panggilan
+  if (text.includes('answered') || text.includes('•')) {
+    return text; // Sudah diformat oleh backend
+  }
+  
+  // Fallback
+  return 'Panggilan Suara';
 };
 
 const setupGlobalListeners = () => {
@@ -1492,6 +1544,7 @@ const currentCallContactName = computed(() => {
                                     </div>
                                   </div>
                                 </div>
+                                
                                 <div :class="m.sender_id == currentUserId ? 'text-right' : 'text-left'">
                                   <div :class="[m.sender_id == currentUserId ? 'inline-block bg-green-500 text-white px-4 py-2 rounded-lg max-w-xs break-words text-left' : 'inline-block bg-gray-300 dark:bg-gray-600 text-black dark:text-white px-4 py-2 rounded-lg max-w-xs break-words text-left']"
                                   @click.self="m.sender_id === currentUserId ? openDeleteModal(m) : null"
@@ -1500,6 +1553,16 @@ const currentCallContactName = computed(() => {
                                     {{ m.sender_name }} 
                                   </div>
 
+                                  <!-- Di template Chat.vue -->
+                                  <div v-if="m.type === 'call_event'" class="text-center my-4">
+                                    <div class="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-full text-sm text-gray-600 dark:text-gray-300">
+                                     <Phone class="w-4 h-4" />
+                                      <span>
+                                       {{ m.text || m.message }}
+                                      </span>
+                                   </div>
+                                  </div>
+                                   
                                   <div v-if="m.type === 'image'" class="flex flex-col space-y-2">
                                     <a :href="`/storage/${m.file_path}`" target="_blank">
                                       <img v-if="m.file_path" :src="`/storage/${m.file_path}`" class="w-full rounded-lg cursor-pointer">
@@ -1534,11 +1597,11 @@ const currentCallContactName = computed(() => {
                                     </p> 
                                   </div>
 
-                                  <p v-else>
-                                    {{ m.text }}
+                                  <p v-else-if="m.type !== 'call_event'">
+                                   {{ m.text }}
                                   </p>
                                     <div class="text-xs opacity-80 mt-1 flex items-center justify-end gap-1">
-                                          <span>{{ m.time }}</span>
+                                        <span>{{ m.time }}</span>
                                           <span v-if="m.sender_id === currentUserId">
                                               <svg v-if="m.read_at" xmlns="http://www.w.org/2000/svg" width="16" height="16" class="text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                   <path d="M4 12.75L9 17.75L20 6.75"></path>
@@ -1635,5 +1698,6 @@ const currentCallContactName = computed(() => {
                 </div>
             </div>
         </div>
+        
     </AppLayout>
 </template>
