@@ -24,7 +24,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'password',
-        'phone_number'
+        'phone_number',
+        'profile_photo_path',
+        'background_image_path',
     ];
 
     /**
@@ -39,7 +41,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
     /**
      * Get the attributes that should be cast.
-     *
+     * 
      * @return array<string, string>
      */
     protected function casts(): array
@@ -88,5 +90,21 @@ class User extends Authenticatable implements MustVerifyEmail
         $partnerIds = $sentTo->merge($receivedFrom)->unique();
         
         return User::whereIn('id', $partnerIds)->get();
+    }
+
+    public function getProfilePhotoUrlAttribute()
+    {
+        if ($this->profile_photo_path) {
+            return asset('storage/' . $this->profile_photo_path);
+        }
+        return 'https://ui-avatars.com/api/?name=' . urlencode($this->name) . '&color=7F9CF5&background=EBF4FF';
+    }
+
+    public function getBackgroundImageUrlAttribute()
+    {
+        if ($this->background_image_path) {
+            return asset('storage/' . $this->background_image_path);
+        }
+        return 'https://via.placeholder.com/1000x400.png/EBF4FF?text=';
     }
 }

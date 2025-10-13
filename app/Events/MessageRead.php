@@ -25,18 +25,13 @@ class MessageRead implements ShouldBroadcastNow
     /**
      * Get the channels the event should broadcast on.
      *
-     * 2. UBAH RETURN TYPE MENJADI PrivateChannel ATAU BUNGKUS DALAM ARRAY
      * @return \Illuminate\Broadcasting\PrivateChannel
      */
     public function broadcastOn(): PrivateChannel
     {
-        // Langsung return object-nya dan sesuaikan return type hint
         return new PrivateChannel('notifications.' . $this->messageOwnerId);
     }
 
-    /**
-     * 3. TAMBAHKAN RETURN TYPE (Good Practice)
-     */
     public function broadcastAs(): string
     {
         return 'MessageRead';

@@ -7,6 +7,7 @@ use App\Http\Controllers\GroupController;
 use App\Http\Controllers\CallController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\HiddenMessageController;
+use App\Http\Controllers\ProfileController;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -135,6 +136,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/groups/{group}/send', [GroupController::class, 'send']);
     Route::post('/groups/{id}/messages/file', [GroupController::class, 'storeFile']);
     Route::delete('/group-messages/{message}', [GroupController::class, 'destroy']);
+
+    // profile and background
+    Route::post('/profile/photo', [ProfileController::class, 'updatePhoto'])->name('profile.photo.update');
+    Route::post('/profile/background', [ProfileController::class, 'updateBackground'])->name('profile.background.update');
 
     // signaling call
     Route::post('/call/signal', [CallController::class, 'signal']);

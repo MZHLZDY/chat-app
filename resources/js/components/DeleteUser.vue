@@ -44,23 +44,22 @@ const closeModal = () => {
 
 <template>
     <div class="space-y-6">
-        <HeadingSmall title="Delete account" description="Delete your account and all of its resources" />
+        <HeadingSmall title="Hapus akun" description="Hapus akunmu dan semua yang ada didalamnya" />
         <div class="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10">
             <div class="relative space-y-0.5 text-red-600 dark:text-red-100">
-                <p class="font-medium">Warning</p>
-                <p class="text-sm">Please proceed with caution, this cannot be undone.</p>
+                <p class="font-medium">Peringatan!</p>
+                <p class="text-sm">Tolong hati hati dengan ini karena tidak bisa dikembalikan.</p>
             </div>
             <Dialog>
                 <DialogTrigger as-child>
-                    <Button variant="destructive">Delete account</Button>
+                    <Button variant="destructive">Hapus akun</Button>
                 </DialogTrigger>
                 <DialogContent>
                     <form class="space-y-6" @submit="deleteUser">
                         <DialogHeader class="space-y-3">
-                            <DialogTitle>Are you sure you want to delete your account?</DialogTitle>
+                            <DialogTitle>Apa kamu yakin ingin menghapus akunmu?</DialogTitle>
                             <DialogDescription>
-                                Once your account is deleted, all of its resources and data will also be permanently deleted. Please enter your
-                                password to confirm you would like to permanently delete your account.
+                                Sekali akunmu terhapus semua data dan isinya juga akan ikut terhapus secara permanen. Tolong masukan password untuk memastikan kamu ingin menghapus akunmu
                             </DialogDescription>
                         </DialogHeader>
 
@@ -72,10 +71,10 @@ const closeModal = () => {
 
                         <DialogFooter class="gap-2">
                             <DialogClose as-child>
-                                <Button variant="secondary" @click="closeModal"> Cancel </Button>
+                                <Button variant="secondary" @click="closeModal"> Batal </Button>
                             </DialogClose>
 
-                            <Button type="submit" variant="destructive" :disabled="form.processing"> Delete account </Button>
+                            <Button type="submit" variant="destructive" :disabled="form.processing"> Hapus akun </Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>

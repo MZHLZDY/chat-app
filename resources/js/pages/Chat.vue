@@ -11,7 +11,7 @@ import VideoCallModal from './VideoCallModal.vue';
 import IncomingCallModal from './IncomingCallModal.vue';
 import OutgoingCallModal from './OutgoingCallModal.vue';
 import type { CallStatus, Participants } from '@/types/CallStatus.js';
-import type { Contact, Group, User, Chat } from '@/types/index.ts';
+import type { Contact, Group, User, Chat, AppPageProps } from '@/types/index';
 // import type { Participants } from './OutgoingCallModal.vue';
 
 axios.defaults.withCredentials = true;
@@ -23,15 +23,9 @@ interface AuthUser {
     email: string;
 }
 
-interface PageProps {
-    auth: {
-        user: AuthUser;
-    };
-    [key: string]: any;
-}
 
 const drafts = ref<{ [key: string]: string }>({});
-const page = usePage<PageProps>();
+const page = usePage<AppPageProps>();
 const currentUserId = computed<number>(() => page.props.auth.user.id);
 const currentUserName = computed<string>(() => page.props.auth.user.name);
 
@@ -466,11 +460,12 @@ const addMessage = (message: any) => {
   }
 };
 
-const updateLatestMessage = (contactId: number, message: { text: string, sender_id: number }) => {
+const updateLatestMessage = (contactId: number, message: { text: string, sender_id: number, sender: { id: number, name: string } }) => {
     const contactIndex = contacts.value.findIndex(c => c.id === contactId);
     if (contactIndex !== -1) {
         contacts.value[contactIndex].latest_message = {
             message: message.text,
+            sender: message.sender,
             sender_id: message.sender_id
         };
     }
@@ -579,7 +574,7 @@ const loadMoreMessages = async () => {
             id: m.id,
             sender_id: m.sender_id,
             sender_name: m.sender?.name || 'Unknown',
-            text: m.message, // Mengubah 'message' menjadi 'text'
+            text: m.message,
             time: formatTime(m.created_at),
             read_at: m.read_at,
             created_at: m.created_at,
@@ -589,11 +584,9 @@ const loadMoreMessages = async () => {
             file_mime_type: m.file_mime_type, 
             file_size: m.file_size
         }));
-        // Simpan posisi scroll saat ini
         const container = messageContainer.value;
         const oldScrollHeight = container?.scrollHeight || 0;
 
-        // Tambahkan pesan lama di bagian ATAS array
         messages.value = [...olderMessages, ...messages.value];
         hasMoreMessages.value = !!response.data.next_page_url;
         
@@ -741,7 +734,7 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 time: formatTime(messageData.created_at),
                 created_at: messageData.created_at
             });
-          updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
+          updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
           if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
             axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
         }
@@ -893,7 +886,7 @@ const sendMessage = async () => {
     
     addMessage(optimisticMessage);
     if (activeChat.type === 'user') {
-    updateLatestMessage(activeChat.id, { text: messageText, sender_id: currentUserId.value });
+    updateLatestMessage(activeChat.id, { text: messageText, sender_id: currentUserId.value, sender: {id: currentUserId.value , name: currentUserName.value } });
   } else updateLatestGroupMessage(activeChat.id, { message: messageText, sender_id: currentUserId.value, sender: { id: currentUserId.value, name: currentUserName.value }})
     newMessage.value = '';
     delete drafts.value[`${activeChat.type}-${activeChat.id}`];
@@ -967,13 +960,30 @@ const createGroup = async () => {
 
 const setupGlobalListeners = () => {
   echo.channel('users')
-    .listen('.UserRegistered', (newUser: any) => {
-      if (!allUsers.value.some(u => u.id === newUser.id)) {
-        allUsers.value.push({ id: newUser.id, name: newUser.name, });
-      }
-      if (!contacts.value.some(c => c.id === newUser.id)) {
-        contacts.value.push({ id: newUser.id, name: newUser.name, last_seen: null, phone_number: null, latest_message: null});
-      }
+    .listen('.UserRegistered', (event: { user: any }) => {
+        const newUser = event.user;
+
+        if (!allUsers.value.some(u => u.id === newUser.id)) {
+            const fullUserObject = {
+                id: newUser.id,
+                name: newUser.name,
+                email: newUser.email || '', 
+                email_verified_at: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                profile_photo_url: '',
+                background_image_url: '',
+                last_seen: null,
+                phone_number: null,
+                latest_message: null
+            };
+
+            allUsers.value.push(fullUserObject);
+            
+            if (!contacts.value.some(c => c.id === newUser.id)) {
+                contacts.value.push(fullUserObject);
+            }
+        }
     });
 
   echo.channel('users-status')
@@ -990,7 +1000,7 @@ const setupGlobalListeners = () => {
         const messageData = eventData.message;
         const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
 
-        updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id });
+        updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
 
         if (!isChatCurrentlyActive) {
             const unreadChatId = `user-${messageData.sender_id}`;

@@ -20,7 +20,7 @@ return new class extends Migration
             $table->enum('status', ['calling','accepted', 'rejected', 'ended', 'missed']);
             $table->timestamp('started_at')->nullable();
             $table->timestamp('ended_at')->nullable();
-            $table->integer('duration')->nullable(); // Durasi dalam detik
+            $table->integer('duration')->nullable();
             $table->timestamps();
         });
     }
