@@ -3,7 +3,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, watch} from 'vue';
 import { defineProps, defineEmits } from 'vue';
-import { Mic, Camera, PhoneOff } from 'lucide-vue-next';
+import { Mic, Camera, PhoneOff, Minimize2, Maximize2} from 'lucide-vue-next';
 import type { CallStatus, Participants } from '@/types/CallStatus';
 
 const localVideo = ref<HTMLVideoElement | null>(null);
@@ -15,6 +15,9 @@ const remoteStream = ref<MediaStream | null>(null);
 const isVideoEnabled = ref(true);
 const isAudioEnabled = ref(true);
 const isFullscreen = ref(false);
+
+// state untuk minimize
+const isMinimized = ref(false);
 
 let peerConnection: RTCPeerConnection | null = null;
 
@@ -35,7 +38,14 @@ const emit = defineEmits<{
     (e: "accept"): void;
     (e: "reject"): void;
     (e: "end"): void;
+    (e: "minimize"): void;
 }>();
+
+// function untuk minimize / maximize
+const toggleMinimize = () => {
+    isMinimized.value = !isMinimized.value;
+    console.log('⬇️ Video call diminimalkan:', isMinimized.value);
+};
 
 const handleAccept = () => {emit("accept");};
 const handleReject = () => {emit("reject");};
@@ -248,23 +258,35 @@ watch(
     <!-- Overlay Video Call -->
     <div
         v-if="props.show"
-        class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"
-        :class="{ 'p-0': isFullscreen, 'p-2 sm:p-4': !isFullscreen }"
+        class="fixed z-50 transition-all duration-300 ease-in-out"
+        :class="[
+            isMinimized
+                ? 'bottom-4 right-4 w-80 h-56 rounded-xl shadow-2xl border border-gray-600'
+                : 'inset-0 bg-black bg-opacity-90 flex items-center justify-center',
+        ]"
     >
         <div
-            class="bg-gray-900 rounded-xl overflow-hidden w-full h-full flex flex-col"
+            class="bg-gray-900 overflow-hidden w-full h-full flex flex-col transition-all duration-300"
             :class="[
-                containerClass,
-                { 'rounded-none max-w-none max-h-none': isFullscreen }
+                isMinimized
+                    ? 'w-full h-full rounded-xl'
+                    : 'w-full h-full'
             ]"
         >
             <!-- Header - RESPONSIVE -->
-            <div class="bg-gray-800 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between flex-shrink-0">
-                <div class="flex items-center gap-2 sm:gap-3">
-                    <div class="w-8 h-8 sm:w-10 sm:h-10 bg-gray-600 rounded-full flex items-center justify-center text-white text-sm sm:text-lg font-bold">
+            <div 
+                class="bg-gray-800 flex items-center justify-between flex-shrink-0"
+                :class="isMinimized ? 'px-3 py-2' : 'px-4 sm:px-6 py-3 sm:py-4'"
+            >
+                <div class="flex items-center gap-2">
+                    <div class="bg-gray-600 rounded-full flex items-center justify-center text-white font-bold"
+                        :class="isMinimized ? 'w-6 h-6 text-xs' : 'w-8 h-8 sm:w-10 sm:h-10 text-sm sm:text-kg'"    
+                    >
                         {{ props.isGroup ? 'G' : (props.contactName || 'U').charAt(0).toUpperCase() }}
                     </div>
-                    <div>
+
+                    <!-- tampilkan info berbeda saat minimized -->
+                    <div v-if="!isMinimized">
                         <h3 class="text-white font-semibold text-sm sm:text-base">
                             {{ props.isGroup ? props.groupName : `Video Call dengan ${props.contactName}` }}
                         </h3>
@@ -272,18 +294,20 @@ watch(
                             {{ status === 'connected' ? 'Terhubung' : 'Menghubungkan...' }}
                         </p>
                     </div>
+                    <p v-else class="text-white text-xs font-medium truncate">
+                        {{ props.contactName }}
+                    </p>
                 </div>
 
+                <!-- ganti jadi minimize button -->
                 <button 
-                    @click="toggleFullscreen"
-                    class="text-white hover:text-gray-300 p-1 sm:p-2 rounded-lg hover:bg-gray-700 transition-colors"
+                    @click="toggleMinimize"
+                    class="text-white hover:text-gray-300 rounded-lg hover:bg-gray-700 transition-colors"
+                    :class="isMinimized ? 'p-1' : 'p-1 sm:p-2'"
+                    :title="isMinimized ? 'Maximize' :'Minimize'"
                 >
-                    <svg v-if="!isFullscreen" class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
-                    </svg>
-                    <svg v-else class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.5 3.5M15 9v4.5M15 9h4.5M15 9l5.5-5.5M9 15v4.5M9 15H4.5M9 15l-5.5 5.5M15 15h4.5M15 15v4.5m0-4.5l5.5 5.5"></path>
-                    </svg>
+                    <Maximize2 v-if="isMinimized" class="w-4 h-4"/>
+                    <Minimize2 v-else class="w-4 h-4 sm:w-5 sm:h-5"/>
                 </button>
             </div>
 
@@ -315,7 +339,7 @@ watch(
             <div v-else-if="status === 'connected'" class="flex-1 relative bg-black min-h-0">
                 
                 <!-- Remote Video Container - MAINTAIN ASPECT RATIO -->
-                <div class="relative w-full h-full">
+                <div v-if="!isMinimized" class="relative w-full h-full">
                     <!-- Remote Video (Main) -->
                     <video
                         ref="remoteVideo"
@@ -351,6 +375,49 @@ watch(
                         </div>
                     </div>
                 </div>
+
+                <!-- minimized layout (split view) -->
+                 <div v-else class="flex w-full h-full">
+                    <!-- Remote Video (sebelah kiri) -->
+                    <div class="flex-1 relative border-1 border-gray-600">
+                        <Video
+                            ref="localVideo"    
+                            autoplay
+                            muted
+                            playsinLine
+                            class="w-full h-full object-cover transform"
+                        />
+
+                        <!-- remote lable -->
+                        <div class="absolute bottom-1 left-1 bg-black bg-opacity-50 px-1 py-0.5 rounded text-xs text-white">
+                            {{ props.contactName }}
+                        </div>
+                    </div>
+
+                    <!-- local video (sebelah kanan) -->
+                    <div class="flex-1 relative border-1 border-gray-600">
+                        <Video
+                            ref="localVideo"
+                            autoplay
+                            muted
+                            playsinLine
+                            class="w-full h-full object-cover transform scale-x-[-1]"
+                        />
+
+                        <!-- local video overlay jika camera disabled -->
+                        <div v-if="!isCameraOn"
+                                class="absolute inset-0 bg-gray-800 flex items-center justify-center">
+                            <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                                You
+                            </div>
+                        </div>
+
+                        <!-- local label -->
+                        <div class="absolute bottom-1 right-1 bg-black bg-opacity-50 px-1 py-0.5 rounded text-xs text-white">
+                            You
+                        </div>
+                    </div>
+                 </div>
             </div>
 
             <!-- Status Ended -->
@@ -361,9 +428,9 @@ watch(
                 <p class="text-white text-lg">☎️ Panggilan Berakhir</p>
             </div>
 
-            <!-- Controls - RESPONSIVE -->
+            <!-- Controls - Sembunyi ketika dikecilkan -->
             <div
-                v-if="status === 'connected'"
+                v-if="status === 'connected' && !isMinimized"
                 class="border-t border-gray-700 flex-shrink-0 flex justify-center items-center bg-gray-800"
                 :class="controlsClass"
             >
