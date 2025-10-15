@@ -68,6 +68,17 @@ export function usePersonalCall() {
         return client.value;
     };
 
+    const formatTime = (dateString: string | null | undefined): string => {
+        if (!dateString) return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) throw new Error('Invalid date');
+            return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        } catch (error) {
+            return new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        }
+    };
+
     const handleIncomingCallNotification = async (data: any) => {
         const notificationKey = `personal-${data.call_id}-${currentUserId.value}`;
         
@@ -168,6 +179,14 @@ export function usePersonalCall() {
             console.error('❌ Failed to setup audio:', error);
             return false;
         }
+    };
+
+    const addMessage = (message: any) => {
+        // Emit event ke parent component (Chat.vue) untuk menambahkan pesan
+        window.dispatchEvent(new CustomEvent('add-optimistic-message', {
+            detail: message
+        }));
+        console.log('📝 Optimistic message added:', message);
     };
 
     // ✅ PERBAIKAN BESAR: Simple and reliable subscribe function
@@ -621,7 +640,7 @@ const joinChannel = async (channelName: string): Promise<boolean> => {
 
             // ✅ FIX: Jangan reset state sepenuhnya, hanya cleanup Agora resources
             await cleanupAgoraResources();
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // await new Promise(resolve => setTimeout(resolve, 500));
 
             // Buat instance klien baru
             client.value = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
@@ -663,7 +682,7 @@ const joinChannel = async (channelName: string): Promise<boolean> => {
                 if (isInVoiceCall.value) {
                     manuallyTriggerSubscribe();
                 }
-            }, 2000);
+            }, 500);
 
             return true;
 
@@ -682,7 +701,7 @@ const joinChannel = async (channelName: string): Promise<boolean> => {
             
             // Wait sebelum retry
             console.log(`⏳ Retrying in 1 second... (${retryCount}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // await new Promise(resolve => setTimeout(resolve, 1000));
         }
     }
     
@@ -724,12 +743,26 @@ const cleanupAgoraResources = async (): Promise<void> => {
     }
 };
 
-    // ✅ PERBAIKAN: Simple start voice call
     const startVoiceCall = async (contact: Chat | null) => {
         if (!contact || contact.type !== 'user') {
             console.log('No active contact or contact is not a user');
             return;
         }
+
+        // ✅ FIX: Buat optimistic message untuk voice call
+        const tempId = Date.now();
+        const optimisticMessage = {
+            id: tempId,
+            sender_id: currentUserId.value,
+            sender_name: currentUserName.value,
+            text: 'Panggilan Suara • Memanggil',
+            time: formatTime(new Date().toISOString()),
+            created_at: new Date().toISOString(),
+            type: 'call_event'
+        };
+
+        // ✅ FIX: Tambahkan optimistic message ke UI
+        addMessage(optimisticMessage);
 
         try {
             console.log('🚀 Starting voice call to:', contact.name);
@@ -738,6 +771,11 @@ const cleanupAgoraResources = async (): Promise<void> => {
             const audioReady = await setupAudio();
             if (!audioReady) {
                 alert('Tidak bisa mengakses mikrofon. Mohon periksa izin browser Anda.');
+                
+                // ✅ FIX: Hapus optimistic message jika gagal
+                window.dispatchEvent(new CustomEvent('remove-optimistic-message', {
+                    detail: { id: tempId }
+                }));
                 return;
             }
             
@@ -794,6 +832,11 @@ const cleanupAgoraResources = async (): Promise<void> => {
         } catch (error: any) {
             console.error('❌ Failed to start call:', error);
             
+            // ✅ FIX: Hapus optimistic message jika gagal
+            window.dispatchEvent(new CustomEvent('remove-optimistic-message', {
+                detail: { id: tempId }
+            }));
+            
             let errorMessage = 'Gagal memulai panggilan: ';
             if (error.code === 'NETWORK_ERROR') {
                 errorMessage += 'Tidak dapat terhubung ke server.';
@@ -808,7 +851,6 @@ const cleanupAgoraResources = async (): Promise<void> => {
         }
     };
 
-    // ✅ PERBAIKAN: Enhanced answer voice call dengan better state management
 // ✅ PERBAIKAN: Enhanced answer voice call dengan better state management dan error handling
 const answerVoiceCall = async (accepted: boolean, reason?: string) => {
     const callData = incomingCallVoice.value;
@@ -985,35 +1027,41 @@ const joinCallAsCaller = async (): Promise<boolean> => {
 
     // ✅ PERBAIKAN: Simple end call
     const endVoiceCallWithReason = async (reason?: string) => {
-        console.log('📞 Mengakhiri panggilan:', reason);
+    console.log('📞 Mengakhiri panggilan dengan alasan:', reason);
 
-        // Get call data before reset
-        const callData = activeCallData.value;
-        const callId = callData?.callId || outgoingCallVoice.value?.callId || incomingCallVoice.value?.callId;
-        
-        // Reset local state first for responsive UI
+    // Hitung durasi sebelum melakukan hal lain
+    const durationInSeconds = callStartTime.value 
+        ? Math.round((Date.now() - callStartTime.value) / 1000) 
+        : 0;
+
+    // Ambil data panggilan SEBELUM me-reset state
+    const callData = activeCallData.value;
+    const callId = callData?.callId || outgoingCallVoice.value?.callId || incomingCallVoice.value?.callId;
+
+    if (!callId || !callData) {
+        console.warn('⚠️ Tidak ada ID panggilan aktif untuk diakhiri, hanya me-reset state.');
         resetVoiceCallState();
+        return;
+    }
 
-        // Notify server if we have call data
-        if (callId && callData) {
-            try {
-                const participant_ids = [callData.caller.id, callData.callee.id];
+    try {
+        console.log(`🚀 Mengirim request 'end' untuk callId: ${callId} dengan durasi ${durationInSeconds} detik.`);
+        await axios.post('/call/end', {
+            call_id: callId,
+            reason: reason || 'Panggilan diakhiri',
+            duration: durationInSeconds
+        });
+        console.log('✅ Request end berhasil dikirim ke server.');
 
-                await axios.post('/call/end', {
-                    call_id: callId,
-                    participant_ids: participant_ids,
-                    reason: reason || 'Panggilan diakhiri',
-                    call_type: 'voice',
-                    duration: 0
-                });
-
-                console.log('✅ End call request berhasil dikirim ke server');
-
-            } catch (error) {
-                console.error('❌ Gagal mengirim end call request:', error);
-            }
-        }
-    };
+    } catch (error) {
+        console.error('❌ Gagal mengirim request end call:', error);
+        // Tetap reset state meskipun gagal agar UI tidak stuck
+    } finally {
+        // ✅ PASTIKAN RESET STATE DIJALANKAN DI AKHIR
+        console.log('🔄 Me-reset state setelah mencoba mengakhiri panggilan.');
+        resetVoiceCallState();
+    }
+};
 
     // ✅ Event listeners (keep existing implementation)
     const initializePersonalCallListeners = () => {
@@ -1216,7 +1264,7 @@ privateChannel.listen('.call-accepted', async (data: any) => {
         setTimeout(() => {
             // Beri feedback ke penelepon
             alert(`${rejectedByName} menolak panggilan: ${rejectReason}`);
-        }, 100);
+        }, 10);
         
     } else {
         console.warn('⚠️ Call rejected event tidak sesuai dengan panggilan aktif:', {
@@ -1292,6 +1340,26 @@ privateChannel.listen('.call-accepted', async (data: any) => {
     };
 
     const handleCallTimeout = () => {
+        const callToTimeout = outgoingCallVoice.value;
+
+    if (callToTimeout?.status === 'calling') {
+        console.log('⏰ Panggilan tak terjawab (timeout dari sisi penelepon). Mengirim notifikasi ke server...');
+
+        // Simpan callId sebelum reset
+        const callId = callToTimeout.callId;
+
+        // Reset state di frontend terlebih dahulu agar UI responsif
+        resetVoiceCallState();
+
+        // Kirim notifikasi ke backend
+        axios.post('/call/missed', {
+            call_id: callId
+        }).then(() => {
+            console.log(`✅ Notifikasi 'missed' untuk callId: ${callId} berhasil dikirim.`);
+        }).catch(error => {
+            console.error('❌ Gagal mengirim notifikasi missed call:', error);
+        });
+    }
         if (outgoingCallVoice.value?.status === 'calling') {
             console.log('⏰ Call timeout - no response from callee');
             

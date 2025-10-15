@@ -235,10 +235,10 @@ public function endCall(Request $request)
         channel: $call->channel_name,
         callerId: $call->caller_id,
         calleeId: $call->callee_id,
-        status: 'ended',
-        duration: $duration,
+        status: 'ended', // <-- Status baru
+        duration: $duration, // <-- Teruskan durasi
         callType: $callType,
-        reason: $validated['reason'] ?? null // ✅ PERBAIKAN 1: Akses 'reason' dengan aman
+        reason: $validated['reason'] ?? 'Panggilan diakhiri'
     );
 
     // 7. Broadcast event 'CallEnded' ke semua peserta
@@ -547,6 +547,8 @@ public function endCall(Request $request)
 private function createOrUpdateCallEventAndMessage($channel, $callerId, $calleeId, $status, $callType = 'voice', $duration = null, $reason = null)
 {
     try {
+        DB::beginTransaction(); // <-- Tambahkan transaksi untuk keamanan data
+
         // Cari atau buat CallEvent berdasarkan channel yang unik
         $callEvent = CallEvent::firstOrNew(['channel' => $channel]);
 
@@ -559,37 +561,45 @@ private function createOrUpdateCallEventAndMessage($channel, $callerId, $calleeI
         if ($reason !== null) $callEvent->reason = $reason;
         $callEvent->save();
 
-        // Cari atau buat ChatMessage yang terhubung
-        $chatMessage = ChatMessage::where('call_event_id', $callEvent->id)->first();
-        if (!$chatMessage) {
-            $chatMessage = ChatMessage::create([
+        // --- PERUBAHAN UTAMA DI SINI ---
+        // Gunakan relasi untuk mencari atau membuat ChatMessage.
+        // Ini menjamin hanya ada SATU chat message per call event.
+        $chatMessage = $callEvent->chatMessage()->firstOrCreate(
+            [], // Tidak perlu kondisi pencarian tambahan
+            [   // Data ini hanya akan digunakan jika message BARU dibuat
                 'sender_id' => $callerId,
                 'receiver_id' => $calleeId,
                 'type' => 'call_event',
-                'message' => '...', // Teks awal ini akan langsung ditimpa
-                'call_event_id' => $callEvent->id,
-            ]);
-        }
+                'message' => '...'
+            ]
+        );
         
         // Ambil teks status terbaru dari model CallEvent
         $updatedText = $callEvent->getCallMessageText();
         
-        // Update kolom 'message' di tabel chat_messages jika teksnya berbeda
-        if ($chatMessage->message !== $updatedText) {
-            $chatMessage->update(['message' => $updatedText]);
-        }
+        // Update kolom 'message' di tabel chat_messages
+        $chatMessage->update(['message' => $updatedText]);
         
         // Muat relasi untuk broadcast
         $chatMessage->load('sender', 'callEvent');
 
-        // Broadcast pesan yang sudah terupdate
-        broadcast(new MessageSent($chatMessage))->toOthers();
+        // Broadcast HANYA SEKALI ke semua channel (termasuk pengirim)
+        broadcast(new MessageSent($chatMessage));
+
+        Log::info("Call event state changed", [
+            'channel' => $channel, 
+            'status' => $status,
+            'message_id' => $chatMessage->id,
+            'caller_id' => $callerId,
+            'callee_id' => $calleeId
+        ]);
         
-        Log::info("Call event state changed", ['channel' => $channel, 'status' => $status]);
-        
+        DB::commit(); // <-- Selesaikan transaksi
+
         return $callEvent->setRelation('chatMessage', $chatMessage);
 
     } catch (\Exception $e) {
+        DB::rollBack(); // <-- Batalkan jika ada error
         Log::error('Failed to create or update call event message: ' . $e->getMessage());
         return null;
     }
@@ -640,7 +650,7 @@ private function createOrUpdateCallEventAndMessage($channel, $callerId, $calleeI
 
             // Broadcast message ke group chat
             // Sesuaikan dengan event group message Anda
-            broadcast(new MessageSent($message))->toOthers();
+            broadcast(new MessageSent($message));
 
             Log::info('Group call event message created', [
                 'group_id' => $groupId,

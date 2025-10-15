@@ -1,10 +1,10 @@
 <?php
-// file: app/Models/CallEvent.php
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CallEvent extends Model
 {
@@ -19,6 +19,11 @@ class CallEvent extends Model
         'call_type',
         'reason',
     ];
+
+    public function chatMessage(): HasOne
+    {
+        return $this->hasOne(ChatMessage::class);
+    }
 
     // Method untuk menerjemahkan status menjadi teks yang ramah pengguna
     public function getCallMessageText(): string

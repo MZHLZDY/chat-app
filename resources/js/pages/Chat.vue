@@ -100,6 +100,19 @@ const startVideoCall = async (contact: Chat) => {
   activeContact.value = contact;
   callStatus.value = 'calling';
 
+  const tempId = Date.now();
+  const optimisticMessage = {
+    id: tempId,
+    sender_id: currentUserId.value,
+    sender_name: currentUserName.value,
+    text: 'Panggilan Video • Memanggil',
+    time: formatTime(new Date().toISOString()),
+    created_at: new Date().toISOString(),
+    type: 'call_event'
+  };
+  
+  addMessage(optimisticMessage);
+
   // BE untuk trigger incoming call
   try {
     console.log('📞 Memulai panggilan ke:', contact.id);
@@ -549,6 +562,7 @@ const loadMessages = async (contactId: number, type: 'user' | 'group') => {
         read_at: m.read_at,
         created_at: m.created_at,
         type: m.type,
+        call_event: m.call_event,
         file_path: m.file_path,
         file_name: m.file_name,
         file_mime_type: m.file_mime_type,
@@ -688,17 +702,36 @@ const setupEchoListener = (chat: Chat) => {
 
     window.Echo.private(channelName)
         .listen('.MessageSent', (event: any) => {
-            if (event.message.sender_id === currentUserId.value) {
-                return;
-            }
             console.log('Pesan baru diterima dari Echo:', event.message);
-            messages.value.push(event.message);
+            
+            // ✅ PERBAIKAN: Handle semua pesan, termasuk dari pengirim sendiri
+            const formattedMessage = {
+                ...event.message,
+                time: formatTime(event.message.created_at),
+                sender_name: event.message.sender?.name || 'Unknown'
+            };
+            
+            // Cek apakah pesan sudah ada untuk menghindari duplikasi
+            const messageIndex = messages.value.findIndex(m => m.id === formattedMessage.id);
+
+            if (messageIndex !== -1) {
+              // Pesan sudah ada, UPDATE isinya.
+              // Ini adalah kunci untuk memperbarui status panggilan di bubble yang sama.
+              console.log(`🔄 Memperbarui pesan yang ada dengan ID: ${formattedMessage.id}`);
+              const targetMessage = messages.value[messageIndex];
+              targetMessage.text = formattedMessage.message || formattedMessage.text;
+              targetMessage.call_event = formattedMessage.call_event; // Update juga data call event-nya
+            } else {
+              // Pesan benar-benar baru, TAMBAHKAN ke array.
+              // Ini untuk pesan teks biasa atau pesan panggilan pertama ("Memanggil").
+              console.log(`➕ Menambahkan pesan baru dengan ID: ${formattedMessage.id}`);
+              messages.value.push(formattedMessage);
+            }
         })
         .listen('.message.deleted', (event: { messageId: number }) => {
-          console.log('Event message.deleted diterima!', event);
+            console.log('Event message.deleted diterima!', event);
             
             const messageIndex = messages.value.findIndex(m => m.id === event.messageId);
-
             if (messageIndex !== -1) {
                 messages.value[messageIndex].text = 'Pesan ini telah dihapus';
         }
@@ -746,8 +779,9 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
         const messageData = eventData.message ? eventData.message : eventData;
 
         if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
-            return;
+           return;
         }
+        
         if (messageData.group_id) {
           updateLatestGroupMessage(messageData.group_id, messageData);
         }
@@ -766,7 +800,9 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
                 sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
                 text: messageData.message,
                 time: formatTime(messageData.created_at),
-                created_at: messageData.created_at
+                created_at: messageData.created_at,
+                type: messageData.type,
+                call_event: messageData.call_event
             });
           updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
           if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
@@ -1066,22 +1102,43 @@ const setupGlobalListeners = () => {
     });
 
     echo.private(`notifications.${currentUserId.value}`)
-    .listen('.MessageSent', (eventData: any) => {
-        const messageData = eventData.message;
-        const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
+        .listen('.MessageSent', (eventData: any) => {
+            const messageData = eventData.message;
+            const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
 
-        updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
+            // Format pesan call event
+            const formattedMessage = {
+                ...messageData,
+                time: formatTime(messageData.created_at),
+                sender_name: messageData.sender?.name || 'Unknown'
+            };
 
-        if (!isChatCurrentlyActive) {
-            const unreadChatId = `user-${messageData.sender_id}`;
-            const currentCount = unreadCounts.value[unreadChatId] || 0;
-            unreadCounts.value[unreadChatId] = currentCount + 1;
+            // ✅ PERBAIKAN: Update latest message untuk semua kasus
+            if (messageData.group_id) {
+                updateLatestGroupMessage(messageData.group_id, messageData);
+            } else {
+                updateLatestMessage(messageData.sender_id, { 
+                    text: messageData.message, 
+                    sender_id: messageData.sender_id, 
+                    sender: messageData.sender 
+                });
+            }
 
-            showNotification(messageData);
-        } else {
-            axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
-        }
-    })
+            if (!isChatCurrentlyActive) {
+                // Tambahkan ke unread counts dan show notification
+                const unreadChatId = messageData.group_id ? `group-${messageData.group_id}` : `user-${messageData.sender_id}`;
+                const currentCount = unreadCounts.value[unreadChatId] || 0;
+                unreadCounts.value[unreadChatId] = currentCount + 1;
+
+                showNotification(formattedMessage);
+            } else {
+                // Jika chat aktif, tambahkan pesan langsung
+                addMessage(formattedMessage);
+                if (!messageData.group_id) {
+                    axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
+                }
+            }
+        })
     .listen('.GroupMessageSent', (eventData: any) => {
         const messageData = eventData.message ? eventData.message : eventData;
         const isGroupChatCurrentlyActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;
@@ -1173,6 +1230,27 @@ onMounted(() => {
   loadUnreadCounts();
   setupGlobalListeners();
 
+  // Listener untuk menambahkan pesan panggilan suara dari usePersonalCall.ts
+  const handleAddOptimisticMessage = (event: Event) => {
+    // Pastikan event adalah CustomEvent sebelum mengakses detail
+    if (event instanceof CustomEvent) {
+      console.log('📢 Menerima event untuk menambah pesan panggilan suara:', event.detail);
+      addMessage(event.detail);
+    }
+  };
+
+  // Listener untuk menghapus pesan jika panggilan suara gagal dimulai
+  const handleRemoveOptimisticMessage = (event: Event) => {
+    if (event instanceof CustomEvent) {
+      console.log('🗑️ Menerima event untuk menghapus pesan panggilan suara:', event.detail);
+      // Hapus pesan dari array berdasarkan ID sementara (tempId)
+      messages.value = messages.value.filter(m => m.id !== event.detail.id);
+    }
+  };
+
+  window.addEventListener('add-optimistic-message', handleAddOptimisticMessage);
+  window.addEventListener('remove-optimistic-message', handleRemoveOptimisticMessage);
+
   // Polling gawe update 'last_seen'
   const pollingInterval = setInterval(() => {
     loadContacts();
@@ -1180,6 +1258,9 @@ onMounted(() => {
 
   onUnmounted(() => {
     clearInterval(pollingInterval);
+
+    window.removeEventListener('add-optimistic-message', handleAddOptimisticMessage);
+    window.removeEventListener('remove-optimistic-message', handleRemoveOptimisticMessage);
   });
 });
 
@@ -1553,14 +1634,16 @@ const currentCallContactName = computed(() => {
                                     {{ m.sender_name }} 
                                   </div>
 
-                                  <!-- Di template Chat.vue -->
+                                  <!-- Pesan Penanda telepon video / suara -->
                                   <div v-if="m.type === 'call_event'" class="text-center my-4">
                                     <div class="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-full text-sm text-gray-600 dark:text-gray-300">
-                                     <Phone class="w-4 h-4" />
+                                      <Video v-if="m.call_event?.call_type === 'video'" class="w-4 h-4" />
+                                      <Phone v-else class="w-4 h-4" />
+
                                       <span>
                                        {{ m.text || m.message }}
                                       </span>
-                                   </div>
+                                    </div>
                                   </div>
                                    
                                   <div v-if="m.type === 'image'" class="flex flex-col space-y-2">
