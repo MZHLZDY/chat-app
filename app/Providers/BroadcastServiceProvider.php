@@ -1,5 +1,4 @@
 <?php
-// File: app/Providers/BroadcastServiceProvider.php
 
 namespace App\Providers;
 

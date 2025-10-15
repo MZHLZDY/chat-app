@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Events\UserProfileUpdated;
 
 class ProfileController extends Controller
 {
@@ -18,6 +19,7 @@ class ProfileController extends Controller
 
         $path = $request->file('photo')->store('profile-photos', 'public');
         $user->update(['profile_photo_path' => $path]);
+        broadcast(new UserProfileUpdated($user->fresh()));
         return back();
     }
 
@@ -32,6 +34,7 @@ class ProfileController extends Controller
 
         $path = $request->file('background')->store('background-images', 'public');
         $user->update(['background_image_path' => $path]);
+        broadcast(new UserProfileUpdated($user->fresh()));
         return back();
     }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, usePage, router } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
@@ -23,18 +23,16 @@ interface AuthUser {
     email: string;
 }
 
-
 const drafts = ref<{ [key: string]: string }>({});
 const page = usePage<AppPageProps>();
+const user = computed<User>(() => page.props.auth.user);
 const currentUserId = computed<number>(() => page.props.auth.user.id);
 const currentUserName = computed<string>(() => page.props.auth.user.name);
 
 // --- State Management ---
-// const contacts = ref<{ id: number, name: string, last_seen: string | null, phone_number: string | null}[]>([]);
 const contacts = ref<Contact[]>([]);
 const groups = ref<Group[]>([]);
 const allUsers = ref<User[]>([]);
-// const activeContact = ref<{ id: number, name: string, type: 'user' | 'group' } | null>(null);
 const activeContact = ref<Chat | null>(null);
 const activeContactDetails = computed(() => {
   if (!activeContact.value) {
@@ -66,6 +64,8 @@ const activeChat = ref<Chat | null>(null);
 const showDeleteModal = ref(false);
 const messageToDelete = ref<any | null>(null);
 const deleteType = ref<'me' | 'everyone'>('everyone');
+const userBackgroundPath = computed<string | null>(() => page.props.auth.user.background_image_path);
+const userBackgroundUrl = computed<string>(() => page.props.auth.user.background_image_url);
 
 
 // --- Personal Video Call State ---
@@ -110,7 +110,7 @@ const startVideoCall = async (contact: Chat) => {
         callStatus.value = 'missed';
         endCall();
       }
-    }, 30000);
+    }, 30000); 
 
   } catch (error) {
     console.error('❌ Gagal memulai panggilan:', error);
@@ -118,7 +118,6 @@ const startVideoCall = async (contact: Chat) => {
     endCall();
     return;
   }
-  // TODO: Init Agora/Video Call Service
 };
 
 // const endOutgoingCall = () => {
@@ -505,7 +504,6 @@ const formatDateSeparator = (dateString: string): string => {
     if (isYesterday(date)) {
         return 'Kemarin';
     }
-    // Format untuk tanggal lainnya, contoh: "Selasa, 11 Sep 2025"
     return format(date, 'EEEE, d MMM yyyy', { locale: id });
 };
 
@@ -680,7 +678,19 @@ const setupEchoListener = (chat: Chat) => {
             if (messageIndex !== -1) {
                 messages.value[messageIndex].text = 'Pesan ini telah dihapus';
         }
-      });
+      })
+      .listen('UserProfileUpdated', (event: any) => {
+            const updatedUser = event.user;
+
+            console.log(`Menerima update profil untuk user ID: ${updatedUser.id}`, updatedUser);
+            const userToUpdate = contacts.value.find(u => u.id === updatedUser.id);
+
+            if (userToUpdate) {
+                console.log(`Memperbarui data untuk: ${userToUpdate.name}`);
+                userToUpdate.name = updatedUser.name;
+                userToUpdate.profile_photo_url = updatedUser.profile_photo_url;
+            }
+        });
 };
 
 watch(activeContact, (newContact, oldContact) => {
@@ -973,6 +983,7 @@ const setupGlobalListeners = () => {
                 updated_at: new Date().toISOString(),
                 profile_photo_url: '',
                 background_image_url: '',
+                background_image_path: null,
                 last_seen: null,
                 phone_number: null,
                 latest_message: null
@@ -1243,9 +1254,14 @@ const currentCallContactName = computed(() => {
                    <li v-for="chat in filteredChats" :key="`${chat.type}-${chat.id}`"
                        @click="selectContact(chat)"
                        :class="['p-4 border-b dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-3',activeContact?.id === chat.id && activeContact?.type === chat.type ? 'bg-gray-dark:bg-gray-600' : '']">
-                       <div :class="chat.type === 'group' ? 'w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold' : 'w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center text-white font-bold'">
-                           {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
-                       </div>
+                        <img v-if="chat.type === 'user' && (chat as any).profile_photo_url"
+                            :src="(chat as any).profile_photo_url"
+                            :alt="chat.name"
+                            class="w-10 h-10 rounded-full object-cover"
+                        />
+                        <div v-else :class="['w-10 h-10 rounded-full flex items-center justify-center text-white font-bold', chat.type === 'group' ? 'bg-green-500' : 'bg-sky-500']">
+                            {{ chat.type === 'group' ? 'G' : chat.name.charAt(0).toUpperCase() }}
+                        </div>
                        <div class="flex-1 min-w-0 overflow-hidden">
                            <div class="font-semibold">{{ chat.name }}</div>
                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate break">
@@ -1408,7 +1424,14 @@ const currentCallContactName = computed(() => {
                       </div>
                     </div>
                     <!-- room chat -->
-                    <div ref="messageContainer" @scroll="handleScroll" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800 relative">
+                    <div ref="messageContainer" @scroll="handleScroll" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-800 relative" :class="{'bg-gray-50 dark:bg-gray-800' : !userBackgroundPath}"
+                    :style="userBackgroundPath?{
+                      backgroundImage: `url(${userBackgroundUrl})`,
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundAttachment: 'fixed'
+                    } : {}">
                         <div v-if="isLoadingMessages" class="absolute inset-0 flex justify-center items-center bg-gray-50 dark:bg-gray-800">
                             <span class="text-gray-500">Memuat pesan...</span>
                         </div>

@@ -35,6 +35,7 @@ export interface User {
     updated_at: string;
     profile_photo_url: string;
     background_image_url: string;
+    background_image_path: string | null;
     latest_message: LatestMessage | null;
 }
 

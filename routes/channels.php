@@ -4,44 +4,25 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Models\Group;
 
 Broadcast::channel('chat.{a}.{b}', function ($user, $a, $b) {
-    // Pastikan user terautentikasi
-    if (!$user) {
-        return false;
-    }
-    
     if ((int)$user->id === (int)$a || (int)$user->id === (int)$b) {
-        return ['id' => $user->id, 'name' => $user->name];
+        return ['id' => $user->id, 'name' => $user->name, 'profile_photo_url' => $user->profile_photo_url];
     }
     return false;
 });
 
-// channel notif unread
+// Channel untuk notifikasi user
 Broadcast::channel('notifications.{userId}', function ($user, $userId) {
     return (int) $user->id === (int) $userId;
 });
 
-// Channel untuk group
+// Channel untuk group chat
 Broadcast::channel('group.{groupId}', function ($user, $groupId) {
-    if (!$user) {
-        return false;
-    }
-    
-    // Pastikan user adalah member group
     return $user->groups()->where('groups.id', $groupId)->exists();
 });
 
-// Channel untuk call - PERBAIKAN IMPORTAN!
+// Channel untuk event privat user (seperti update profil & panggilan)
 Broadcast::channel('user.{userId}', function ($user, $userId) {
-    if (!$user) {
-        return false;
-    }
-    
-    // Kembalikan data user jika ID match
-    return (int)$user->id === (int)$userId ? [
-        'id' => $user->id,
-        'name' => $user->name,
-        'email' => $user->email
-    ] : false;
+    return (int)$user->id === (int)$userId;
 });
 
 // Channel untuk private calls (alternatif)

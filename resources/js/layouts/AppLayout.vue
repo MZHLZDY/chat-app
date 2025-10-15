@@ -5,7 +5,7 @@ import { echo } from '@/echo';
 import IncomingCallModal from '@/pages/IncomingCallModal.vue';
 import type { User } from '@/types';
 import AppLayout from '@/layouts/app/AppSidebarLayout.vue';
-import type { BreadcrumbItem } from '@/types';
+import type { BreadcrumbItem, AppPageProps } from '@/types';
 
 interface Props {
     breadcrumbs?: BreadcrumbItem[];
@@ -15,15 +15,7 @@ withDefaults(defineProps<Props>(), {
     breadcrumbs: () => [],
 });
 
-// Tipe props inertia
-interface PageProps {
-    auth: {
-        user: User;
-    };
-    [key: string]: any;
-}
-
-const page = usePage<PageProps>();
+const page = usePage<AppPageProps>();
 const currentUserId = computed(() => page.props.auth?.user?.id ?? null);
 
 // State Panggilan

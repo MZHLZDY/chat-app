@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import DeleteUser from '@/components/DeleteUser.vue';
 import HeadingSmall from '@/components/HeadingSmall.vue';
@@ -19,11 +19,11 @@ defineProps<Props>();
 
 const breadcrumbItems: BreadcrumbItem[] = [{ title: 'Profile settings', href: '/settings/profile' }];
 const page = usePage<AppPageProps>();
-const user = page.props.auth.user as User;
+const user = computed(() => page.props.auth.user as User);
 
 const form = useForm({
-    name: user.name,
-    email: user.email,
+    name: user.value.name,
+    email: user.value.email,
 });
 const submit = () => form.patch(route('profile.update'), { preserveScroll: true });
 
