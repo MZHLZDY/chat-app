@@ -3,10 +3,8 @@
 namespace App\Events;
 
 use App\Models\User;
-use App\Models\ChatMessage;
-use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -22,6 +20,11 @@ class UserProfileUpdated implements ShouldBroadcastNow
         $this->user = $user;
     }
 
+    public function broadcastOn(): array
+    {
+        return [new PresenceChannel('users')];
+    }
+    
     public function broadcastWith(): array
     {
         return [
@@ -32,26 +35,7 @@ class UserProfileUpdated implements ShouldBroadcastNow
             ]
         ];
     }
-
-    public function broadcastOn(): array
-    {
-        $userId = $this->user->id;
-
-        $senderIds = ChatMessage::where('receiver_id', $userId)->distinct()->pluck('sender_id');
-        $receiverIds = ChatMessage::where('sender_id', $userId)->distinct()->pluck('receiver_id');
-        $allContactIds = $senderIds->merge($receiverIds)->unique();
-        
-        $channels = [];
-        foreach ($allContactIds as $contactId) {
-            $channelName = 'chat.' . min($userId, $contactId) . '.' . max($userId, $contactId);
-            $channels[] = new PrivateChannel($channelName);
-        }
-
-        $channels[] = new PrivateChannel('user.' . $this->user->id); 
-
-        return $channels;
-    }
-
+    
     public function broadcastAs(): string
     {
         return 'UserProfileUpdated';

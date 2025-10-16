@@ -14,6 +14,7 @@ import { usePersonalCall } from '@/composables/usePersonalCall';
 import { useGroupCall } from '@/composables/useGroupCall';
 import type { CallStatus, Participants } from '@/types/CallStatus.js';
 import type { Contact, Group, User, Chat, AppPageProps } from '@/types/index';
+import { useContacts } from '@/composables/useContacts';
 // import type { Participants } from './OutgoingCallModal.vue';
 
 axios.defaults.withCredentials = true;
@@ -32,7 +33,7 @@ const currentUserId = computed<number>(() => page.props.auth.user.id);
 const currentUserName = computed<string>(() => page.props.auth.user.name);
 
 // --- State Management ---
-const contacts = ref<Contact[]>([]);
+const { contacts, loadContacts } = useContacts();
 const groups = ref<Group[]>([]);
 const allUsers = ref<User[]>([]);
 const activeContact = ref<Chat | null>(null);
@@ -528,12 +529,6 @@ const formatDateSeparator = (dateString: string): string => {
 };
 
 // --- Load Functions ---
-const loadContacts = async () => {
-  try {
-    contacts.value = (await axios.get('/chat/contacts')).data;
-  } catch (e) { console.error("Gagal memuat kontak:", e); }
-};
-
 const loadGroups = async () => {
   try {
     const response = await axios.get('/groups');
@@ -736,18 +731,6 @@ const setupEchoListener = (chat: Chat) => {
                 messages.value[messageIndex].text = 'Pesan ini telah dihapus';
         }
       })
-      .listen('UserProfileUpdated', (event: any) => {
-            const updatedUser = event.user;
-
-            console.log(`Menerima update profil untuk user ID: ${updatedUser.id}`, updatedUser);
-            const userToUpdate = contacts.value.find(u => u.id === updatedUser.id);
-
-            if (userToUpdate) {
-                console.log(`Memperbarui data untuk: ${userToUpdate.name}`);
-                userToUpdate.name = updatedUser.name;
-                userToUpdate.profile_photo_url = updatedUser.profile_photo_url;
-            }
-        });
 };
 
 watch(activeContact, (newContact, oldContact) => {
@@ -1091,6 +1074,7 @@ const setupGlobalListeners = () => {
             }
         }
     });
+    
 
   echo.channel('users-status')
     .listen('.UserStatusChanged', (event: any) => {
@@ -1103,42 +1087,44 @@ const setupGlobalListeners = () => {
 
     echo.private(`notifications.${currentUserId.value}`)
         .listen('.MessageSent', (eventData: any) => {
-            const messageData = eventData.message;
-            const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
+        const messageData = eventData.message;
+        const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
 
-            // Format pesan call event
-            const formattedMessage = {
-                ...messageData,
-                time: formatTime(messageData.created_at),
-                sender_name: messageData.sender?.name || 'Unknown'
-            };
+        // Update latest message di sidebar untuk semua kasus
+        if (messageData.group_id) {
+            updateLatestGroupMessage(messageData.group_id, messageData);
+        } else {
+            updateLatestMessage(messageData.sender_id, { 
+                text: messageData.message, 
+                sender_id: messageData.sender_id, 
+                sender: messageData.sender 
+            });
+        }
 
-            // ✅ PERBAIKAN: Update latest message untuk semua kasus
-            if (messageData.group_id) {
-                updateLatestGroupMessage(messageData.group_id, messageData);
-            } else {
-                updateLatestMessage(messageData.sender_id, { 
-                    text: messageData.message, 
-                    sender_id: messageData.sender_id, 
-                    sender: messageData.sender 
-                });
+        // JANGAN TAMBAHKAN PESAN DI SINI JIKA CHAT AKTIF
+        // Biarkan setupEchoListener yang menanganinya.
+        if (!isChatCurrentlyActive) {
+            // Tambahkan ke unread counts dan tampilkan notifikasi jika chat tidak aktif
+            const unreadChatId = messageData.group_id ? `group-${messageData.group_id}` : `user-${messageData.sender_id}`;
+            const currentCount = unreadCounts.value[unreadChatId] || 0;
+            unreadCounts.value[unreadChatId] = currentCount + 1;
+
+            showNotification({ ...messageData, time: formatTime(messageData.created_at) });
+        }
+        
+        // Namun, jika ini adalah pesan call_event, kita tetap perlu mengupdate
+        // gelembung pesan yang sudah ada, bahkan jika chat tidak aktif.
+        // Ini untuk kasus di mana Anda melihat chat lain saat panggilan berakhir.
+        if (messageData.type === 'call_event') {
+            const messageIndex = messages.value.findIndex(m => m.id === messageData.id);
+            if (messageIndex !== -1) {
+                console.log(`🔄 Memperbarui pesan panggilan dari listener global: ID ${messageData.id}`);
+                const targetMessage = messages.value[messageIndex];
+                targetMessage.text = messageData.message || messageData.text;
+                targetMessage.call_event = messageData.call_event;
             }
-
-            if (!isChatCurrentlyActive) {
-                // Tambahkan ke unread counts dan show notification
-                const unreadChatId = messageData.group_id ? `group-${messageData.group_id}` : `user-${messageData.sender_id}`;
-                const currentCount = unreadCounts.value[unreadChatId] || 0;
-                unreadCounts.value[unreadChatId] = currentCount + 1;
-
-                showNotification(formattedMessage);
-            } else {
-                // Jika chat aktif, tambahkan pesan langsung
-                addMessage(formattedMessage);
-                if (!messageData.group_id) {
-                    axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
-                }
-            }
-        })
+        }
+    })
     .listen('.GroupMessageSent', (eventData: any) => {
         const messageData = eventData.message ? eventData.message : eventData;
         const isGroupChatCurrentlyActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;

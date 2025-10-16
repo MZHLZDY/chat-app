@@ -2,15 +2,29 @@
 import { usePage } from '@inertiajs/vue3';
 import { onMounted, computed, ref, watch } from 'vue';
 import axios from 'axios';
+import { echo } from '../echo.js';
+import { useContacts } from '@/composables/useContacts';
 import AppSidebarLayout from '@/layouts/app/AppSidebarLayout.vue';
 import { PhoneCall, PhoneOff, PhoneMissed } from 'lucide-vue-next';
 import IncomingCallModal from '@/pages/IncomingCallModal.vue';
-import type { User } from '@/types';
+import VoiceCallPersonal from '@/pages/VoiceCallPersonal.vue';
+import VoiceCallGroup from '@/pages/VoiceCallGroup.vue';
+import MinimizeCallWidget from '@/pages/MinimizeCallWidget.vue';
+import { usePersonalCall } from '@/composables/usePersonalCall';
+import { useGroupCall } from '@/composables/useGroupCall';
+import { useCallNotification } from '@/composables/useCallNotification';
+// import type { User, } from '@/types';
 import AppLayout from '@/layouts/app/AppSidebarLayout.vue';
-import type { BreadcrumbItem, AppPageProps } from '@/types';
+import type { BreadcrumbItem, AppPageProps, User } from '@/types';
 
 interface Props {
     breadcrumbs?: BreadcrumbItem[];
+}
+
+interface UserPresence {
+    id: number;
+    name: string;
+    profile_photo_url: string;
 }
 
 withDefaults(defineProps<Props>(), {
@@ -98,6 +112,8 @@ const {
     endVoiceCallWithReason,
     initializePersonalCallListeners,
 } = usePersonalCall();
+
+const { loadContacts, updateUserInContacts } = useContacts();
 
 // ✅ COMPUTED PROPERTIES YANG BENAR
 const isAnyCallActive = computed(() => 
@@ -247,12 +263,29 @@ watch(isAnyCallActive, (isActive) => {
     }
 });
 
-// ✅ onMounted HOOK
 onMounted(() => {
     initializeGlobalListeners();
     initializePersonalCallListeners();
     setupListeners();
     requestPermissionAndSubscribe();
+    loadContacts();
+    echo.join('users')
+      .here((users: UserPresence[]) => {
+      console.log('Saat ini online:', users);
+    })
+    .joining((user: UserPresence) => {
+      console.log(user.name, 'bergabung.');
+    })
+    .leaving((user: UserPresence) => {
+      console.log(user.name, 'keluar.');
+    })
+    .listen('.UserProfileUpdated', (event: any) => {
+        const updatedUser = event.user;
+        updateUserInContacts(updatedUser);
+    })
+      .error((error: any) => {
+          console.error('Terjadi error pada Echo channel "users":', error);
+      });
     
     // Handle notification actions
     window.addEventListener('call-notification-action', (event: any) => {

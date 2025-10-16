@@ -4,7 +4,7 @@ import { ref, computed, onUnmounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AgoraRTC from 'agora-rtc-sdk-ng';
-import type { Chat, User, Contact } from '@/types/index';
+import type { Chat, User, Contact, AppPageProps } from '@/types/index';
 import { echo } from '../echo.js';
 import { useCallNotification } from '@/composables/useCallNotification';
 
@@ -50,7 +50,7 @@ const subscribingUsers = ref<Set<number>>(new Set());
 let manualSubscribeInProgress = false;
 
 export function usePersonalCall() {
-    const page = usePage<PageProps>();
+    const page = usePage<AppPageProps>();
     const currentUserId = computed(() => page.props.auth.user.id);
     const currentUserName = computed(() => page.props.auth.user.name);
     const { sendPersonalCallNotification, closeNotification } = useCallNotification();
@@ -859,32 +859,29 @@ const answerVoiceCall = async (accepted: boolean, reason?: string) => {
         return;
     }
 
-    console.log(`📞 Menjawab panggilan: ${accepted ? 'DITERIMA' : 'DITOLAK'}`);
+    const callIdToAnswer = callData.callId;
+    console.log(`📞 Menjawab panggilan ${callIdToAnswer}: ${accepted ? 'DITERIMA' : 'DITOLAK'}`);
 
-    // Clear incoming call state
+    // Hapus timer dan notifikasi
+    if (incomingCallTimeout) clearTimeout(incomingCallTimeout);
+    incomingCallTimeout = null;
+    closeNotification(callIdToAnswer, 'personal');
+
+    // Reset state panggilan masuk agar UI tidak menampilkan modal lagi
     incomingCallVoice.value = null;
-    closeNotification(callData.callId, 'personal');
-
-    // Stop timeout
-    if (incomingCallTimeout) {
-        clearTimeout(incomingCallTimeout);
-        incomingCallTimeout = null;
-    }
 
     try {
-        // Send answer to server
+        // CUKUP KIRIM REQUEST KE SERVER. Biarkan server yang mengirim update status ke semua.
         await axios.post('/call/answer', {
-            call_id: callData.callId,
+            call_id: callIdToAnswer,
             caller_id: callData.caller.id,
             accepted: accepted,
             reason: accepted ? null : (reason || 'Ditolak')
         });
-
-        console.log(`✅ Jawaban panggilan dikirim: ${accepted ? 'diterima' : 'ditolak'}`);
+        console.log(`✅ Jawaban untuk panggilan ${callIdToAnswer} telah dikirim.`);
 
         if (accepted) {
-            // ✅ FIX: Setup UI state secara synchronous
-            isInVoiceCall.value = true;
+            // Jika diterima, lanjutkan proses join channel
             activeCallData.value = {
                 callId: callData.callId,
                 channel: callData.channel,
@@ -894,66 +891,20 @@ const answerVoiceCall = async (accepted: boolean, reason?: string) => {
                 isCaller: false,
                 status: 'connecting'
             };
-
-            console.log('🎯 Callee UI state diupdate:', activeCallData.value);
-
-            // ✅ FIX: Join channel dengan proper error handling dan retry mechanism
-            try {
-                console.log('🚀 Callee attempting to join channel:', callData.channel);
-                
-                const joinSuccess = await joinChannel(callData.channel);
-                
-                if (joinSuccess) {
-                    // ✅ FIX: Update status setelah berhasil join
-                    if (activeCallData.value) {
-                        activeCallData.value.status = 'connected';
-                    }
-                    console.log('✅ Callee berhasil join dan terhubung.');
-                    
-                    // ✅ FIX: Force UI update dengan delay untuk memastikan state terupdate
-                    setTimeout(() => {
-                        if (activeCallData.value) {
-                            activeCallData.value = { ...activeCallData.value };
-                        }
-                    }, 200);
-                } else {
-                    throw new Error('Join channel returned false');
-                }
-                
-            } catch (error: any) {
-                console.error('❌ Callee gagal join channel:', error);
-                
-                // ✅ FIX: Reset state dan beri feedback ke user
-                if (activeCallData.value) {
-                    activeCallData.value.status = 'failed';
-                }
-
-                if (!accepted) {
-                 // ✅ FIX: Untuk rejected call, reset state sepenuhnya
-                 console.log('🔄 Reset state untuk rejected call');
-                 resetVoiceCallState();
-                }
-                
-                // ✅ FIX: Tampilkan alert yang lebih informatif
-                const errorMessage = error.message || 'Unknown error';
-                alert(`Gagal terhubung ke panggilan: ${errorMessage}`);
-                
-                // ✅ FIX: Reset state setelah alert
-                setTimeout(() => {
-                    resetVoiceCallState();
-                }, 100);
-                
-                return; // Stop execution here
+            isInVoiceCall.value = true;
+            
+            const joinSuccess = await joinChannel(callData.channel);
+            if (joinSuccess) {
+                activeCallData.value.status = 'connected';
+                callStartTime.value = Date.now();
+            } else {
+                throw new Error('Gagal bergabung ke channel setelah menerima panggilan.');
             }
         }
-
-    } catch (error: any) {
+    } catch (error) {
         console.error('❌ Gagal merespons panggilan:', error);
-        
-        // ✅ FIX: Reset state dengan error handling
+        // Jika gagal, pastikan state bersih
         resetVoiceCallState();
-        
-        alert(`Gagal merespons panggilan: ${error.message || 'Unknown error'}`);
     }
 };
 
@@ -1244,36 +1195,14 @@ privateChannel.listen('.call-accepted', async (data: any) => {
         // Call rejected listener
         privateChannel.listen('.call-rejected', (data: any) => {
     console.log('❌ EVENT .call-rejected DITERIMA oleh CALLER:', data);
-
-    // ✅ FIX: Cek apakah ini panggilan keluar yang sedang aktif
-    const currentOutgoingCall = outgoingCallVoice.value;
-    const currentActiveCall = activeCallData.value;
     
-    if ((currentOutgoingCall && currentOutgoingCall.callId === data.call_id) || 
-        (currentActiveCall && currentActiveCall.callId === data.call_id)) {
-        
-        const rejectReason = data.reason || 'Panggilan ditolak';
-        const rejectedByName = data.rejected_by?.name || 'Penerima';
-        
-        console.log('🔄 Reset state karena call rejected event');
-        
-        // ✅ FIX: Reset state secara synchronous untuk responsive UI
+    // Cukup pastikan state di-reset. Pembaruan pesan akan datang dari .MessageSent
+    const currentOutgoingCall = outgoingCallVoice.value;
+    if (currentOutgoingCall && currentOutgoingCall.callId === data.call_id) {
+        console.log('🔄 Reset state karena panggilan keluar ditolak.');
         resetVoiceCallState();
-        
-        // ✅ FIX: Force UI update sebelum alert
-        setTimeout(() => {
-            // Beri feedback ke penelepon
-            alert(`${rejectedByName} menolak panggilan: ${rejectReason}`);
-        }, 10);
-        
-    } else {
-        console.warn('⚠️ Call rejected event tidak sesuai dengan panggilan aktif:', {
-            eventCallId: data.call_id,
-            outgoingCallId: currentOutgoingCall?.callId,
-            activeCallId: currentActiveCall?.callId
-        });
     }
-});
+})
 
         privateChannel.listen('.MessageSent', (eventData: any) => {
             const messageData = eventData.message || eventData;
@@ -1340,46 +1269,21 @@ privateChannel.listen('.call-accepted', async (data: any) => {
     };
 
     const handleCallTimeout = () => {
-        const callToTimeout = outgoingCallVoice.value;
-
+    const callToTimeout = outgoingCallVoice.value;
     if (callToTimeout?.status === 'calling') {
-        console.log('⏰ Panggilan tak terjawab (timeout dari sisi penelepon). Mengirim notifikasi ke server...');
-
-        // Simpan callId sebelum reset
+        console.log('⏰ Panggilan tak terjawab (timeout dari sisi penelepon).');
+        
         const callId = callToTimeout.callId;
 
-        // Reset state di frontend terlebih dahulu agar UI responsif
+        // Reset state lokal agar UI penelepon berhenti
         resetVoiceCallState();
 
-        // Kirim notifikasi ke backend
-        axios.post('/call/missed', {
-            call_id: callId
-        }).then(() => {
-            console.log(`✅ Notifikasi 'missed' untuk callId: ${callId} berhasil dikirim.`);
-        }).catch(error => {
-            console.error('❌ Gagal mengirim notifikasi missed call:', error);
-        });
+        // KIRIM REQUEST KE SERVER agar statusnya diubah menjadi "missed" untuk semua.
+        axios.post('/call/missed', { call_id: callId })
+            .then(() => console.log(`✅ Notifikasi 'missed' untuk callId: ${callId} berhasil dikirim.`))
+            .catch(error => console.error('❌ Gagal mengirim notifikasi missed call:', error));
     }
-        if (outgoingCallVoice.value?.status === 'calling') {
-            console.log('⏰ Call timeout - no response from callee');
-            
-            outgoingCallVoice.value.status = 'ended';
-            outgoingCallVoice.value.reason = 'Diabaikan';
-            callTimeoutCountdown.value = null;
-            
-            axios.post('/call/missed', {
-                call_id: outgoingCallVoice.value.callId,
-                reason: 'timeout'
-            }).catch(error => {
-                console.error('Failed to send missed call notification:', error);
-            });
-            
-            setTimeout(() => {
-                outgoingCallVoice.value = null;
-                callStartTime.value = null;
-            }, 3000);
-        }
-    };
+};
 
     const stopCallTimeout = () => {
         if (countdownInterval) {
@@ -1389,25 +1293,16 @@ privateChannel.listen('.call-accepted', async (data: any) => {
         callTimeoutCountdown.value = null;
     };
 
-    const handleIncomingCallTimeout = async (callId: string) => {
-        console.log('⏰ Handling incoming call timeout for:', callId);
-        
-        if (incomingCallVoice.value?.callId === callId) {
-            try {
-                await axios.post('/call/timeout', {
-                    call_id: callId,
-                    reason: 'Tidak diangkat',
-                    side: 'receiver'
-                });
-                console.log('✅ Timeout notified to server');
-            } catch (error) {
-                console.error('❌ Failed to notify timeout:', error);
-            }
-            
-            incomingCallVoice.value = null;
-            alert('Panggilan tidak diangkat dan telah berakhir');
-        }
-    };
+    const handleIncomingCallTimeout = (callId: string) => {
+    console.log('⏰ Panggilan masuk timeout di sisi penerima untuk callId:', callId);
+    
+    // Cek apakah panggilan yang timeout masih panggilan yang tampil di UI
+    if (incomingCallVoice.value?.callId === callId) {
+        console.log('🗑️ Membersihkan UI panggilan masuk yang tak terjawab.');
+        // Cukup reset state di sisi penerima, tidak perlu lapor ke server.
+        resetVoiceCallState();
+    }
+};
 
     // Debug function
     // ✅ FIX: Enhanced debug function

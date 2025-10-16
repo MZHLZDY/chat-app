@@ -3,7 +3,7 @@ import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { echo } from '../echo.js';
 import AgoraRTC from 'agora-rtc-sdk-ng';
-import type { Chat, User } from '@/types/index';
+import type { AppPageProps, Chat, User } from '@/types/index.d.ts';
 import { useCallNotification } from '@/composables/useCallNotification';
 
 // State variables
@@ -60,7 +60,7 @@ let globalListenersInitialized = false;
 let currentGroupListeners: string | null = null;
 
 export function useGroupCall() {
-    const page = usePage<PageProps>();
+    const page = usePage<AppPageProps>();
     const currentUserId = computed(() => page.props.auth.user.id);
     const currentUserName = computed(() => page.props.auth.user.name);
 

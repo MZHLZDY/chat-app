@@ -12,7 +12,6 @@ class BroadcastServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // PASTIKAN BARIS INI PERSIS SEPERTI INI
         Broadcast::routes(['middleware' => ['web', 'auth']]);
 
         require base_path('routes/channels.php');
