@@ -16,6 +16,11 @@ const isVideoEnabled = ref(true);
 const isAudioEnabled = ref(true);
 const isFullscreen = ref(false);
 
+// state untuk dragging
+const isDragging = ref(false);
+const dragOffset = ref({ x: 0, y: 0 });
+const position = ref({ x: window.innerWidth - 340, y: window.innerHeight - 240 });
+
 // state untuk minimize
 const isMinimized = ref(false);
 
@@ -45,6 +50,51 @@ const emit = defineEmits<{
 const toggleMinimize = () => {
     isMinimized.value = !isMinimized.value;
     console.log('⬇️ Video call diminimalkan:', isMinimized.value);
+
+    // reset position ketika maximize
+    if (!isMinimized.value) {
+        position.value = { x: 0, y: 0 };
+    } else {
+        // set default position ketika minimize
+        position.value = { x: window.innerWidth - 340, y: window.innerHeight - 240 };
+    }
+};
+
+// fungsi dragging
+const startDrag = (event: MouseEvent) => {
+    if (!isMinimized.value) return;
+    
+    isDragging.value = true;
+    dragOffset.value = {
+        x: event.clientX - position.value.x,
+        y: event.clientY - position.value.y
+    };
+
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', stopDrag);
+    event.preventDefault();
+};
+
+const onDrag = (event: MouseEvent) => {
+    if (!isDragging.value) return;
+
+    const newX = event.clientX - dragOffset.value.x;
+    const newY = event.clientY - dragOffset.value.y;
+
+    // boundary constraints
+    const maxX = window.innerWidth - 320; // lebar floating window
+    const maxY = window.innerHeight - 220; // tinggi floating window
+
+    position.value = {
+        x: Math.max(0, Math.min(newX, maxX)),
+        y: Math.max(0, Math.min(newY, maxY))
+    };
+};
+
+const stopDrag = () => {
+    isDragging.value = false;
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
 };
 
 const handleAccept = () => {emit("accept");};
@@ -92,8 +142,10 @@ const getUserMedia = async () => {
         }
 
         console.log('✅ Local media stream berhasil didapatkan');
+        return stream;
     } catch (error) {
         console.error('❌ Gagal mendapatkan media stream:', error);
+        throw error;
     }
 };
 
@@ -103,6 +155,7 @@ const toggleVideo = () => {
         const videoTrack = localStream.value.getVideoTracks()[0];
         if (videoTrack) {
             videoTrack.enabled = !videoTrack.enabled;
+            isCameraOn.value = videoTrack.enabled;
             isVideoEnabled.value = videoTrack.enabled;
         }
     }
@@ -114,6 +167,7 @@ const toggleAudio = () => {
         const audioTrack = localStream.value.getAudioTracks()[0];
         if (audioTrack) {
             audioTrack.enabled = !audioTrack.enabled;
+            isMuted.value = !audioTrack.enabled;
             isAudioEnabled.value = audioTrack.enabled;
         }
     }
@@ -125,21 +179,64 @@ const toggleFullscreen = () => {
 };
 
 // simulate remote video (untuk testing, nanti diganti dengan RTC biar realtime)
-const simulateRemoteVideo = () => {
-    // Untuk demo, bisa pake video test / mirror local video
-    if (remoteVideo.value && localStream.value) {
-        // Sementara: mirror local stream ke remote (untuk demo / testing)
-        remoteVideo.value.srcObject = localStream.value;
+const simulateRemoteVideo = async () => {
+    try {
+        // untuk demo, buatlah stream terpisah untuk remote
+        const remoteStreamDemo = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true //jangan duplikat audio
+        });
+
+        if (remoteVideo.value) {
+            remoteVideo.value.srcObject = remoteStreamDemo;
+            remoteStream.value = remoteStreamDemo;
+        }
+    } catch (error) {
+        console.error('❌ Gagal mensimulasikan remote video:', error);
+        // fallback: mirror local stream
+        if (remoteVideo.value && localStream.value) {
+            remoteVideo.value.srcObject = localStream.value;
+        }
     }
 };
 
-onMounted(() => {
-    getUserMedia().then(() => {
+onMounted(async () => {
+    try {
+        await getUserMedia();
+        
+        // inisialisai webRTC jika status connected
+        if (props.status === 'connected') {
+            peerConnection = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            });
+
+            if (localStream.value) {
+                localStream.value.getTracks().forEach(track => {
+                    peerConnection?.addTrack(track, localStream.value!);
+                });
+            }
+
+            peerConnection.ontrack = (event) => {
+                if (remoteVideo.value) {
+                    remoteVideo.value.srcObject = event.streams[0];
+                    remoteStream.value = event.streams[0];
+                }
+            };
+        }
+
         // simulate remote video untuk demo / testing
         setTimeout(() => {
             simulateRemoteVideo();
         }, 1000);
-    });
+
+        // tambahkan listener resize
+        window.addEventListener('resize', handleResize);
+
+    } catch (error) {
+        console.error('❌ Error dalam onMounted:', error);
+    }
 });
 
 onUnmounted(() => {
@@ -147,7 +244,24 @@ onUnmounted(() => {
     if (localStream.value) {
         localStream.value.getTracks().forEach(track => track.stop());
     }
+    if (remoteStream.value) {
+        remoteStream.value.getTracks().forEach(track => track.stop());
+    }
+
+    // cleanup webRTC
+    if (peerConnection) {
+        peerConnection.close();
+    }
+
+    // cleanup drag listeners
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', stopDrag);
+
+    // remove rezise listener
+    window.removeEventListener('resize', handleResize);
 });
+
+
 
 // Toggle mic
 const toggleMute = () => {
@@ -176,29 +290,16 @@ const windowWidth = ref(window.innerWidth);
 const windowHeight = ref(window.innerHeight);
 
 // COMPUTED UNTUK RESPONSIVE CLASSES
-const containerClass = computed(() => {
-    const isLargeScreen = windowWidth.value >= 1200;
-    const isMediumScreen = windowWidth.value >= 768 && windowWidth.value < 1200;
-    
-    return {
-        'max-w-7xl': isLargeScreen,
-        'max-w-4xl': isMediumScreen,
-        'max-w-2xl': windowWidth.value < 768,
-        'h-[95vh]': isLargeScreen,
-        'h-[90vh]': !isLargeScreen
-    };
-});
-
 const localVideoClass = computed(() => {
     const isLargeScreen = windowWidth.value >= 1200;
     const isMediumScreen = windowWidth.value >= 768;
-    
+
     if (isLargeScreen) {
-        return 'w-64 h-48'; // Lebih besar untuk layar besar
+        return 'w-64 h-48'; // lebih besar untuk layar besar
     } else if (isMediumScreen) {
-        return 'w-48 h-36'; // Medium size
+        return 'w-48 h-36'; // ukuran sedang
     } else {
-        return 'w-32 h-24'; // Kecil untuk mobile
+        return 'w-32 h-24'; // ukuran kecil untuk mobile
     }
 });
 
@@ -211,44 +312,59 @@ const controlsClass = computed(() => {
     };
 });
 
+// computed style untuk floating position
+const floatingStyle = computed(() => {
+    if (!isMinimized.value) return {};
+
+    return {
+        transform: `translate(${position.value.x}px, ${position.value.y}px)`,
+        cursor: isDragging.value ? 'grabbing' : 'grab'
+    };
+})
+
 // HANDLE WINDOW RESIZE
 const handleResize = () => {
     windowWidth.value = window.innerWidth;
     windowHeight.value = window.innerHeight;
-};
 
-onMounted(() => {
-    getUserMedia().then(() => {
-        // simulate remote video untuk demo / testing
-        setTimeout(() => {
-            simulateRemoteVideo();
-        }, 1000);
-    });
+    // atur posisi jika keluar batas setelah resize
+    if (isMinimized.value) {
+        const maxX = window.innerWidth - 320;
+        const maxY = window.innerHeight - 220;
 
-    // Add resize listener
-    window.addEventListener('resize', handleResize);
-});
-
-onUnmounted(() => {
-    // cleanup media streams
-    if (localStream.value) {
-        localStream.value.getTracks().forEach(track => track.stop());
+        position.value = {
+            x: Math.max(0, Math.min(position.value.x, maxX)),
+            y: Math.max(0, Math.min(position.value.y, maxY))
+        }
     }
-
-    // Remove resize listener
-    window.removeEventListener('resize', handleResize);
-});
+};
 
 // Cleanup stream ketika modal ditutup
 watch(
     () => props.show,
     (val) => {
-        if (!val && localVideo.value?.srcObject) {
-            const stream = localVideo.value.srcObject as MediaStream;
-            stream.getTracks().forEach((track) => track.stop());
-            peerConnection?.close();
+        if (!val) {
+            // Stop semua track
+            if (localStream.value) {
+                localStream.value.getTracks().forEach((track) => track.stop());
+            }
+            if (remoteStream.value) {
+                remoteStream.value.getTracks().forEach((track) => track.stop());
+            }
+
+            // tutup koneksi RTC
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            // reset states
             isMuted.value = false;
             isCameraOn.value = true;
+            isMinimized.value = false;
+
+            // reset position
+            position.value = { x: window.innerWidth - 340, y: window.innerHeight - 240 };
         }
     }
 );
@@ -261,9 +377,11 @@ watch(
         class="fixed z-50 transition-all duration-300 ease-in-out"
         :class="[
             isMinimized
-                ? 'bottom-4 right-4 w-80 h-56 rounded-xl shadow-2xl border border-gray-600'
+                ? 'w-80 h-56 rounded-xl shadow-2xl border border-gray-600'
                 : 'inset-0 bg-black bg-opacity-90 flex items-center justify-center',
         ]"
+        :style="floatingStyle"
+        @mousedown="startDrag"
     >
         <div
             class="bg-gray-900 overflow-hidden w-full h-full flex flex-col transition-all duration-300"
@@ -297,6 +415,42 @@ watch(
                     <p v-else class="text-white text-xs font-medium truncate">
                         {{ props.contactName }}
                     </p>
+                </div>
+
+                <div class="flex gap-1">
+                    <!-- kontrol waktu minimize -->
+                    <div v-if="isMinimized" class="flex gap-1">
+                        <!-- kontrol mic untuk floating -->
+                        <button
+                            @click.stop="toggleAudio"
+                            :class="[
+                                'rounded p-1 text-white transition-colors',
+                                isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-500'
+                            ]"
+                        >
+                            <MicOff v-if="isMuted" class="w-3 h-3"/>
+                            <Mic v-else class="w-3 h-3"/>
+                        </button>
+
+                        <!-- kontrol kamera untuk floating -->
+                        <button
+                            @click.stop="toggleVideo"
+                            :class="[
+                                'rounded p-1 text-white transition-colors',
+                                !isCameraOn ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-500'
+                            ]"
+                        >
+                            <CameraOff v-if="!isCameraOn" class="w-3 h-3"/>
+                            <Camera v-else class="w-3 h-3"/>
+                        </button>
+
+                        <!-- end call waktu floating -->
+                        <button
+                            @click.stop="() => { console.log('☎️ Tombol panggilan diakhiri ditekan'); $emit('end'); }"
+                        >
+                            <EndCall class="w-3 h-3"/>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- ganti jadi minimize button -->
@@ -338,7 +492,7 @@ watch(
             <!-- Status Connected (Video area) - RESPONSIVE -->
             <div v-else-if="status === 'connected'" class="flex-1 relative bg-black min-h-0">
                 
-                <!-- Remote Video Container - MAINTAIN ASPECT RATIO -->
+                <!-- layout full screen -->
                 <div v-if="!isMinimized" class="relative w-full h-full">
                     <!-- Remote Video (Main) -->
                     <video
@@ -370,7 +524,7 @@ watch(
                         <div v-if="!isCameraOn" 
                              class="absolute inset-0 bg-gray-800 flex items-center justify-center">
                             <div class="w-8 h-8 sm:w-12 sm:h-12 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs sm:text-sm font-bold">
-                                You
+                                {{ (props.contactName || 'You').charAt(0).toUpperCase() }}
                             </div>
                         </div>
                     </div>
@@ -383,9 +537,8 @@ watch(
                         <Video
                             ref="localVideo"    
                             autoplay
-                            muted
-                            playsinLine
-                            class="w-full h-full object-cover transform"
+                            playsinline
+                            class="w-full h-full object-cover"
                         />
 
                         <!-- remote lable -->
@@ -399,7 +552,6 @@ watch(
                         <Video
                             ref="localVideo"
                             autoplay
-                            muted
                             playsinLine
                             class="w-full h-full object-cover transform scale-x-[-1]"
                         />
@@ -436,7 +588,7 @@ watch(
             >
                 <!-- Mic -->
                 <button
-                    @click="toggleMute"
+                    @click="toggleAudio"
                     :class="[
                         'rounded-full text-white transition-all duration-200 transform hover:scale-110',
                         'p-2 sm:p-3',
@@ -448,14 +600,15 @@ watch(
 
                 <!-- Camera -->
                 <button
-                    @click="toggleCamera"
+                    @click="toggleVideo"
                     :class="[
                         'rounded-full text-white transition-all duration-200 transform hover:scale-110',
                         'p-2 sm:p-3',
                         !isCameraOn ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-500'
                     ]"
                 >
-                    <Camera class="w-5 h-5 sm:w-6 sm:h-6"/>
+                    <cameraOff v-if="!isCameraOn" class="w-5 h-5 sm:w-6 sm:h-6"/>
+                    <Camera v-else class="w-5 h-5 sm:w-6 sm:h-6"/>
                 </button>
 
                 <!-- End Call -->
