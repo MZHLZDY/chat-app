@@ -1430,9 +1430,14 @@ const currentCallContactName = computed(() => {
                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/>
                       </svg>
                     </button>
-                    <div class="w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm">
-                      <span v-if="activeContact.name">{{ activeContact.name.charAt(0).toUpperCase() }}</span>
-                    </div>
+                    <img v-if="activeContact.profile_photo_url"
+                          :src="activeContact.profile_photo_url"
+                          :alt="activeContact.name"
+                          class="w-8 h-8 rounded-full object-cover"
+                      />
+                      <div v-else class="w-8 h-8 bg-sky-500 rounded-full flex items-center justify-center text-white text-sm">
+                          <span v-if="activeContact.name">{{ activeContact.name.charAt(0).toUpperCase() }}</span>
+                      </div>
                     <div class="flex-1 min-w-0">
                       <div class="font-semibold truncate text-gray-800 dark:text-gray-200">
                         {{ activeContact.name }}
