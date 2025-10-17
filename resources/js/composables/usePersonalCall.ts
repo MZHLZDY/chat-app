@@ -304,7 +304,6 @@ export function usePersonalCall() {
     };
 
 
-// ✅ PERBAIKAN: Modified reset function untuk better state management
 // ✅ PERBAIKAN: Enhanced reset function untuk better state management
 const resetVoiceCallState = (preserveCallData: boolean = false) => {
     console.log('🔄 RESET VOICE CALL STATE - Memulai reset...', { 

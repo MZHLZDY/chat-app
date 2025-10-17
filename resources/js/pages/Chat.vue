@@ -72,9 +72,9 @@ const userBackgroundUrl = computed<string>(() => page.props.auth.user.background
 
 
 // --- Call State ---
-const { startVoiceCall, isPersonalCallActive } = usePersonalCall();
+const { startVoiceCall, isInVoiceCall } = usePersonalCall();
 const { startGroupVoiceCall, isGroupVoiceCallActive } = useGroupCall();
-const isAnyCallInProgress = computed(() => isPersonalCallActive.value || isGroupVoiceCallActive.value);
+const isAnyCallInProgress = computed(() => isInVoiceCall.value || isGroupVoiceCallActive.value);
 
 // --- Personal Video Call State ---
 const activeCall = ref<null | { contactName: string }>(null);
