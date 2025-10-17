@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\GroupMessageSent;
 use App\Events\MessageDeleted;
+use App\Events\GroupFileMessageSent;
 use App\Models\Group;
 use App\Models\GroupMessage;
 use App\Models\User;
@@ -123,8 +124,11 @@ class GroupController extends Controller
             'file_mime_type' => $mime,
             'file_size'      => $file->getSize(),
         ]);
+
         $message->load('sender');
-        broadcast(new GroupMessageSent($message))->toOthers();
+
+        broadcast(new GroupFileMessageSent($message))->toOthers();
+
         return response()->json($message, 201);
     }
 }

@@ -4,7 +4,7 @@ import { Head, usePage, router } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import axios from 'axios';
 import { echo } from '../echo.js';
-import { Video, UserPlus, ChartArea, Phone} from 'lucide-vue-next';
+import { Video, UserPlus, ChartArea, Phone, Paperclip, File as FileIcon, Image as ImageIcon, Video as VideoIcon} from 'lucide-vue-next';
 import { formatDistanceToNowStrict, isSameDay, isToday, isYesterday, format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import VideoCallModal from './VideoCallModal.vue';
@@ -69,6 +69,8 @@ const messageToDelete = ref<any | null>(null);
 const deleteType = ref<'me' | 'everyone'>('everyone');
 const userBackgroundPath = computed<string | null>(() => page.props.auth.user.background_image_path);
 const userBackgroundUrl = computed<string>(() => page.props.auth.user.background_image_url);
+let activeChatChannel: any = null;
+let activeGroupChannel: any = null;
 
 
 // --- Call State ---
@@ -494,13 +496,36 @@ const updateLatestMessage = (contactId: number, message: { text: string, sender_
   const updateLatestGroupMessage = (groupId: number, message: any) => {
     const groupIndex = groups.value.findIndex(g => g.id === groupId);
     if (groupIndex !== -1) {
-        // Update properti latest_message pada grup yang sesuai
         groups.value[groupIndex].latest_message = {
             message: message.message,
             sender_id: message.sender_id,
             sender: message.sender
         };
     }
+};
+
+const getLatestMessagePreview = (message: any) => {
+    if (!message) {
+        return '';
+    }
+
+    switch (message.type) {
+        case 'image':
+            return '📷 Foto';
+        case 'video':
+            return '📹 Video';
+        case 'file':
+            return '📎 File';
+        default:
+            return message.message || '';
+    }
+};
+
+const truncate = (text: string, length: number) => {
+    if (text && text.length > length) {
+        return text.substring(0, length) + '...';
+    }
+    return text;
 };
 
 
@@ -685,69 +710,81 @@ const deleteMessageForEveryone = async (message: any) => {
 
 const setupEchoListener = (chat: Chat) => {
     let channelName = '';
+
     if (chat.type === 'group') {
         channelName = `group.${chat.id}`;
+
+        console.log(`Bergabung ke channel real-time: ${channelName}`);
+        
+        window.Echo.join(channelName)
+            .listen('.GroupMessageSent', (event: any) => {
+                console.log('Pesan teks grup diterima:', event.message);
+                addMessage(event.message);
+            })
+            .listen('.GroupFileMessageSent', (event: any) => {
+                console.log('File grup diterima:', event.message);
+                addMessage(event.message);
+            })
+            .listen('.message.deleted', (event: { messageId: number }) => {
+                const messageIndex = messages.value.findIndex(m => m.id === event.messageId);
+                if (messageIndex !== -1) {
+                    messages.value[messageIndex].text = 'Pesan ini telah dihapus';
+                    messages.value[messageIndex].type = 'deleted';
+                }
+            });
+
     } else {
         const participants = [currentUserId.value, chat.id];
         participants.sort((a, b) => a - b);
         channelName = `chat.${participants.join('.')}`;
+
+        console.log(`Bergabung ke channel real-time: ${channelName}`);
+
+        window.Echo.join(channelName)
+            .listen('.MessageSent', (event: any) => {
+                console.log('Pesan teks personal diterima:', event.message);
+                addMessage(event.message);
+            })
+            .listen('.FileMessageSent', (event: any) => {
+                console.log('File personal diterima:', event.message);
+                addMessage(event.message);
+            })
+            .listen('.message.deleted', (event: { messageId: number }) => {
+                const messageIndex = messages.value.findIndex(m => m.id === event.messageId);
+                if (messageIndex !== -1) {
+                    messages.value[messageIndex].text = 'Pesan ini telah dihapus';
+                    messages.value[messageIndex].type = 'deleted';
+                }
+            });
     }
-
-    console.log(`Bergabung ke channel real-time: ${channelName}`);
-
-    window.Echo.private(channelName)
-        .listen('.MessageSent', (event: any) => {
-            console.log('Pesan baru diterima dari Echo:', event.message);
-            
-            // ✅ PERBAIKAN: Handle semua pesan, termasuk dari pengirim sendiri
-            const formattedMessage = {
-                ...event.message,
-                time: formatTime(event.message.created_at),
-                sender_name: event.message.sender?.name || 'Unknown'
-            };
-            
-            // Cek apakah pesan sudah ada untuk menghindari duplikasi
-            const messageIndex = messages.value.findIndex(m => m.id === formattedMessage.id);
-
-            if (messageIndex !== -1) {
-              // Pesan sudah ada, UPDATE isinya.
-              // Ini adalah kunci untuk memperbarui status panggilan di bubble yang sama.
-              console.log(`🔄 Memperbarui pesan yang ada dengan ID: ${formattedMessage.id}`);
-              const targetMessage = messages.value[messageIndex];
-              targetMessage.text = formattedMessage.message || formattedMessage.text;
-              targetMessage.call_event = formattedMessage.call_event; // Update juga data call event-nya
-            } else {
-              // Pesan benar-benar baru, TAMBAHKAN ke array.
-              // Ini untuk pesan teks biasa atau pesan panggilan pertama ("Memanggil").
-              console.log(`➕ Menambahkan pesan baru dengan ID: ${formattedMessage.id}`);
-              messages.value.push(formattedMessage);
-            }
-        })
-        .listen('.message.deleted', (event: { messageId: number }) => {
-            console.log('Event message.deleted diterima!', event);
-            
-            const messageIndex = messages.value.findIndex(m => m.id === event.messageId);
-            if (messageIndex !== -1) {
-                messages.value[messageIndex].text = 'Pesan ini telah dihapus';
-        }
-      })
 };
 
 watch(activeContact, (newContact, oldContact) => {
-    if (oldContact) {
+    const leaveChannel = (contact: Chat | Group) => {
+        if (!contact) return;
+
         let oldChannelName = '';
-        if (oldContact.type === 'group') {
-            oldChannelName = `group.${oldContact.id}`;
+        if (oldContact?.type === 'group') {
+            oldChannelName = `group.${contact.id}`;
         } else {
-            const participants = [currentUserId.value, oldContact.id];
+            const participants = [currentUserId.value, contact.id];
             participants.sort((a, b) => a - b);
             oldChannelName = `chat.${participants.join('.')}`;
         }
-        window.Echo.leave(oldChannelName);
-        console.log(`Meninggalkan channel: ${oldChannelName}`);
+        
+        if (oldChannelName) {
+            console.log(`Meninggalkan dan membersihkan channel: ${oldChannelName}`);
+            window.Echo.leave(oldChannelName);
+        }
+    };
+    if (oldContact) {
+        leaveChannel(oldContact);
     }
+    
     if (newContact) {
-        setupEchoListener(newContact);
+        setTimeout(() => {
+            setupEchoListener(newContact);
+        }, 100);
     }
 });
 
@@ -1090,7 +1127,6 @@ const setupGlobalListeners = () => {
         const messageData = eventData.message;
         const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
 
-        // Update latest message di sidebar untuk semua kasus
         if (messageData.group_id) {
             updateLatestGroupMessage(messageData.group_id, messageData);
         } else {
@@ -1101,20 +1137,13 @@ const setupGlobalListeners = () => {
             });
         }
 
-        // JANGAN TAMBAHKAN PESAN DI SINI JIKA CHAT AKTIF
-        // Biarkan setupEchoListener yang menanganinya.
         if (!isChatCurrentlyActive) {
-            // Tambahkan ke unread counts dan tampilkan notifikasi jika chat tidak aktif
             const unreadChatId = messageData.group_id ? `group-${messageData.group_id}` : `user-${messageData.sender_id}`;
             const currentCount = unreadCounts.value[unreadChatId] || 0;
             unreadCounts.value[unreadChatId] = currentCount + 1;
 
             showNotification({ ...messageData, time: formatTime(messageData.created_at) });
         }
-        
-        // Namun, jika ini adalah pesan call_event, kita tetap perlu mengupdate
-        // gelembung pesan yang sudah ada, bahkan jika chat tidak aktif.
-        // Ini untuk kasus di mana Anda melihat chat lain saat panggilan berakhir.
         if (messageData.type === 'call_event') {
             const messageIndex = messages.value.findIndex(m => m.id === messageData.id);
             if (messageIndex !== -1) {
@@ -1253,15 +1282,11 @@ onMounted(() => {
 const selectChat = (chat: Chat) => {
   activeChat.value = chat;
 
-  // Logic call management yang sama dengan selectContact
   if (callStatus.value === 'calling' || callStatus.value === 'connected') {
     let shouldMinimize = false;
     let shouldRestore = false;
     
     if (callType.value === 'personal') {
-      // Jika sedang call personal, end call jika:
-      // 1. Pindah ke group chat (apapun groupnya)
-      // 2. Pindah ke personal chat yang BERBEDA dari yang sedang di-call
       if (chat.type === 'user' && chat.id === callPartnerId.value) {
         let shouldRestore = true;
       } else {
@@ -1269,9 +1294,6 @@ const selectChat = (chat: Chat) => {
       }
     
     } else if (callType.value === 'group') {
-      // Jika sedang call group, end call jika:
-      // 1. Pindah ke personal chat (apapun orangnya)  
-      // 2. Pindah ke group chat yang BERBEDA dari yang sedang di-call
       if (chat.type === 'group' && chat.id !== activeGroupCall.value?.groupId) {
         shouldRestore = true;
       } else {
@@ -1399,7 +1421,9 @@ const currentCallContactName = computed(() => {
                            <div class="text-sm text-gray-500 dark:text-gray-400 truncate break">
                              <span v-if="chat.type === 'user' && (chat as Contact).latest_message">
                                  <span v-if="(chat as Contact).latest_message?.sender_id === currentUserId">Anda: </span>
-                                 {{ (chat as Contact).latest_message?.message }}
+                                 <span v-if="(chat as Contact).latest_message">
+                                  {{ truncate(getLatestMessagePreview((chat as Contact).latest_message), 25) }}
+                                 </span>
                              </span>
                            </div>
                             <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
@@ -1410,7 +1434,9 @@ const currentCallContactName = computed(() => {
                                   <span v-else-if="chat.type === 'group'">
                                       {{ chat.latest_message.sender.name }}:
                                   </span>
-                                  {{ chat.latest_message.message }}
+                                  <span v-if="chat.latest_message">
+                                    {{ truncate(getLatestMessagePreview(chat.latest_message), 20) }}
+                                  </span>
                               </span>
                             </div>
                        </div>

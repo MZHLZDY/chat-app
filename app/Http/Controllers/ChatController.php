@@ -6,6 +6,7 @@ use App\Models\ChatMessage;
 use App\Events\MessageSent;
 use App\Events\MessageRead;
 use App\Events\MessageDeleted;
+use App\Events\FileMessageSent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -174,10 +175,9 @@ class ChatController extends Controller
             'file_mime_type' => $mime,
             'file_size'      => $file->getSize(),
         ]);
-        $message->load('sender');
-        broadcast(new MessageSent($message))->toOthers(); 
-        return response()->json($message, 201);
-    }
 
-    
+        broadcast(new FileMessageSent($message))->toOthers();
+
+        return response()->json($message->load('sender'));
+    }
 }
