@@ -26,7 +26,7 @@ export default defineConfig({
     //     port: 5173, // biar bisa diakses di hp
     //     strictPort: true,
     //     hmr: {
-    //         host: '10.184.172.65', // <-- GANTI DENGAN IP ANDA
+    //         host: '192.168.1.8', // <-- GANTI DENGAN IP ANDA
     //         protocol: 'ws',
     //     },
     // },  

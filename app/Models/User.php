@@ -36,6 +36,11 @@ class User extends Authenticatable implements MustVerifyEmail
      *
      * @var list<string>
      */
+
+    protected $appends = [
+    'profile_photo_url', // <--- INI BARIS KUNCI
+    ];
+    
     protected $hidden = [
         'password',
         'remember_token',

@@ -51,6 +51,7 @@ let manualSubscribeInProgress = false;
 
 export function usePersonalCall() {
     const page = usePage<AppPageProps>();
+    const currentUser = computed(() => page.props.auth.user);
     const currentUserId = computed(() => page.props.auth.user.id);
     const currentUserName = computed(() => page.props.auth.user.name);
     const { sendPersonalCallNotification, closeNotification } = useCallNotification();
@@ -814,14 +815,24 @@ const cleanupAgoraResources = async (): Promise<void> => {
             };
 
             activeCallData.value = {
-                callId: call_id,
-                channel: channel,
-                caller: { id: currentUserId.value, name: currentUserName.value },
-                callee: { id: contact.id, name: contact.name },
-                callType: 'voice',
-                isCaller: true,
-                status: 'calling'
-            };
+            callId: call_id,
+            channel: channel,
+            caller: {
+                id: currentUserId.value,
+                name: currentUserName.value,
+                profile_photo_url: currentUser.value.profile_photo_url,
+                email: currentUser.value.email
+            },
+            callee: { 
+                id: contact.id, 
+                name: contact.name, 
+                profile_photo_url: contact.profile_photo_url,
+                email: (contact as any).email
+            },
+            callType: 'voice',
+            isCaller: true,
+            status: 'calling'
+        };
             
             callStartTime.value = Date.now();
             startCallTimeout(30);
@@ -881,14 +892,29 @@ const answerVoiceCall = async (accepted: boolean, reason?: string) => {
 
         if (accepted) {
             // Jika diterima, lanjutkan proses join channel
+            const callerContact = contacts.value.find(contact => contact.id === callData.caller.id);
+            const callerData = callerContact || callData.caller;
+
             activeCallData.value = {
-                callId: callData.callId,
-                channel: callData.channel,
-                caller: callData.caller,
-                callee: { id: currentUserId.value, name: currentUserName.value },
-                callType: 'voice',
-                isCaller: false,
-                status: 'connecting'
+              callId: callData.callId,
+              channel: callData.channel,
+              caller: {
+                 id: callerData.id,
+                 name: callerData.name,
+                 profile_photo_url: callerData.profile_photo_url,
+                 profile_photo_path: callerData.profile_photo_path,
+                 avatar: callerData.avatar,
+                 photo_url: callerData.photo_url,
+                 email: callerData.email
+              },
+              callee: { 
+                 id: currentUserId.value, 
+                 name: currentUserName.value,
+                 profile_photo_url: currentUser.value.profile_photo_url // <--- PERBAIKAN PENTING
+               }, 
+              callType: 'voice',
+              isCaller: false,
+              status: 'connecting'
             };
             isInVoiceCall.value = true;
             
@@ -1071,10 +1097,7 @@ const joinCallAsCaller = async (): Promise<boolean> => {
         // ✅ FIX: Update state dengan data yang lengkap
         incomingCallVoice.value = {
             callId: data.call_id,
-            caller: {
-                id: data.caller.id,
-                name: callerName
-            },
+            caller: data.caller,
             callType: data.call_type || 'voice',
             channel: data.channel,
             timestamp: Date.now()
@@ -1098,6 +1121,8 @@ const joinCallAsCaller = async (): Promise<boolean> => {
     });
     
     // Dalam fungsi initializePersonalCallListeners(), perbaiki bagian call-accepted:
+// resources/js/composables/usePersonalCall.ts (di dalam initializePersonalCallListeners)
+
 privateChannel.listen('.call-accepted', async (data: any) => {
     console.log('✅ EVENT .call-accepted DITERIMA oleh CALLER:', data);
     
@@ -1108,54 +1133,59 @@ privateChannel.listen('.call-accepted', async (data: any) => {
 
     stopCallTimeout();
     
-    // ✅ FIX: Simpan reference ke outgoing call sebelum reset
     const currentOutgoingCall = outgoingCallVoice.value;
     
     if (currentOutgoingCall && currentOutgoingCall.callId === data.call_id) {
         console.log('🚀 Optimistic UI Update: Menampilkan UI panggilan...');
 
-        // ✅ FIX: Buat object baru untuk activeCallData
+        // ✅ PERBAIKAN: Pastikan data callee lengkap dengan foto profil
+        const calleeContact = currentOutgoingCall.callee;
+        console.log('🔍 DEBUG Callee contact data:', calleeContact);
+
         const newActiveCallData = {
             callId: data.call_id,
             channel: data.channel,
-            caller: { id: currentUserId.value, name: currentUserName.value },
-            callee: data.callee || currentOutgoingCall.callee,
+            caller: { 
+                id: currentUserId.value, 
+                name: currentUserName.value,
+                profile_photo_url: currentUser.value.profile_photo_url,
+                email: currentUser.value.email
+            },
+            callee: {
+                id: calleeContact.id,
+                name: calleeContact.name,
+                profile_photo_url: calleeContact.profile_photo_url,
+                email: (calleeContact as any).email
+            },
             callType: 'voice',
             isCaller: true,
             status: 'connecting' as const
         };
         
-        // ✅ FIX: Update state secara atomic
+        // Update state
         activeCallData.value = newActiveCallData;
         outgoingCallVoice.value = null;
         isInVoiceCall.value = true;
 
-        console.log('🎯 Caller UI state diupdate:', newActiveCallData);
+        console.log('🎯 Caller UI state diupdate dengan foto:', newActiveCallData)
 
-        // ✅ FIX: Gunakan try-catch untuk handle join errors dengan state preservation
         try {
-            const joinSuccess = await joinCallAsCaller();
+            // Asumsi joinCallAsCaller() menangani setupAudio() dan joinChannel()
+            const joinSuccess = await joinCallAsCaller(); 
             if (joinSuccess && activeCallData.value) {
+                // Setelah berhasil join, set status ke connected
                 activeCallData.value.status = 'connected';
                 console.log('✅ Caller berhasil join dan terhubung.');
-                
-                // ✅ FIX: Force UI update
-                setTimeout(() => {
-                    if (activeCallData.value) {
-                        activeCallData.value = { ...activeCallData.value };
-                    }
-                }, 200);
+                // Hapus setTimeout yang tidak perlu
             } else {
                 throw new Error('Join process returned false');
             }
         } catch (error: any) {
             console.error('❌ Caller gagal join:', error);
             
-            // ✅ FIX: Preserve error state untuk UI feedback
             if (activeCallData.value) {
                 activeCallData.value.status = 'failed';
                 
-                // Beri waktu untuk UI update sebelum reset
                 setTimeout(() => {
                     resetVoiceCallState();
                     alert('Gagal terhubung ke panggilan: ' + (error.message || 'Unknown error'));
