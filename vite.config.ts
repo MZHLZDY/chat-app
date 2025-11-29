@@ -21,13 +21,13 @@ export default defineConfig({
             },
         }),
     ],
-    // server: {
-    //     host: '0.0.0.0',
-    //     port: 5173, // biar bisa diakses di hp
-    //     strictPort: true,
-    //     hmr: {
-    //         host: '192.168.1.8', // <-- GANTI DENGAN IP ANDA
-    //         protocol: 'ws',
-    //     },
-    // },  
+    server: {
+        host: '0.0.0.0',
+        port: 5173, // biar bisa diakses di hp
+        strictPort: true,
+        hmr: {
+            host: '10.167.90.4', // <-- GANTI DENGAN IP ANDA
+            protocol: 'ws',
+        },
+    },  
 });
