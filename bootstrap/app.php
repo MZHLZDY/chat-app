@@ -12,9 +12,13 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        ['prefix' => 'api', 'middleware' => ['api', 'auth:sanctum']],
+    )
+    // --------------------------------
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
@@ -24,15 +28,6 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
-
-    //     $middleware->trustProxies(
-    //     '*', // Argumen pertama untuk $proxies
-    //     Illuminate\Http\Request::HEADER_X_FORWARDED_FOR |
-    //     Illuminate\Http\Request::HEADER_X_FORWARDED_HOST |
-    //     Illuminate\Http\Request::HEADER_X_FORWARDED_PORT |
-    //     Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO |
-    //     Illuminate\Http\Request::HEADER_X_FORWARDED_AWS_ELB
-    // );
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

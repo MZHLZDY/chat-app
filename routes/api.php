@@ -19,4 +19,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/profile/photo', [App\Http\Controllers\ProfileController::class, 'updatePhoto']);
     Route::post('/logout', [App\Http\Controllers\Api\AuthController::class, 'logout']);
     // Nanti route untuk kirim pesan/chat ditaruh di sini
+    Route::get('/messages/{friendId}', [App\Http\Controllers\Api\MessageController::class, 'index']);
+    Route::post('/messages', [App\Http\Controllers\Api\MessageController::class, 'store']);
 });
