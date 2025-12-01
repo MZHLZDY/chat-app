@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch, onMounted } from 'vue';
 import { PhoneForwarded, PhoneOff, Phone, PhoneCall, PhoneMissed, Mic, MicOff, Volume2, VolumeOff, Video, Minimize, Minimize2 } from 'lucide-vue-next';
 
 // Interface
@@ -8,6 +8,8 @@ interface Participant {
   name: string;
   status: 'calling' | 'ringing' | 'accepted' | 'rejected' | 'ended' | 'left';
   reason?: string;
+  profile_photo_url?: string;
+  email?: string;
 }
 
 // Props
@@ -17,7 +19,6 @@ const props = defineProps({
   isCaller: { type: Boolean, default: false },
   currentUserId: { type: Number, required: true },
   callTimeoutCountdown: { type: Number, default: null },
-  // Prop baru untuk menerima durasi dari induk
   formattedDuration: { type: String, default: '00:00' }
 });
 
@@ -31,7 +32,10 @@ const emit = defineEmits([
 const isMuted = ref(false);
 const isSpeakerOn = ref(true);
 
-// Computed properties (tanpa timer)
+// ✅ PERBAIKAN: State untuk image errors per participant
+const imageErrors = ref<Set<number>>(new Set());
+
+// Computed properties
 const isIncomingCall = computed(() => !props.isCaller && props.groupCallData?.status === 'ringing');
 const isOngoingCall = computed(() => props.groupCallData?.status === 'accepted');
 const isOutgoingCall = computed(() => props.isCaller && props.groupCallData?.status === 'calling');
@@ -49,6 +53,79 @@ const callTitle = computed(() => {
 const groupName = computed(() => props.groupCallData?.group?.name || 'Grup');
 const callerName = computed(() => props.groupCallData?.caller?.name || 'Unknown');
 const participants = computed((): Participant[] => props.groupCallData?.participants || []);
+
+// ✅ PERBAIKAN: Enhanced photo URL computation untuk group
+const getParticipantPhotoUrl = (participant: Participant): string | null => {
+    if (!participant) return null;
+    
+    // Priority 1: profile_photo_url (full URL)
+    if (participant.profile_photo_url) {
+        return participant.profile_photo_url;
+    }
+    // Priority 2: Fallback ke generated avatar
+    else if (participant.name) {
+        const name = participant.name.replace(/\s/g, '+');
+        return `https://ui-avatars.com/api/?name=${name}&background=random&color=fff&bold=true&size=128`;
+    }
+    
+    return null;
+};
+
+// ✅ PERBAIKAN: Check if should show photo untuk participant
+const shouldShowPhoto = (participantId: number, photoUrl: string | null): boolean => {
+    return !!photoUrl && !imageErrors.value.has(participantId);
+};
+
+// ✅ PERBAIKAN: Get participant avatar class untuk fallback
+const getParticipantAvatarClass = (participant: Participant): string => {
+    if (!participant) return 'bg-blue-500';
+    
+    // Gunakan ID untuk warna yang konsisten
+    if (participant.id) {
+        const colors = ['bg-sky-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500', 'bg-orange-500', 'bg-yellow-500', 'bg-teal-500', 'bg-cyan-500'];
+        const colorIndex = participant.id % colors.length;
+        return colors[colorIndex];
+    }
+    
+    return 'bg-sky-500';
+};
+
+// ✅ PERBAIKAN: Get participant initial
+const getParticipantInitial = (participant: Participant): string => {
+    const name = participant?.name || 'Unknown';
+    return name && name !== 'Unknown' ? name.charAt(0).toUpperCase() : '?';
+};
+
+// ✅ PERBAIKAN: Enhanced error handling untuk participant images
+const handleImageError = (event: Event, participantId: number, participantName: string) => {
+    const target = event.target as HTMLImageElement;
+    console.log('❌ Error loading participant image:', {
+        participantId,
+        participantName,
+        src: target.src
+    });
+    imageErrors.value.add(participantId);
+};
+
+// ✅ PERBAIKAN: Enhanced load handling
+const handleImageLoad = (event: Event, participantId: number, participantName: string) => {
+    console.log('✅ Participant image loaded successfully:', {
+        participantId,
+        participantName
+    });
+    imageErrors.value.delete(participantId);
+};
+
+// ✅ PERBAIKAN: Reset image errors ketika groupCallData berubah
+watch(() => props.groupCallData, () => {
+    console.log('🔄 Group call data changed, reset image error state');
+    imageErrors.value.clear();
+}, { deep: true });
+
+// ✅ DEBUG: Log ketika component mounted
+onMounted(() => {
+    console.log('🎯 VoiceCallGroup mounted');
+});
 
 // Methods
 const acceptCall = () => emit('accept-call', props.groupCallData?.callId);
@@ -75,9 +152,17 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
     <div v-if="isIncomingCall" class="flex flex-col items-center justify-center h-full text-center">
       <h3 class="text-2xl font-bold mb-2">Panggilan Grup Masuk</h3>
       <p class="text-gray-300 mb-6">{{ callerName }} mengundang Anda ke grup</p>
-      <div class="w-28 h-28 bg-blue-500 rounded-full mx-auto my-4 flex items-center justify-center text-white text-5xl font-bold">
-        {{ groupName.charAt(0).toUpperCase() }}
+      
+      <!-- ✅ PERBAIKAN: Enhanced group photo display -->
+      <div class="relative w-28 h-28 mx-auto my-4">
+        <!-- Group photo atau fallback -->
+        <div 
+          class="w-full h-full rounded-full flex items-center justify-center text-white text-5xl font-bold bg-blue-500 border-4 border-white shadow-lg"
+        >
+          {{ groupName.charAt(0).toUpperCase() }}
+        </div>
       </div>
+      
       <p class="text-xl font-semibold mt-2">{{ groupName }}</p>
       <div class="absolute bottom-10 flex w-full justify-center gap-10">
         <div class="flex flex-col items-center gap-2">
@@ -126,13 +211,33 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
             >
               <Phone class="w-4 h-4"/>
             </button>
+            
             <div v-if="participant.status !== 'accepted'" class="absolute inset-0 bg-black bg-opacity-60 rounded-lg flex items-center justify-center z-10">
               <span v-if="participant.status === 'ringing' || participant.status === 'calling'" class="text-yellow-400 font-semibold">Memanggil...</span>
               <span v-else class="text-red-400 font-semibold">{{ participant.status === 'rejected' ? 'Diabaikan' : 'Keluar' }}</span>
             </div>
-            <div class="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-2">
-              {{ participant.name.charAt(0).toUpperCase() }}
+            
+            <!-- ✅ PERBAIKAN BESAR: Enhanced participant photo display -->
+            <div class="relative w-16 h-16 mb-2">
+              <!-- Foto profil participant - hanya tampilkan jika URL tersedia dan tidak error -->
+              <img 
+                v-if="shouldShowPhoto(participant.id, getParticipantPhotoUrl(participant))"
+                :src="getParticipantPhotoUrl(participant)" 
+                :alt="participant.name" 
+                class="w-full h-full rounded-full object-cover border-2 border-white shadow-md"
+                @error="(event) => handleImageError(event, participant.id, participant.name)"
+                @load="(event) => handleImageLoad(event, participant.id, participant.name)"
+              />
+
+              <!-- Fallback avatar - tampilkan jika tidak ada foto atau error -->
+              <div 
+                v-else
+                :class="['w-full h-full rounded-full flex items-center justify-center text-white text-xl font-bold border-2 border-white shadow-md', getParticipantAvatarClass(participant)]"
+              >
+                {{ getParticipantInitial(participant) }}
+              </div>
             </div>
+            
             <p class="text-white font-semibold text-sm truncate w-full text-center">
               {{ participant.name }}
               <span v-if="participant.id === currentUserId" class="text-xs font-semibold text-blue-400">(Anda)</span>
@@ -162,8 +267,8 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
             <PhoneForwarded class="w-7 h-7"/>
           </button>
           <button @click="" class="bg-gray-700 text-white p-3 rounded-full hover:bg-gray-800" title="Beralih ke Video Call?">
-          <Video class="w-6 h-6"/>
-        </button>
+            <Video class="w-6 h-6"/>
+          </button>
         </div>
         <div v-if="isCallEnded" class="flex justify-center">
           <button @click="endCall" class="bg-blue-500 text-white px-8 py-3 rounded-full hover:bg-blue-600">Tutup</button>
@@ -172,3 +277,16 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Optional: Tambahkan animasi untuk smooth transitions */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>
