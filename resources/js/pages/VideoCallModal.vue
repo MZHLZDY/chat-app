@@ -3,11 +3,12 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { ref, onMounted, onUnmounted, computed, watch} from 'vue';
 import { defineProps, defineEmits } from 'vue';
-import { Mic, Camera, PhoneOff, Minimize2, Maximize2} from 'lucide-vue-next';
+import { Mic, Camera, PhoneOff, Minimize2, Maximize2, MicOff, CameraOff} from 'lucide-vue-next';
 import type { CallStatus, Participants } from '@/types/CallStatus';
 
 const localVideo = ref<HTMLVideoElement | null>(null);
 const remoteVideo = ref<HTMLVideoElement | null>(null);
+const remoteVideos = ref<{ [key: number]: HTMLVideoElement | null }>({});
 const localStream = ref<MediaStream | null>(null);
 const remoteStream = ref<MediaStream | null>(null);
 
@@ -33,10 +34,10 @@ const isCameraOn = ref(true);
 const props = defineProps<{
     show: boolean;
     contactName?: string;
-    status?: Exclude<CallStatus, 'calling'>; // tambahan
+    status?: string;
     isGroup?: boolean;
     groupName?: string;
-    participants?: Participants[];
+    participants?: any[];
 }>();
 
 const emit = defineEmits<{
@@ -45,6 +46,26 @@ const emit = defineEmits<{
     (e: "end"): void;
     (e: "minimize"): void;
 }>();
+
+// computed untuk grid layout berdasarkan jumlah peserta
+const gridCols = computed(() => {
+    if (!props.isGroup || !props.participants) return 'grid-cols-1';
+    const count = props.participants.filter(p => p.status !== 'accepted').length + 1;
+    if (count <= 1) return 'grid-cols-1';
+    if (count === 2) return 'grid-cols-2';
+    if (count <= 4) return 'grid-cols-2';
+    return 'grid-cols-3';
+});
+
+const acceptedParticipants = computed(() => {
+    if (!props.isGroup || !props.participants) return [];
+    return props.participants.filter(p => p.status === 'accepted');
+});
+
+// Get initials untuk avatar
+const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+};
 
 // function untuk minimize / maximize
 const toggleMinimize = () => {
@@ -104,26 +125,28 @@ const handleEnd = () => {emit("end");};
 onMounted(async () => {
     if (props.status === "connected" && localVideo.value) {
         try {
-            peerConnection = new RTCPeerConnection();
+            console.log('📹 Meminta akses kamera dan mikrofon...');
 
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
                 audio: true
             });
 
-            localVideo.value.srcObject = stream;
+            localStream.value = stream;
 
-            stream.getTracks().forEach(track => {
-                peerConnection?.addTrack(track, stream);
-            });
+            if (localVideo.value) {
+                localVideo.value.srcObject = stream;
+                console.log('✅ Akses kamera dan mikrofon diberikan.');
+            }
 
-            peerConnection.ontrack = (event) => {
-                if (remoteVideo.value) {
-                    remoteVideo.value.srcObject = event.streams[0];
-                }
-            };
-        }   catch (err) {
-            console.error("Error accessing media devices.", err);
+            return stream;
+        } catch (err) {
+            console.error("❌ Gagal mendapatkan akses media devices:", err);
+            alert("Gagal mendapatkan akses kamera dan mikrofon. Silakan periksa pengaturan perangkat Anda.");
+            throw err;
         }
     }
 });
@@ -131,20 +154,26 @@ onMounted(async () => {
 // fungsi untuk mendapatkan user media
 const getUserMedia = async () => {
     try {
+        console.log('📹 Meminta akses kamera dan mikrofon...');
+
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
             audio: true
         });
 
         localStream.value = stream;
         if (localVideo.value) {
             localVideo.value.srcObject = stream;
+            console.log('✅ Local media stream berhasil didapatkan');
         }
 
-        console.log('✅ Local media stream berhasil didapatkan');
         return stream;
     } catch (error) {
         console.error('❌ Gagal mendapatkan media stream:', error);
+        alert('Gagal mendapatkan akses kamera dan mikrofon. Silakan periksa pengaturan perangkat Anda.'); 
         throw error;
     }
 };
@@ -157,6 +186,7 @@ const toggleVideo = () => {
             videoTrack.enabled = !videoTrack.enabled;
             isCameraOn.value = videoTrack.enabled;
             isVideoEnabled.value = videoTrack.enabled;
+            console.log('📹 Camera Toggled:', isCameraOn.value);
         }
     }
 };
@@ -169,6 +199,7 @@ const toggleAudio = () => {
             audioTrack.enabled = !audioTrack.enabled;
             isMuted.value = !audioTrack.enabled;
             isAudioEnabled.value = audioTrack.enabled;
+            console.log('🎤 Mic toggled:', !isMuted.value);
         }
     }
 };
@@ -181,31 +212,30 @@ const toggleFullscreen = () => {
 // simulate remote video (untuk testing, nanti diganti dengan RTC biar realtime)
 const simulateRemoteVideo = async () => {
     try {
-        // untuk demo, buatlah stream terpisah untuk remote
-        const remoteStreamDemo = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true //jangan duplikat audio
-        });
+        console.log('📹 Mensimulasikan remote video...');
 
-        if (remoteVideo.value) {
-            remoteVideo.value.srcObject = remoteStreamDemo;
-            remoteStream.value = remoteStreamDemo;
+        if (remoteVideo.value && localStream.value) {
+            remoteVideo.value.srcObject = localStream.value;
+            remoteStream.value = localStream.value;
+            console.log('✅ Remote video berhasil disimulasikan.');
         }
     } catch (error) {
         console.error('❌ Gagal mensimulasikan remote video:', error);
-        // fallback: mirror local stream
-        if (remoteVideo.value && localStream.value) {
-            remoteVideo.value.srcObject = localStream.value;
-        }
     }
 };
 
 onMounted(async () => {
     try {
+        console.log('🚀 VideoCallModal mounted, status:', props.status);
+
+        // dapatkan user media saat modal dibuka
         await getUserMedia();
         
         // inisialisai webRTC jika status connected
         if (props.status === 'connected') {
+            console.log('✅ Status connected, simulating remote...');
+
+            // inisialisasi webRTC (buat nanti waktu pake agora)
             peerConnection = new RTCPeerConnection({
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' }
@@ -240,9 +270,14 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+    console.log('🔴 VideoCallModal unmounted');
+
     // cleanup media streams
     if (localStream.value) {
-        localStream.value.getTracks().forEach(track => track.stop());
+        localStream.value.getTracks().forEach(track => {
+            track.stop();
+            console.log('🛑 Local media track stopped:', track.kind);
+        });
     }
     if (remoteStream.value) {
         remoteStream.value.getTracks().forEach(track => track.stop());
@@ -344,6 +379,8 @@ watch(
     () => props.show,
     (val) => {
         if (!val) {
+            console.log('🔴 Video call modal ditutup, membersihkan resources...');
+
             // Stop semua track
             if (localStream.value) {
                 localStream.value.getTracks().forEach((track) => track.stop());
@@ -365,6 +402,20 @@ watch(
 
             // reset position
             position.value = { x: window.innerWidth - 340, y: window.innerHeight - 240 };
+        }
+    }
+);
+
+// watch status untuk auto stimulate remote saat connected
+watch(
+    () => props.status,
+    async (newStatus) => {
+        console.log('📡 Status changed to:', newStatus);
+        
+        if (newStatus === 'connected' && !remoteStream.value) {
+            setTimeout(() => {
+                simulateRemoteVideo();
+            }, 500);
         }
     }
 );
@@ -398,7 +449,7 @@ watch(
             >
                 <div class="flex items-center gap-2">
                     <div class="bg-gray-600 rounded-full flex items-center justify-center text-white font-bold"
-                        :class="isMinimized ? 'w-6 h-6 text-xs' : 'w-8 h-8 sm:w-10 sm:h-10 text-sm sm:text-kg'"    
+                        :class="isMinimized ? 'w-6 h-6 text-xs' : 'w-8 h-8 sm:w-10 sm:h-10 text-sm sm:text-lg'"    
                     >
                         {{ props.isGroup ? 'G' : (props.contactName || 'U').charAt(0).toUpperCase() }}
                     </div>
@@ -447,8 +498,9 @@ watch(
                         <!-- end call waktu floating -->
                         <button
                             @click.stop="() => { console.log('☎️ Tombol panggilan diakhiri ditekan'); $emit('end'); }"
+                            class="rounded p-1 bg-red-600 hover:bg-red-700 text-white"
                         >
-                            <EndCall class="w-3 h-3"/>
+                            <PhoneOff class="w-3 h-3"/>
                         </button>
                     </div>
                 </div>
@@ -490,7 +542,7 @@ watch(
             </div>
 
             <!-- Status Connected (Video area) - RESPONSIVE -->
-            <div v-else-if="status === 'connected'" class="flex-1 relative bg-black min-h-0">
+            <div v-else-if="status === 'connected' && !props.isGroup" class="flex-1 relative bg-black min-h-0">
                 
                 <!-- layout full screen -->
                 <div v-if="!isMinimized" class="relative w-full h-full">
@@ -572,6 +624,69 @@ watch(
                  </div>
             </div>
 
+            <!-- Status Connected - GROUP VIDEO CALL -->
+            <div v-else-if="status === 'connected' && props.isGroup" class="flex-1 relative bg-black min-h-0 p-4">
+                <div :class="['grid gap-2 h-full', gridCols]">
+                    <!-- Local Video (diri sendiri) -->
+                    <div class="relative bg-gray-800 rounded-lg overflow-hidden flex items-center justify-center">
+                        <video
+                            ref="localVideo"
+                            autoplay
+                            muted
+                            playsinline
+                            class="w-full h-full object-cover"
+                        ></video>
+
+                        <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-xs z-10">
+                            You
+                        </div>
+
+                        <div v-if="isMuted" class="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full z-10">
+                            <MicOff class="w-4 h-4"/>
+                        </div>
+                    </div>
+
+                    <!-- Remote Participants -->
+                    <div
+                        v-for="participant in acceptedParticipants"
+                        :key="participant.id"
+                        class="relative bg-gray-800 rounded-lg overflow-hidden flex items-center justify-center"
+                    >
+                        <div class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600">
+                            <div class="w-20 h-20 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-white text-2xl font-bold mb-2">
+                                {{ getInitials(participant.name) }}
+                            </div>
+                            <p class="text-white font-semibold text-sm">{{ participant.name }}</p>
+                        </div>
+
+                        <div class="absolute bottom-2 left-2 bg-black bg-opacity-60 text-white px-2 py-1 rounded text-xs z-10">
+                            {{ participant.name }}
+                        </div>
+
+                        <div class="absolute top-2 right-2 w-3 h-3 bg-green-500 rounded-full animate-pulse z-10"></div>
+                    </div>
+
+                    <!-- Menunggu partisipan -->
+                    <div
+                        v-for="participant in participants?.filter(p => p.status === 'calling')"
+                        :key="'waiting-' + participant.id"
+                        class="relative bg-gray-700 rounded-lg overflow-hidden flex items-center justify-center opacity-50"
+                    >
+                        <div class="flex flex-col items-center justify-center text-gray-400">
+                            <div class="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center text-white text-lg font-bold mb-2">
+                                {{ getInitials(participant.name) }}
+                            </div>
+                            <p class="text-sm">{{ participant.name }}</p>
+                            <p class="text-xs mt-1">Memanggil...</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Demo badge for group video call -->
+                <div class="absolute top-8 right-8 bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-bold z-20">
+                    Demo Mode
+                </div>
+            </div>
+
             <!-- Status Ended -->
             <div
                 v-else-if="status === 'ended'"
@@ -595,7 +710,8 @@ watch(
                         isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-500'
                     ]"
                 >
-                    <Mic class="w-5 h-5 sm:w-6 sm:h-6"/>
+                    <MicOff v-if="isMuted" class="w-5 h-5 sm:w-6 sm:h-6"/>
+                    <Mic v-else class="w-5 h-5 sm:w-6 sm:h-6"/>
                 </button>
 
                 <!-- Camera -->

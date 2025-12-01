@@ -83,6 +83,7 @@ const activeCall = ref<null | { contactName: string }>(null);
 const callPartnerId = ref<number|null>(null);
 // const personalCallStatus = ref<CallStatus>('idle');
 const incomingCall = ref<{ from: any, to: { id: number, name: string }, callId?: string, channel?: string, callType?: string } | null>(null);
+const incomingCallData = ref<{ from: string; type: string; callId: string; groupId?: number } | null>(null);
 const isMinimized = ref(false);
 const callStatus = ref<CallStatus>('idle');
 const callType = ref< 'none' | 'personal' | 'group'>('none');
@@ -254,15 +255,34 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
     return;
   }
 
+  // filter diri sendiri dari daftar peserta
+  const filteredMembers = members.filter(m => m.id !== currentUserId.value);
+
   activeGroupCall.value = {
     groupId,
     name: groupName,
-    participants: members.map(m => ({ ...m, status: 'calling' }))
+    participants: filteredMembers.map(m => ({ ...m, status: 'calling' }))
   };
 
   callType.value = 'group';
   callStatus.value = 'calling';
   isMinimized.value = false;
+
+  // broadcast ke backend untuk trigger panggilan ke semua anggota
+  axios.post('/call/group/invite', {
+    group_id: groupId,
+    group_name: groupName,
+    call_type: 'video',
+    members: filteredMembers.map(m => m.id)
+  })
+  .then(response => {
+    console.log('✅ Group call broadcasted:', response.data);
+  })
+  .catch(error => {
+    console.error('❌ Gagal broadcast group call:', error);
+    alert('Gagal memulai panggilan grup. Silakan coba lagi.');
+    endCall();
+  })
 
   // timeout untuk group call
   callTimer = setTimeout(() => {
@@ -1235,6 +1255,16 @@ const setupGlobalListeners = () => {
       .listen('.call-ended', (payload:any) => {
         console.log('☎️ Panggilan diakhiri:', payload)
       })
+  
+  echo.channel(`user.${currentUserId.value}`)
+      .listen('.group-call.incoming', (data: any) => {
+        console.log('🤙 Panggilan grup masuk diterima:', data);
+
+        // cari grup dan members dari contacts
+        const group = contacts.value.find((c: any) => 
+            c.type === 'group' && c.id === data.groupId
+        );
+      });
 };
 
 // --- Initialize ---
@@ -1513,7 +1543,7 @@ const currentCallContactName = computed(() => {
                       </div>
                     </div>
                     
-                    <button @click="startGroupCall(activeContact.id, activeContact.name, (activeContact.members || []).map(m => ({...m, status: 'calling'})))"class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+                    <button @click="startGroupCall(activeContact.id, activeContact.name, (activeContact.members || []).filter(m => m.id !== currentUserId).map(m => ({...m, status: 'calling'})))" class="ml-auto flex items-center gap-1 px-3 py-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
                       <Video class="w-5 h-5 text-gray-700 dark:text-gray-300"/>
                     </button>
                     <button

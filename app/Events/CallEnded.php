@@ -14,17 +14,30 @@ class CallEnded implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     // Hapus properti $channel yang tidak lagi diperlukan
-    public array $participantIds;
-    public string $callId;
-    public int $endedBy;
-    public string $endedByName;
-    public ?string $reason;
-    public int $duration;
-    public string $callType;
+public ?int $userId;
+public ?int $groupId;
+public string $callId;
+public array $participantIds;
+public int $endedBy;
+public string $endedByName;
+public ?string $reason;
+public int $duration;
+public string $callType;
 
     // Sesuaikan constructor agar lebih rapi
-    public function __construct(string $callId, array $participantIds, int $endedBy, string $endedByName, ?string $reason, int $duration, string $callType)
-    {
+    public function __construct(
+        string $callId, 
+        array $participantIds, 
+        int $endedBy, 
+        string $endedByName, 
+        ?string $reason, 
+        int $duration, 
+        string $callType,
+        ?int $userId = null,
+        ?int $groupId = null
+    ) {
+        $this->userId = $userId;
+        $this->groupId = $groupId;
         $this->callId = $callId;
         $this->participantIds = $participantIds;
         $this->endedBy = $endedBy;
@@ -47,12 +60,21 @@ class CallEnded implements ShouldBroadcast
         foreach ($this->participantIds as $userId) {
             $channels[] = new PrivateChannel('user.' . $userId);
         }
+
+        if ($this->groupId !== null) {
+            $channels[] = new Channel('group.' . $this->groupId);
+        }
         
         return $channels;
+
     }
 
     public function broadcastAs(): string
     {
+        if ($this->groupId !== null) {
+            return 'group-call-ended';
+        }
+
         return 'voice-call-ended';
     }
 }

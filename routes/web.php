@@ -181,6 +181,12 @@ Route::middleware(['auth'])->group(function () {
     //   Route::post('/recall', [TwilioCallController::class, 'recallParticipant'])->name('recall');
     //   Route::post('/missed', [TwiioCallController::class, 'missedGroupCall'])->name('missed');
     // });
+
+    // Goup call routes untuk demo testing
+    Route::post('/call/group/invite', [CallController::class, 'groupInvite'])->name('call.group.invite');
+    Route::post('/call/group/accept', [CallController::class, 'groupAccept'])->name('call.group.accept');
+    Route::post('/call/group/reject', [CallController::class, 'groupReject'])->name('call.group.reject');
+    Route::post('/call/group/end', [CallController::class, 'groupEnd'])->name('call.group.end');
 });
 
 // Route::post('/twilio/token', [TwilioCallController::class, 'generateToken'])->middleware('auth');
