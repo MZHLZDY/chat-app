@@ -15,8 +15,8 @@ class MessageSent implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     /**
-     * GANTI dadi objek Message, guduk array.
-     * Iki ben Laravel otomatis nggawe "amplop".
+     * GANTI menjadi objek Message, bukan array.
+     * Supaya Laravel otomatis membuat "amplop".
      * @var ChatMessage
      */
     public $message;

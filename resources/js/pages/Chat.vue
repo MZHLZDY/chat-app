@@ -496,10 +496,12 @@ const formatLastSeen = (dateString: string | null | undefined): string => {
 };
 
 const addMessage = (message: any) => {
-  if (!messages.value.some(msg => msg.id === message.id)) {
+  const exists = messages.value.some(m => m.id === message.id);
+  if (exists) {
+        return;
+    }
     messages.value.push(message);
     scrollToBottom();
-  }
 };
 
 const updateLatestMessage = (contactId: number, message: { text: string, sender_id: number, sender: { id: number, name: string } }) => {
@@ -810,21 +812,24 @@ watch(activeContact, (newContact, oldContact) => {
 
 // --- WebSocket Management ---
 let boundChannel = '';
-const bindChannel = (contactId: number, type: 'user' | 'group') => {
-    if (boundChannel) {
-        echo.leave(boundChannel);
+  const bindChannel = (contactId: number, type: 'user' | 'group') => {
+      if (boundChannel) {
+          echo.leave(boundChannel);
+      }
+
+  const handleNewMessage = (eventData: any) => {
+      const messageData = eventData.message ? eventData.message : eventData;
+
+      const senderId = Number(messageData?.sender_id);
+      const myId = Number(currentUserId.value);
+
+      if (senderId === myId) {
+        return; 
     }
-
-    const handleNewMessage = (eventData: any) => {
-        const messageData = eventData.message ? eventData.message : eventData;
-
-        if (!messageData || !messageData.id || !messageData.message || messageData.sender_id === currentUserId.value) {
-           return;
-        }
-        
-        if (messageData.group_id) {
+      
+      if (messageData.group_id) {
           updateLatestGroupMessage(messageData.group_id, messageData);
-        }
+      }
 
         let isChatActive = false;
         if (activeContact.value) {
@@ -849,20 +854,19 @@ const bindChannel = (contactId: number, type: 'user' | 'group') => {
             axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
         }
         } else {
-        let unreadChatId: string;
-        
-        if (messageData.group_id) {
-            unreadChatId = `group-${messageData.group_id}`;
-        } else {
-            unreadChatId = `user-${messageData.sender_id}`;
-        }
-        const currentCount = unreadCounts.value[unreadChatId] || 0;
-        unreadCounts.value = {
-            ...unreadCounts.value,
-            [unreadChatId]: currentCount + 1
-        };
-    }
-
+          let unreadChatId: string;
+          
+          if (messageData.group_id) {
+              unreadChatId = `group-${messageData.group_id}`;
+          } else {
+              unreadChatId = `user-${messageData.sender_id}`;
+          }
+          const currentCount = unreadCounts.value[unreadChatId] || 0;
+          unreadCounts.value = {
+              ...unreadCounts.value,
+              [unreadChatId]: currentCount + 1
+          };
+      }
     };
 
     const channelName = type === 'group'
@@ -1145,8 +1149,8 @@ const setupGlobalListeners = () => {
     echo.private(`notifications.${currentUserId.value}`)
         .listen('.MessageSent', (eventData: any) => {
         const messageData = eventData.message;
+        if (Number(messageData.sender_id) === Number(user.value.id)) { return;}
         const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
-
         if (messageData.group_id) {
             updateLatestGroupMessage(messageData.group_id, messageData);
         } else {
