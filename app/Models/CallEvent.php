@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Models\ChatMessage;
 
 class CallEvent extends Model
 {
@@ -33,7 +34,7 @@ class CallEvent extends Model
         switch ($this->status) {
             case 'calling':   $text .= ' • Memanggil'; break;
             case 'accepted':  $text .= ' • Diterima'; break;
-            case 'rejected':  $text .= ' • Ditolak' . ($this->reason ? " - {$this->reason}" : ''); break;
+            case 'rejected':  $text .= ' • Ditolak' ; break;
             case 'cancelled': $text .= ' • Dibatalkan'; break;
             case 'missed':    $text .= ' • Tak terjawab'; break;
             case 'ended':

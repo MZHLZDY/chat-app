@@ -15,6 +15,7 @@ import { useGroupCall } from '@/composables/useGroupCall';
 import type { CallStatus, Participants } from '@/types/CallStatus.js';
 import type { Contact, Group, User, Chat, AppPageProps } from '@/types/index';
 import { useContacts } from '@/composables/useContacts';
+import { useCallEventFormatter } from '@/composables/useCallEventFormatter';
 // import type { Participants } from './OutgoingCallModal.vue';
 
 axios.defaults.withCredentials = true;
@@ -77,6 +78,7 @@ let activeGroupChannel: any = null;
 const { startVoiceCall, isInVoiceCall } = usePersonalCall();
 const { startGroupVoiceCall, isGroupVoiceCallActive } = useGroupCall();
 const isAnyCallInProgress = computed(() => isInVoiceCall.value || isGroupVoiceCallActive.value);
+const { formatCallEventText, formatCallDuration, formatForDisplay } = useCallEventFormatter();
 
 // --- Personal Video Call State ---
 const activeCall = ref<null | { contactName: string }>(null);
@@ -1088,23 +1090,20 @@ const formatDuration = (seconds: number | null) => {
 };
 
 // Tambahkan method ini di bagian methods/setup Chat.vue
-const formatCallEventMessage = (message: any) => {
-  if (!message.text && !message.message) return 'Panggilan Suara';
-  
-  const text = message.text || message.message;
-  
-  // Jika sudah dalam format yang diinginkan, langsung return
-  if (text.includes('Panggilan Suara')) {
-    return text;
+const getCallEventText = (message: any): string => {
+  // Prioritaskan data REAL dari backend
+  if (!message.call_event?.temp && message.message) {
+    return message.message;
   }
   
-  // Format untuk berbagai jenis status panggilan
-  if (text.includes('answered') || text.includes('•')) {
-    return text; // Sudah diformat oleh backend
+  // Untuk optimistic message, format berdasarkan status
+  if (message.call_event?.temp) {
+    const { status, call_type, duration, reason } = message.call_event;
+    return formatCallEventText(status, call_type || 'voice', duration, reason);
   }
   
   // Fallback
-  return 'Panggilan Suara';
+  return message.text || message.message || 'Panggilan Suara';
 };
 
 const setupGlobalListeners = () => {
@@ -1692,7 +1691,7 @@ const currentCallContactName = computed(() => {
                                       <Phone v-else class="w-4 h-4" />
 
                                       <span>
-                                       {{ m.text || m.message }}
+                                       {{ getCallEventText(m) }}
                                       </span>
                                     </div>
                                   </div>

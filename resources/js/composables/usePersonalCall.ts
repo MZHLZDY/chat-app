@@ -7,6 +7,7 @@ import AgoraRTC from 'agora-rtc-sdk-ng';
 import type { Chat, User, Contact, AppPageProps } from '@/types/index';
 import { echo } from '../echo.js';
 import { useCallNotification } from '@/composables/useCallNotification';
+import { useCallEventFormatter } from './useCallEventFormatter';
 
 declare global {
   interface Window {
@@ -56,6 +57,7 @@ export function usePersonalCall() {
     const currentUserName = computed(() => page.props.auth.user.name);
     const { sendPersonalCallNotification, closeNotification } = useCallNotification();
     const isPersonalCallActive = computed(() => isInVoiceCall.value || !!outgoingCallVoice.value || !!incomingCallVoice.value);
+    const { formatCallEventText } = useCallEventFormatter();
 
     // ✅ PERBAIKAN: Simple Agora client initialization
     const initializeAgoraClient = () => {
@@ -755,10 +757,16 @@ const cleanupAgoraResources = async (): Promise<void> => {
             id: tempId,
             sender_id: currentUserId.value,
             sender_name: currentUserName.value,
-            text: 'Panggilan Suara • Memanggil',
+            text: formatCallEventText('calling', 'voice'),
+            message: formatCallEventText('calling', 'voice'),
             time: formatTime(new Date().toISOString()),
             created_at: new Date().toISOString(),
-            type: 'call_event'
+            type: 'call_event',
+            call_event: {
+              status: 'calling',
+              call_type: 'voice',
+              temp: true
+            }
         };
 
         // ✅ FIX: Tambahkan optimistic message ke UI
@@ -1059,66 +1067,77 @@ const joinCallAsCaller = async (): Promise<boolean> => {
     privateChannel.stopListening('.call-rejected');
     privateChannel.stopListening('.call-timeout');
     privateChannel.stopListening('.call-started');
-    privateChannel.stopListening('.MessageSent');
+    // privateChannel.stopListening('.MessageSent');
 
     // Incoming call listener - UNTUK CALLEE
-    privateChannel.listen('.incoming-call', (data: any) => {
-        console.log('📞 EVENT incoming-call DITERIMA oleh CALLEE:', data);
-        
-        if (data.call_type === 'video') {
-            console.log('📹 Panggilan video diabaikan');
-            return;
-        }
+    // usePersonalCall.ts
 
-        // ✅ FIX: Jangan abaikan jika sedang dalam panggilan lain
-        if (isInVoiceCall.value) {
-            console.log('⚠️ Sedang dalam panggilan, kirim busy signal');
-            // Kirim busy signal ke caller
-            axios.post('/call/busy', {
-                call_id: data.call_id,
-                caller_id: data.caller.id,
-                reason: 'User sedang dalam panggilan lain'
-            }).catch(console.error);
-            return;
-        }
-        
-        if (!data.caller) {
-            console.error('❌ Data caller tidak ada dalam event');
-            return;
-        }
-        
-        // Find caller name
-        let callerName = data.caller.name;
-        if (!callerName && data.caller.id) {
-            const callerUser = contacts.value.find(c => c.id === data.caller.id);
-            callerName = callerUser ? callerUser.name : `User ${data.caller.id}`;
-        }
-        
-        // ✅ FIX: Update state dengan data yang lengkap
-        incomingCallVoice.value = {
-            callId: data.call_id,
-            caller: data.caller,
-            callType: data.call_type || 'voice',
-            channel: data.channel,
-            timestamp: Date.now()
-        };
-        
-        console.log('📞 Panggilan masuk diproses oleh callee:', incomingCallVoice.value);
+privateChannel.listen('.incoming-call', (data: any) => {
+    console.log('📞 EVENT incoming-call DITERIMA oleh CALLEE:', data);
+    
+    if (data.call_type === 'video') {
+        console.log('📹 Panggilan video diabaikan');
+        return;
+    }
 
-        handleIncomingCallNotification(data);
-        
-        // Setup timeout
-        if (incomingCallTimeout) {
-            clearTimeout(incomingCallTimeout);
+    // ... (Logika busy signal dan cek data caller)
+    if (isInVoiceCall.value) {
+        console.log('⚠️ Sedang dalam panggilan, kirim busy signal');
+        // Kirim busy signal ke caller
+        axios.post('/call/busy', {
+            call_id: data.call_id,
+            caller_id: data.caller.id,
+            reason: 'User sedang dalam panggilan lain'
+        }).catch(console.error);
+        return;
+    }
+    
+    if (!data.caller) {
+        console.error('❌ Data caller tidak ada dalam event');
+        return;
+    }
+    
+    // 💡 PERBAIKAN UTAMA DI SINI: Gabungkan data caller dari event dengan data lengkap dari state Vue (contacts.value)
+    // Asumsi: contacts.value sudah berisi list kontak yang lengkap dengan 'profile_photo_url'
+    const callerUserFromContacts = contacts.value.find(c => c.id === data.caller.id);
+    
+    // Buat objek caller yang lebih lengkap.
+    // data.caller (dari event) digabungkan/ditimpa oleh callerUserFromContacts (data lengkap).
+    const fullCallerData = callerUserFromContacts 
+        ? { 
+            ...data.caller, 
+            ...callerUserFromContacts, 
+            // Pastikan photo URL yang sudah dihitung dipakai
+            profile_photo_url: callerUserFromContacts.profile_photo_url
         }
-        
-        incomingCallTimeout = setTimeout(() => {
-            if (incomingCallVoice.value?.callId === data.call_id) {
-                console.log('⏰ Auto rejecting call due to timeout');
-                handleIncomingCallTimeout(data.call_id);
-            }
-        }, 30000);
-    });
+        : data.caller;
+
+    // ✅ FIX: Update state incomingCallVoice dengan data caller yang sudah lengkap
+    incomingCallVoice.value = {
+        callId: data.call_id,
+        // Gunakan fullCallerData yang sudah diverifikasi dan lengkap
+        caller: fullCallerData, 
+        callType: data.call_type || 'voice',
+        channel: data.channel,
+        timestamp: Date.now()
+    };
+    
+    console.log('📞 Panggilan masuk diproses oleh callee:', incomingCallVoice.value);
+
+    handleIncomingCallNotification(data);
+    
+    // ... (Logika setup timeout)
+    if (incomingCallTimeout) {
+        clearTimeout(incomingCallTimeout);
+    }
+    
+    incomingCallTimeout = setTimeout(() => {
+        if (incomingCallVoice.value?.callId === data.call_id) {
+            console.log('⏰ Auto rejecting call due to timeout');
+            handleIncomingCallTimeout(data.call_id);
+        }
+    }, 30000);
+});
     
     // Dalam fungsi initializePersonalCallListeners(), perbaiki bagian call-accepted:
 // resources/js/composables/usePersonalCall.ts (di dalam initializePersonalCallListeners)

@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\CallEvent;
 use App\Models\ChatMessage;
 use App\Events\MessageSent;
 use App\Events\MessageRead;

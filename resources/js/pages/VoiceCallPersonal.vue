@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useCallEventFormatter } from '@/composables/useCallEventFormatter';
 import { PhoneForwarded, Volume2, Mic, MicOff, VolumeOff, Minimize2, Video } from 'lucide-vue-next';
 
 // Props
 const props = defineProps({
   isVisible: { type: Boolean, required: true },
   callData: { type: Object as () => any, default: null },
+  callStartTime: { 
+    type: Number as () => number | null, 
+    default: null 
+  },
   localAudioTrack: { type: Object as () => any, default: null },
   remoteAudioTrack: {
     type: Object as () => Record<string, any>, 
@@ -25,6 +30,16 @@ const imageError = ref(false);
 // Computed properties
 const isCaller = computed(() => props.callData?.isCaller || false);
 const isConnected = computed(() => props.callData?.status === 'connected');
+
+const { useLiveDuration, formatCallDuration } = useCallEventFormatter();
+
+const liveDuration = useLiveDuration(props.callStartTime);
+
+// Format durasi untuk display
+const displayDuration = computed(() => {
+    if (props.formattedDuration) return props.formattedDuration;
+    return liveDuration.value;
+});
 
 const contactName = computed(() => {
     if (!props.callData) return 'Unknown';
