@@ -2,7 +2,8 @@
 
 namespace App\Events;
 
-use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Broadcasting\Channel;
+use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -10,32 +11,50 @@ use App\Models\User;
 
 class GroupCallEnded implements ShouldBroadcast
 {
-    use Dispatchable, SerializesModels;
+    use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(
-        public string $callId,
-        public int $groupId,
-        public User $endedBy,
-        public ?string $reason
-    ) {}
+    public $userId;
+    public $groupId;
+    public $callId;
+    public $reason;
+    public $duration;
+    public $memberIds;
 
-    public function broadcastOn()
+    public function __construct($userId, $groupId, $callId, $reason = 'ended', $duration = 0, $memberIds = [])
     {
-        // Siarkan ke channel utama grup
-        return new PrivateChannel('group.' . $this->groupId);
+        $this->userId = $userId;
+        $this->groupId = $groupId;
+        $this->callId = $callId;
+        $this->reason = $reason;
+        $this->duration = $duration;
+        $this->memberIds = $memberIds;
+    }
+
+    public function broadcastOn(): array
+    {
+        $channels = [];
+
+        // broadcaast ke semua member individual
+        foreach ($this->memberIds as $memberId) {
+            $channels[] = new Channel('user.' . $memberId);
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string
     {
-        return 'group-call-ended';
+        return 'group-call.ended';
     }
 
     public function broadcastWith(): array
     {
         return [
+            'user_id' => $this->userId,
+            'group_id' => $this->groupId,
             'call_id' => $this->callId,
-            'ended_by' => ['id' => $this->endedBy->id, 'name' => $this->endedBy->name],
             'reason' => $this->reason,
+            'duration' => $this->duration,
         ];
     }
 }

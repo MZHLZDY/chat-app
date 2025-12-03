@@ -15,19 +15,26 @@ class GroupCallAccepted implements ShouldBroadcast
     public $accepter;
     public $groupId;
     public $callId;
+    public $memberIds;
 
-    public function __construct($accepter, $groupId, $callId)
+    public function __construct($accepter, $groupId, $callId, $memberIds)
     {
         $this->accepter = $accepter;
         $this->groupId = $groupId;
         $this->callId = $callId;
+        $this->memberIds = $memberIds;
     }
 
     public function broadcastOn(): array
     {
-        return [
-            new Channel('group.' . $this->groupId),
-        ];
+        $channels = [new Channel('group.' . $this->groupId)];
+
+        // broadcast juga ke individual channel untuk user yang menerima panggilan
+        foreach ($this->memberIds as $memberId) {
+            $channels[] = new Channel('user.' . $memberId);
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string
@@ -43,6 +50,7 @@ class GroupCallAccepted implements ShouldBroadcast
                 'name' => $this->accepter->name,
             ],
             'call_id' => $this->callId,
+            'group_id' => $this->groupId,
         ];
     }
 }

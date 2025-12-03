@@ -94,11 +94,16 @@ class CallController extends Controller
 
             $accepter = auth()->user();
 
+            // ambil semua member Ids dari group
+            $group = \App\Models\Group::with('members')->find($validated['group_id']);
+            $memberIds = $group->members->pluck('id')->toArray();
+
             // Broadcast ke caller dan semua anggota lain
             broadcast(new GroupCallAccepted(
                 $accepter,
                 $validated['group_id'],
-                $validated['call_id']
+                $validated['call_id'],
+                $memberIds
             ));
 
             return response()->json(['success' => true]);
@@ -149,12 +154,17 @@ class CallController extends Controller
                 'duration' => 'nullable|integer'
             ]);
 
+            // ambil semua member Ids dari group
+            $group = \App\Models\Group::with('members')->find($validated['group_id']);
+            $memberIds = $group->members->pluck('id')->toArray();
+
             broadcast(new GroupCallEnded(
                 auth()->id(),
                 $validated['group_id'],
                 $validated['call_id'],
                 'ended',
-                $validated['duration'] ?? 0
+                $validated['duration'] ?? 0,
+                $memberIds
             ));
 
             return response()->json(['success' => true]);

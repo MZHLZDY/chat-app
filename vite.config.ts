@@ -21,6 +21,7 @@ export default defineConfig({
             },
         }),
     ],
+<<<<<<< HEAD
     server: {
         host: '0.0.0.0',
         port: 5173, // biar bisa diakses di hp
@@ -30,4 +31,15 @@ export default defineConfig({
             protocol: 'ws',
         },
     },  
+=======
+    // server: {
+    //     host: '0.0.0.0',
+    //     port: 5173, // biar bisa diakses di hp
+    //     strictPort: true,
+    //     hmr: {
+    //         host: '10.167.90.4', // <-- GANTI DENGAN IP ANDA
+    //         protocol: 'ws',
+    //     },
+    // },  
+>>>>>>> 2ad6c22 (progress setting realtime demo video call group)
 });

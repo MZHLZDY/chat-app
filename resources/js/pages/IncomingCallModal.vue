@@ -7,6 +7,7 @@ import { defineProps, defineEmits } from 'vue';
 const props = defineProps<{
     show: boolean;
     callerName?: string;
+    isGroup?: boolean;
 }>();
 
 const emit = defineEmits<{

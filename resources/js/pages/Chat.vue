@@ -241,7 +241,7 @@ const pendingCall = ref<{ type: 'personal' | 'group', contact?: Chat, groupData?
 
 // Group Video Call State
 // const callStatus = ref<CallStatus>('idle');
-const activeGroupCall = ref<null | { groupId: number; name: string; participants: Participants[] }>(null);const joinedMembers = ref<any[]>([]);
+const activeGroupCall = ref<null | { groupId: number; name: string; callId: string;  participants: Participants[] }>(null);const joinedMembers = ref<any[]>([]);
 
 // Start Group Video Call
 const startGroupCall = (groupId: number, groupName: string, members: Participants[]) => {
@@ -259,9 +259,12 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
   // filter diri sendiri dari daftar peserta
   const filteredMembers = members.filter(m => m.id !== currentUserId.value);
 
+  const callId = `group-call-${Date.now()}`;
+
   activeGroupCall.value = {
     groupId,
     name: groupName,
+    callId,
     participants: filteredMembers.map(m => ({ ...m, status: 'calling' }))
   };
 
@@ -285,26 +288,140 @@ const startGroupCall = (groupId: number, groupName: string, members: Participant
     endCall();
   })
 
-  // timeout untuk group call
+  // timeout untuk setiap participants didalam group call
+  filteredMembers.forEach((member) => {
+    setTimeout(() => {
+      if (activeGroupCall.value) {
+        const participant = activeGroupCall.value.participants.find(p => p.id === member.id);
+
+        // jika masih status 'calling' setelah 30 detik, anggap 'missed'
+        if (participant && participant.status === 'calling') {
+          console.log(`⏰ Participant ${member.name} tidak menjawab panggilan`);
+
+          activeGroupCall.value.participants = activeGroupCall.value.participants.map (p =>
+            p.id === member.id ? { ...p, status: 'missed' } : p
+          );
+        }
+      }
+    }, 30000); // timer 30dtk/member
+  });
+
+  // timeout global untuk close modal jika tidak ada yang menerima panggilan (45 detik)
   callTimer = setTimeout(() => {
-    if (callStatus.value === 'calling') {
-      const hasAccepted = activeGroupCall.value?.participants.some(p => p.status === 'accepted');
+    if (callStatus.value === 'calling' && activeGroupCall.value) {
+      const hasAccepted = activeGroupCall.value.participants.some(p => p.status === 'accepted');
+
       if (!hasAccepted) {
-        callStatus.value = 'missed';
-        endCall();
+        console.log('⏰ Tidak ada yang menjawab panggilan grup, mengakhiri panggilan');
+
+        // set semua participant ke 'missed'
+        activeGroupCall.value.participants = activeGroupCall.value.participants.map(p =>
+          p.status === 'calling' ? { ...p, status: 'missed' } : p
+        );
+
+        // close setelah 2 detik
+        setTimeout(() => {
+          endCall();
+        }, 2000);
       }
     }
-  }, 30000);
+  }, 45000);
 
   // TODO: trigger backend untuk broadcast panggilan ke semua anggota
 };
 
-// Accept group call
-const joinGroupCall = (user: any) => {
-  callStatus.value = 'connected';
-  if (!joinedMembers.value.some(m => m.id === user.id)) {
-    joinedMembers.value.push(user);
+// handler untuk accpet call (personal / grup)
+const handleAcceptCall = () => {
+  console.log('📞 Menerima panggilan:', callType.value);
+
+  if (callType.value === 'group') {
+    acceptGroupCall();
+  } else {
+    acceptIncomingCall();
   }
+};
+
+// handler untuk reject call (personal / grup)
+const handleRejectCall = () => {
+  console.log('❌ Menolak panggilan:', callType.value);
+
+  if (callType.value === 'group') {
+    rejectGroupCall();
+  } else {
+    rejectIncomingCall();
+  }
+};
+
+// Accept group call
+const acceptGroupCall = async () => {
+  if (!incomingCall.value || !activeGroupCall.value) {
+    console.error('❌ Tidak ada panggilan grup masuk untuk diterima');
+    return;
+  }
+
+  try {
+    console.log('✅ Menerima group call');
+
+    const response = await axios.post('/call/group/accept', {
+      call_id: incomingCall.value.callId,
+      group_id: activeGroupCall.value.groupId,
+      caller_id: incomingCall.value.from.id
+    });
+
+    console.log('📡 Menerima respon dari server:', response.data);
+
+    clearTimeout(callTimer);
+
+    // subscribe ke channel group untuk real time update
+    echo.join(`group.${activeGroupCall.value.groupId}`)
+        .listen('.group-call.accepted', (data: any) => {
+            console.log('📢 Another member accepted:', data);
+            if (activeGroupCall.value) {
+                activeGroupCall.value.participants = activeGroupCall.value.participants.map(p =>
+                    p.id === data.accepter.id ? { ...p, status: 'accepted' } : p
+                );
+            }
+        })
+        .listen('.group-call.ended', (data: any) => {
+            console.log('☎️ Group call ended');
+            endCall();
+        });
+
+    callStatus.value = 'connected';
+    callType.value = 'group';
+    incomingCall.value = null;
+
+    console.log('✅ Group call berhasil diterima');
+  } catch (error) {
+    console.error('❌ Gagal menerima group call:', error);
+    alert('Gagal menerima panggilan grup. Silakan coba lagi.');
+  }
+};
+
+// reject group call
+const rejectGroupCall = async () => {
+  if (!incomingCall.value || !activeGroupCall.value) return;
+
+  try {
+    console.log('❌ Menolak group call');
+
+    await axios.post('/call/group/reject', {
+      call_id: incomingCall.value.callId,
+      group_id: activeGroupCall.value.groupId
+    });
+
+    console.log('❌ Group call berhasil ditolak');
+  } catch (error) {
+    console.error('❌ Gagal menolak group call:', error);
+  }
+
+  callStatus.value = 'rejected';
+  incomingCall.value = null;
+  activeGroupCall.value = null;
+
+  setTimeout(() => {
+    callStatus.value = 'idle';
+  }, 2000);
 };
 
 // Leave group call
@@ -1264,9 +1381,85 @@ const setupGlobalListeners = () => {
 
         // cari grup dan members dari contacts
         const group = contacts.value.find((c: any) => 
-            c.type === 'group' && c.id === data.groupId
+            c.type === 'group' && c.id === data.group_id
         );
+
+        // validasi group sebelum akses members
+        if (!group) {
+          console.error('❌ Grup tidak ditemukan untuk panggilan masuk:', data.group_id);
+          return;
+        }
+
+        // validasi members dengan opsional chaining dan assertion
+        const groupMember = (group as any).members || [];
+
+        // set activte group call untuk incoming
+        activeGroupCall.value = {
+          groupId: data.group_id,
+          name: data.group_name,
+          callId: data.call_id,
+          participants: groupMember
+              .filter((m: any) => m.id !== currentUserId.value)
+              .map((member: any) =>({
+                  id: member.id,
+                  name: member.name,
+                  email: member.email,
+                  status: 'calling'
+              }))
+        };
+
+        callType.value = 'group';
+        callStatus.value = 'incoming';
+
+        // Set incoming call data
+        incomingCall.value = {
+            from: {
+                id: data.caller.id,
+                name: data.caller.name,
+                email: data.caller.email
+            },
+            to: { id: currentUserId.value, name: currentUserName.value },
+            callId: data.call_id,
+            channel: `group.${data.group_id}`,
+            callType: 'video'
+        };
+
+        console.log('✅ Group incoming call set:', {
+            activeGroupCall: activeGroupCall.value,
+            incomingCall: incomingCall.value
+        });
       });
+
+  // listen untuk member accept group call
+  echo.channel(`user.${currentUserId.value}`)
+    .listen('.group-call.accepted', (data: any) => {
+        console.log('✅ Member accepted group call:', data);
+        
+        if (activeGroupCall.value && activeGroupCall.value.callId === data.call_id) {
+            // Update status participant yang accept
+            activeGroupCall.value.participants = activeGroupCall.value.participants.map(p =>
+                p.id === data.accepter.id ? { ...p, status: 'accepted' } : p
+            );
+
+            // Jika caller, auto connect saat ada yang accept
+            if (callStatus.value === 'calling') {
+                callStatus.value = 'connected';
+            }
+        }
+    });
+
+  // listen untuk mengakhiri group call
+  echo.channel(`user.${currentUserId.value}`)
+    .listen('.group-call.ended', (data: any) => {
+        console.log('☎️ Group call ended:', data);
+        
+        if (activeGroupCall.value && activeGroupCall.value.callId === data.call_id) {
+            callStatus.value = 'ended';
+            setTimeout(() => {
+                endCall();
+            }, 2000);
+        }
+    });
 };
 
 // --- Initialize ---
