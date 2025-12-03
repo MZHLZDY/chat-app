@@ -206,7 +206,7 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
         
         <!-- Tombol Aksi -->
         <div class="absolute bottom-8 left-0 right-0 px-6">
-          <div class="flex justify-center items-center gap-12">
+          <div class="flex justify-center items-center">
             <div class="flex flex-col items-center gap-2">
               <button @click="rejectCall" class="bg-red-500 text-white w-14 h-14 rounded-full hover:bg-red-600 flex items-center justify-center shadow-lg transform active:scale-95 transition-transform">
                 <PhoneOff class="w-6 h-6"/>
@@ -376,7 +376,7 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
                 @click="leaveCall" 
                 class="bg-red-500 text-white w-14 h-14 rounded-full hover:bg-red-600 flex items-center justify-center shadow-lg transform active:scale-95 transition-transform"
                 title="Keluar Panggilan">
-                <PhoneForwarded class="w-7 h-7 rotate-135"/>
+                <PhoneForwarded class="w-7 h-7"/>
               </button>
               <span class="text-xs text-gray-300">{{ isCaller ? 'Akhiri' : 'Keluar' }}</span>
             </div>

@@ -19,8 +19,10 @@ class GroupCallEnded implements ShouldBroadcast
     public $reason;
     public $duration;
     public $memberIds;
+    public $endedBy;
 
-    public function __construct($userId, $groupId, $callId, $reason = 'ended', $duration = 0, $memberIds = [])
+    // ✅ PERBAIKAN: Tambahkan parameter $endedBy ke constructor
+    public function __construct($userId, $groupId, $callId, $reason = 'ended', $duration = 0, $memberIds = [], $endedBy = null)
     {
         $this->userId = $userId;
         $this->groupId = $groupId;
@@ -28,33 +30,48 @@ class GroupCallEnded implements ShouldBroadcast
         $this->reason = $reason;
         $this->duration = $duration;
         $this->memberIds = $memberIds;
+        $this->endedBy = $endedBy ?: User::find($userId);
     }
 
     public function broadcastOn(): array
     {
         $channels = [];
 
-        // broadcaast ke semua member individual
+        // broadcast ke semua member individual
         foreach ($this->memberIds as $memberId) {
             $channels[] = new Channel('user.' . $memberId);
         }
+
+        // ✅ OPSIONAL: Juga broadcast ke group channel
+        $channels[] = new Channel('group.' . $this->groupId);
 
         return $channels;
     }
 
     public function broadcastAs(): string
     {
-        return 'group-call.ended';
+        return 'group-call-ended';
     }
 
     public function broadcastWith(): array
     {
+        // ✅ PASTIKAN $this->endedBy adalah objek User
+        $endedByData = $this->endedBy instanceof User ? [
+            'id' => $this->endedBy->id,
+            'name' => $this->endedBy->name,
+            'profile_photo_url' => $this->endedBy->profile_photo_url
+        ] : [
+            'id' => $this->userId,
+            'name' => 'Host',
+            'profile_photo_url' => null
+        ];
+
         return [
-            'user_id' => $this->userId,
-            'group_id' => $this->groupId,
             'call_id' => $this->callId,
+            'group_id' => $this->groupId,
             'reason' => $this->reason,
             'duration' => $this->duration,
+            'ended_by' => $endedByData
         ];
     }
 }
