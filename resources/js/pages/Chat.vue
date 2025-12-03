@@ -73,7 +73,6 @@ const userBackgroundUrl = computed<string>(() => page.props.auth.user.background
 let activeChatChannel: any = null;
 let activeGroupChannel: any = null;
 
-
 // --- Call State ---
 const { startVoiceCall, isInVoiceCall } = usePersonalCall();
 const { startGroupVoiceCall, isGroupVoiceCallActive } = useGroupCall();
@@ -497,6 +496,58 @@ const formatLastSeen = (dateString: string | null | undefined): string => {
     }
 };
 
+const handleNewMessage = (eventData: any) => {
+      const messageData = eventData.message ? eventData.message : eventData;
+
+      const senderId = Number(messageData?.sender_id);
+      const myId = Number(currentUserId.value);
+
+      if (senderId === myId) {
+        return; 
+    }
+      
+      if (messageData.group_id) {
+          updateLatestGroupMessage(messageData.group_id, messageData);
+      }
+
+        let isChatActive = false;
+        if (activeContact.value) {
+            const isGroupChat = activeContact.value.type === 'group' && (activeContact.value.id === messageData.receiver_id || activeContact.value.id === messageData.group_id);
+            const isPersonalChat = activeContact.value.type === 'user' && activeContact.value.id === messageData.sender_id;
+            isChatActive = isGroupChat || isPersonalChat;
+        }
+
+        if (isChatActive) {
+            addMessage({
+                id: messageData.id,
+                sender_id: messageData.sender_id,
+                sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
+                text: messageData.message,
+                time: formatTime(messageData.created_at),
+                created_at: messageData.created_at,
+                type: messageData.type,
+                call_event: messageData.call_event
+            });
+          updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
+          if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
+            axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
+        }
+        } else {
+          let unreadChatId: string;
+          
+          if (messageData.group_id) {
+              unreadChatId = `group-${messageData.group_id}`;
+          } else {
+              unreadChatId = `user-${messageData.sender_id}`;
+          }
+          const currentCount = unreadCounts.value[unreadChatId] || 0;
+          unreadCounts.value = {
+              ...unreadCounts.value,
+              [unreadChatId]: currentCount + 1
+          };
+      }
+    };
+
 const addMessage = (message: any) => {
   const exists = messages.value.some(m => m.id === message.id);
   if (exists) {
@@ -767,11 +818,11 @@ const setupEchoListener = (chat: Chat) => {
         window.Echo.join(channelName)
             .listen('.MessageSent', (event: any) => {
                 console.log('Pesan teks personal diterima:', event.message);
-                addMessage(event.message);
+                handleNewMessage(event);
             })
             .listen('.FileMessageSent', (event: any) => {
                 console.log('File personal diterima:', event.message);
-                addMessage(event.message);
+                handleNewMessage(event);
             })
             .listen('.message.deleted', (event: { messageId: number }) => {
                 const messageIndex = messages.value.findIndex(m => m.id === event.messageId);
@@ -818,58 +869,6 @@ let boundChannel = '';
       if (boundChannel) {
           echo.leave(boundChannel);
       }
-
-  const handleNewMessage = (eventData: any) => {
-      const messageData = eventData.message ? eventData.message : eventData;
-
-      const senderId = Number(messageData?.sender_id);
-      const myId = Number(currentUserId.value);
-
-      if (senderId === myId) {
-        return; 
-    }
-      
-      if (messageData.group_id) {
-          updateLatestGroupMessage(messageData.group_id, messageData);
-      }
-
-        let isChatActive = false;
-        if (activeContact.value) {
-            const isGroupChat = activeContact.value.type === 'group' && (activeContact.value.id === messageData.receiver_id || activeContact.value.id === messageData.group_id);
-            const isPersonalChat = activeContact.value.type === 'user' && activeContact.value.id === messageData.sender_id;
-            isChatActive = isGroupChat || isPersonalChat;
-        }
-
-        if (isChatActive) {
-            addMessage({
-                id: messageData.id,
-                sender_id: messageData.sender_id,
-                sender_name: messageData.sender_name || messageData.sender?.name || 'Unknown',
-                text: messageData.message,
-                time: formatTime(messageData.created_at),
-                created_at: messageData.created_at,
-                type: messageData.type,
-                call_event: messageData.call_event
-            });
-          updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
-          if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
-            axios.post('/chat/messages/read', { sender_id: messageData.sender_id });
-        }
-        } else {
-          let unreadChatId: string;
-          
-          if (messageData.group_id) {
-              unreadChatId = `group-${messageData.group_id}`;
-          } else {
-              unreadChatId = `user-${messageData.sender_id}`;
-          }
-          const currentCount = unreadCounts.value[unreadChatId] || 0;
-          unreadCounts.value = {
-              ...unreadCounts.value,
-              [unreadChatId]: currentCount + 1
-          };
-      }
-    };
 
     const channelName = type === 'group'
         ? `group.${contactId}`
