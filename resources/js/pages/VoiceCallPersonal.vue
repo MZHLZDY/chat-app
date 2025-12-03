@@ -240,7 +240,7 @@ const switchToVideo = () => {
         <div class="flex justify-center items-center gap-5">
           <button 
             @click="toggleMute"
-            :class="['w-16 h-16 rounded-full flex items-center justify-center', 
+            :class="['w-14 h-14 rounded-full flex items-center justify-center', 
                      isMuted ? 'bg-red-500 text-white' : 'bg-gray-700', 
                      !isConnected && 'opacity-50 cursor-not-allowed']"
             :disabled="!isConnected">
@@ -250,14 +250,14 @@ const switchToVideo = () => {
 
           <button 
             @click="endCall" 
-            class="w-20 h-20 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center transform hover:scale-105 transition-transform"
+            class="w-14 h-14 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center transform hover:scale-105 transition-transform"
             :disabled="!isConnected">
-            <PhoneForwarded class="w-10 h-10"/>
+            <PhoneForwarded class="w-8 h-8"/>
           </button>
 
           <button 
             @click="toggleSpeaker"
-            :class="['w-16 h-16 rounded-full flex items-center justify-center', 
+            :class="['w-14 h-14 rounded-full flex items-center justify-center', 
                      isSpeakerOn ? 'bg-blue-500 text-white' : 'bg-gray-700', 
                      !isConnected && 'opacity-50 cursor-not-allowed']"
             :disabled="!isConnected">
@@ -267,7 +267,7 @@ const switchToVideo = () => {
 
           <button 
             @click="switchToVideo" 
-            class="w-16 h-16 bg-gray-700 text-white rounded-full hover:bg-green-800 flex items-center justify-center transform hover:scale-105 transition-transform"
+            class="w-14 h-14 bg-gray-700 text-white rounded-full hover:bg-green-800 flex items-center justify-center transform hover:scale-105 transition-transform"
             :disabled="!isConnected"
             title="Beralih ke Video Call">
             <Video class="w-8 h-8"/>

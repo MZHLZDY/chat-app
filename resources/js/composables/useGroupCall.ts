@@ -5,8 +5,10 @@ import { echo } from '../echo.js';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import type { AppPageProps, Chat, User } from '@/types/index.d.ts';
 import { useCallNotification } from '@/composables/useCallNotification';
+import { useContacts } from './useContacts';
 
 // State variables
+const { contacts } = useContacts();
 const groupVoiceCallData = ref<any>(null);
 const isGroupVoiceCallActive = ref(false);
 const isGroupCaller = ref(false);
@@ -23,6 +25,24 @@ const groupRemoteAudioTracks = ref<{ [uid: number]: any }>({});
 
 // ✅ TAMBAHKAN: State untuk manual subscribe management
 const groupSubscribedUsers = ref<Set<number>>(new Set());
+
+const enrichUserData = (user: any): any => {
+    if (!user || !user.id) return user;
+    
+    // Cari data lengkap dari contacts.value (yang dijamin punya profile_photo_url)
+    const contactData = contacts.value.find(c => c.id === user.id);
+    
+    // Gabungkan data mentah dengan data kontak lengkap
+    if (contactData) {
+        return {
+            ...user, // Data mentah (misalnya dari event)
+            ...contactData, // Timpa dengan data lengkap (name, profile_photo_url, dll.)
+            profile_photo_url: contactData.profile_photo_url // Pastikan properti ini diambil
+        };
+    }
+
+    return user;
+};
 
 // Audio context unlock utility
 const unlockAudioContext = async () => {
@@ -618,60 +638,87 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
 
     // --- IMPROVED START GROUP VOICE CALL ---
     const startGroupVoiceCall = async (group: Chat | null) => {
-        if (!group || group.type !== 'group') {
-            console.log('No active group contact provided');
-            return;
-        }
+    if (!group || group.type !== 'group') {
+        console.log('No active group contact provided');
+        return;
+    }
 
-        try {
-            console.log('🚀 Starting group voice call to group:', group.name);
-            const response = await axios.post('/group-call/invite', {
-                group_id: group.id,
-                call_type: 'voice'
-            });
+    try {
+        console.log('🚀 Starting group voice call to group:', group.name);
+        
+        // Mendapatkan data user saat ini (Host) dari state Inertia.js
+        const currentUserData = usePage<AppPageProps>().props.auth.user;
+        // 1. ✅ PERKAYA DATA CALLER (HOST)
+        // Meskipun ini data diri sendiri, kita ingin memastikan profile_photo_url ada
+        const enrichedCaller = enrichUserData(currentUserData); 
+
+        const response = await axios.post('/group-call/invite', {
+            group_id: group.id,
+            call_type: 'voice'
+        });
+        
+        // 2. ✅ PERKAYA DATA PARTICIPANTS yang dikirim balik oleh API
+        const enrichedParticipants = response.data.participants.map(enrichUserData);
+
+
+        groupVoiceCallData.value = {
+            callId: response.data.call_id,
+            group: response.data.group, 
             
-            groupVoiceCallData.value = {
-                callId: response.data.call_id,
-                group: response.data.group,
-                caller: { id: currentUserId.value, name: currentUserName.value },
-                callType: 'voice',
-                channel: response.data.channel,
-                status: 'calling',
-                participants: response.data.participants
-            };
+            // ✅ FIX: Gunakan data Caller (Host) yang sudah diperkaya
+            caller: { 
+                id: enrichedCaller.id, 
+                name: enrichedCaller.name, 
+                profile_photo_url: enrichedCaller.profile_photo_url // JAMINAN FOTO HOST
+            }, 
             
-            isGroupVoiceCallActive.value = true;
-            isGroupCaller.value = true;
+            callType: 'voice',
+            channel: response.data.channel,
+            status: 'calling',
             
-            // HOST AUTOMATICALLY JOINS AUDIO CHANNEL
-            if (response.data.channel) {
-                try {
-                    await joinGroupChannel(response.data.channel);
-                    console.log('🎉 Host successfully joined group channel');
-                    
-                    // UPDATE HOST STATUS TO 'accepted'
-                    const hostParticipantIndex = groupVoiceCallData.value.participants?.findIndex(
-                        (p: any) => p.id === currentUserId.value
-                    );
-                    
-                    if (hostParticipantIndex !== undefined && hostParticipantIndex !== -1 && groupVoiceCallData.value.participants) {
-                        groupVoiceCallData.value.participants[hostParticipantIndex].status = 'accepted';
-                    }
-                } catch (error) {
-                    console.error('❌ Failed to join channel as host:', error);
-                    alert('Failed to join audio channel. Please check microphone permissions.');
-                    resetGroupCallState();
-                    return;
+            // ✅ FIX: Gunakan Participants yang sudah diperkaya
+            participants: enrichedParticipants 
+        };
+        
+        isGroupVoiceCallActive.value = true;
+        isGroupCaller.value = true;
+        
+        // HOST AUTOMATICALLY JOINS AUDIO CHANNEL
+        if (response.data.channel) {
+            try {
+                await joinGroupChannel(response.data.channel);
+                console.log('🎉 Host successfully joined group channel');
+                
+                // UPDATE HOST STATUS TO 'accepted' (dan pastikan data host di participants juga lengkap)
+                const hostParticipantIndex = groupVoiceCallData.value.participants?.findIndex(
+                    (p: any) => p.id === currentUserId.value
+                );
+                
+                if (hostParticipantIndex !== undefined && hostParticipantIndex !== -1 && groupVoiceCallData.value.participants) {
+                    // Pastikan entri host di participants diperbarui dengan data lengkap
+                    groupVoiceCallData.value.participants[hostParticipantIndex] = {
+                         ...groupVoiceCallData.value.participants[hostParticipantIndex],
+                         ...enrichedCaller, // Timpa dengan data lengkap host
+                         status: 'accepted',
+                         isLocal: true, // Tambahkan properti ini
+                         isMuted: false 
+                    };
                 }
+            } catch (error) {
+                console.error('❌ Failed to join channel as host:', error);
+                alert('Failed to join audio channel. Please check microphone permissions.');
+                resetGroupCallState();
+                return;
             }
-            
-            startGroupCallTimeout(30);
-
-        } catch (error: any) {
-            console.error('❌ Failed to start group call:', error);
-            alert('Failed to start group call: ' + (error.response?.data?.error || error.message));
         }
-    };
+        
+        startGroupCallTimeout(30);
+
+    } catch (error: any) {
+        console.error('❌ Failed to start group call:', error);
+        alert('Failed to start group call: ' + (error.response?.data?.error || error.message));
+    }
+  };
 
     // --- IMPROVED GROUP CALL STATE MANAGEMENT ---
     const resetGroupCallState = () => {
@@ -1199,20 +1246,29 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
     
     const groupChannel = echo.private(newChannelName);
 
+    // 1. LISTENER: group-call-answered (Memperkaya data saat status berubah)
     groupChannel.listen('.group-call-answered', (data: any) => {
         console.log('✅ EVENT .group-call-answered RECEIVED:', data);
 
         if (!groupVoiceCallData.value || groupVoiceCallData.value.callId !== data.call_id) {
             return;
         }
+        
+        // ✅ PERKAYA DATA USER DARI EVENT
+        const enrichedUser = enrichUserData(data.user);
 
         const participantIndex = groupVoiceCallData.value.participants?.findIndex(
             (p: any) => p.id === data.user.id
         );
         
         if (participantIndex !== undefined && participantIndex > -1 && groupVoiceCallData.value.participants) {
-            groupVoiceCallData.value.participants[participantIndex].status = data.accepted ? 'accepted' : 'rejected';
-            groupVoiceCallData.value.participants[participantIndex].reason = data.reason || null;
+            // Gabungkan data yang sudah ada dengan data yang diperkaya
+            groupVoiceCallData.value.participants[participantIndex] = {
+                ...groupVoiceCallData.value.participants[participantIndex],
+                ...enrichedUser, // ✅ Timpa dengan data lengkap (profile_photo_url)
+                status: data.accepted ? 'accepted' : 'rejected', // Update status
+                reason: data.reason || null,
+            };
         }
 
         if (data.accepted) {
@@ -1227,7 +1283,7 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
                 stopGroupCallTimeout();
                 
                 if (groupVoiceCallData.value.channel) {
-                    // ✅ PERBAIKAN: Handle join errors dengan better approach
+                    // ... (logika joinGroupChannel tetap sama)
                     joinGroupChannel(groupVoiceCallData.value.channel)
                         .then((success) => {
                             if (success) {
@@ -1235,7 +1291,6 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
                                 groupVoiceCallData.value.status = 'accepted';
                             } else {
                                 console.warn('⚠️ Join returned false, but participant might still be connected');
-                                // Cek state dan update jika connected
                                 if (groupClient.value.connectionState === 'CONNECTED') {
                                     groupVoiceCallData.value.status = 'accepted';
                                     console.log('✅ Participant connected despite join returning false');
@@ -1244,10 +1299,8 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
                         })
                         .catch(error => {
                             console.error('❌ Participant failed to join channel:', error);
-                            // Jangan reset state untuk OPERATION_ABORTED
                             if (!error.message?.includes('OPERATION_ABORTED') && 
                                 !error.message?.includes('cancel token canceled')) {
-                                // Untuk error serius, reset state
                                 resetGroupCallState();
                             }
                         });
@@ -1263,48 +1316,92 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
             stopGroupCallTimeout();
         }
     });
+    
+    // 2. LISTENER: group-participant-joined (Jika ada yang bergabung, data harus lengkap)
+    groupChannel.listen('.group-participant-joined', (data: any) => {
+        console.log('👤 EVENT .group-participant-joined RECEIVED:', data);
 
-        groupChannel.listen('.group-call-ended', (data: any) => {
-            console.log('🚫 EVENT .group-call-ended RECEIVED:', data);
+        if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
             
-            if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
-                if (data.ended_by.id !== currentUserId.value) {
-                    alert(`Panggilan dibubarkan oleh ${data.ended_by.name}`);
-                }
-                resetGroupCallState();
-            }
-        });
+            // ✅ PERKAYA DATA USER DARI EVENT
+            const enrichedUser = enrichUserData(data.user); 
+            
+            const participantIndex = groupVoiceCallData.value.participants?.findIndex(
+                (p: any) => p.id === data.user.id
+            );
 
-        groupChannel.listen('.group-participant-left', (data: any) => {
-            console.log('🚶 EVENT .group-participant-left RECEIVED:', data);
-            
-            if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
-                const participantIndex = groupVoiceCallData.value.participants?.findIndex(
-                    (p: any) => p.id === data.user.id
-                );
-                
-                if (participantIndex !== undefined && participantIndex > -1 && groupVoiceCallData.value.participants) {
-                    groupVoiceCallData.value.participants[participantIndex].status = 'left';
-                    console.log(`Status partisipan ${data.user.name} diubah menjadi 'left'`);
-                }
+            if (participantIndex === undefined || participantIndex === -1) {
+                // Tambahkan sebagai peserta baru jika belum ada
+                groupVoiceCallData.value.participants.push({
+                    ...enrichedUser, // ✅ Gunakan data yang sudah diperkaya
+                    status: 'accepted', // Asumsi: bergabung berarti accepted
+                    isMuted: false,
+                    isLocal: data.user.id === currentUserId.value
+                });
+                console.log(`Peserta baru ${enrichedUser.name} bergabung.`);
+            } else {
+                // Update data dengan versi lengkap jika sudah ada
+                groupVoiceCallData.value.participants[participantIndex] = {
+                    ...groupVoiceCallData.value.participants[participantIndex],
+                    ...enrichedUser, // ✅ Timpa dengan data lengkap (termasuk profile_photo_url)
+                    status: 'accepted', // Update status ke accepted
+                };
             }
-        });
+        }
+    });
 
-        groupChannel.listen('.group-participant-recalled', (data: any) => {
-            console.log('📞 EVENT .group-participant-recalled RECEIVED:', data);
-            
-            if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
-                const participantIndex = groupVoiceCallData.value.participants?.findIndex(
-                    (p: any) => p.id === data.user.id
-                );
-                
-                if (participantIndex > -1) {
-                    groupVoiceCallData.value.participants[participantIndex].status = 'calling';
-                    console.log(`Peserta ${data.user.name} dipanggil ulang`);
-                }
+    // 3. LISTENER: group-call-ended (Tidak perlu enrichment)
+    groupChannel.listen('.group-call-ended', (data: any) => {
+        console.log('🚫 EVENT .group-call-ended RECEIVED:', data);
+        
+        if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
+            if (data.ended_by.id !== currentUserId.value) {
+                alert(`Panggilan dibubarkan oleh ${data.ended_by.name}`);
             }
-        });
-    };
+            resetGroupCallState();
+        }
+    });
+
+    // 4. LISTENER: group-participant-left (Tidak perlu enrichment)
+    groupChannel.listen('.group-participant-left', (data: any) => {
+        console.log('🚶 EVENT .group-participant-left RECEIVED:', data);
+        
+        if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
+            const participantIndex = groupVoiceCallData.value.participants?.findIndex(
+                (p: any) => p.id === data.user.id
+            );
+            
+            if (participantIndex !== undefined && participantIndex > -1 && groupVoiceCallData.value.participants) {
+                groupVoiceCallData.value.participants[participantIndex].status = 'left';
+                console.log(`Status partisipan ${data.user.name} diubah menjadi 'left'`);
+            }
+        }
+    });
+
+    // 5. LISTENER: group-participant-recalled (Tidak perlu enrichment)
+    groupChannel.listen('.group-participant-recalled', (data: any) => {
+        console.log('📞 EVENT .group-participant-recalled RECEIVED:', data);
+        
+        if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
+            // Perkaya data user yang dipanggil ulang, meskipun hanya status yang diupdate
+            const enrichedUser = enrichUserData(data.user);
+            
+            const participantIndex = groupVoiceCallData.value.participants?.findIndex(
+                (p: any) => p.id === data.user.id
+            );
+            
+            if (participantIndex > -1) {
+                 // Update dengan data yang sudah diperkaya jika ada
+                groupVoiceCallData.value.participants[participantIndex] = {
+                    ...groupVoiceCallData.value.participants[participantIndex],
+                    ...enrichedUser,
+                    status: 'calling',
+                };
+                console.log(`Peserta ${data.user.name} dipanggil ulang`);
+            }
+        }
+    });
+};
 
     const leaveDynamicGroupChannel = () => {
         if (currentGroupListeners) {

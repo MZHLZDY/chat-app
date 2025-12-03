@@ -55,8 +55,8 @@ const callerName = computed(() => props.groupCallData?.caller?.name || 'Unknown'
 const participants = computed((): Participant[] => props.groupCallData?.participants || []);
 
 // ✅ PERBAIKAN: Enhanced photo URL computation untuk group
-const getParticipantPhotoUrl = (participant: Participant): string | null => {
-    if (!participant) return null;
+const getParticipantPhotoUrl = (participant: Participant): string => {
+    if (!participant) return '';
     
     // Priority 1: profile_photo_url (full URL)
     if (participant.profile_photo_url) {
@@ -68,7 +68,8 @@ const getParticipantPhotoUrl = (participant: Participant): string | null => {
         return `https://ui-avatars.com/api/?name=${name}&background=random&color=fff&bold=true&size=128`;
     }
     
-    return null;
+    // Fallback default
+    return '';
 };
 
 // ✅ PERBAIKAN: Check if should show photo untuk participant
@@ -89,6 +90,20 @@ const getParticipantAvatarClass = (participant: Participant): string => {
     
     return 'bg-sky-500';
 };
+
+const activeParticipants = computed<Participant[]>(() => {
+    if (!props.groupCallData?.participants) return [];
+    
+    // Filter participants who are calling, ringing, or accepted
+    return props.groupCallData.participants.filter((p: Participant) => 
+        ['calling', 'ringing', 'accepted'].includes(p.status)
+    ).sort((a: Participant, b: Participant) => {
+        // Urutkan: Accepted > Calling/Ringing
+        if (a.status === 'accepted' && b.status !== 'accepted') return -1;
+        if (a.status !== 'accepted' && b.status === 'accepted') return 1;
+        return a.name.localeCompare(b.name); // Urutkan berdasarkan nama
+    });
+});
 
 // ✅ PERBAIKAN: Get participant initial
 const getParticipantInitial = (participant: Participant): string => {

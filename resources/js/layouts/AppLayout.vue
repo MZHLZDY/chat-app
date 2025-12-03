@@ -133,22 +133,40 @@ const isCallConnected = computed(() => {
 });
 
 const minimizedWidgetData = computed(() => {
+    // Panggilan Grup
     if (isGroupVoiceCallActive.value) {
+        // Untuk panggilan grup, gunakan foto grup atau fallback ke inisial/avatar default
+        // Jika Anda memiliki foto grup (group.profile_photo_url), gunakan itu.
+        const groupPhotoUrl = groupVoiceCallData.value?.group?.profile_photo_url;
+        
         return {
             name: groupVoiceCallData.value?.group?.name || 'Panggilan Grup',
-            duration: formattedCallDuration.value
+            duration: formattedCallDuration.value,
+            // ✅ FIX GRUP: Gunakan foto grup jika ada
+            profilePhotoUrl: groupPhotoUrl || null 
         };
     }
+    
+    // Panggilan Personal
     if (isInVoiceCall.value && activeCallData.value) {
-        const contactName = activeCallData.value.isCaller
-            ? activeCallData.value.callee?.name
-            : activeCallData.value.caller?.name;
+        const contactData = activeCallData.value.isCaller
+            // Jika Anda Caller, tampilkan foto Callee
+            ? activeCallData.value.callee 
+            // Jika Anda Callee, tampilkan foto Caller
+            : activeCallData.value.caller;
+
+        const contactName = contactData?.name;
+        
         return {
             name: contactName || 'Panggilan Personal',
-            duration: formattedCallDuration.value
+            duration: formattedCallDuration.value,
+            // ✅ FIX PERSONAL: Ambil profile_photo_url dari contactData
+            profilePhotoUrl: contactData?.profile_photo_url || null
         };
     }
-    return { name: 'Panggilan', duration: '' };
+    
+    // Default / Tidak ada panggilan
+    return { name: 'Panggilan', duration: '', profilePhotoUrl: null };
 });
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -332,6 +350,7 @@ onMounted(() => {
             v-if="isCallMinimized"
             :name="minimizedWidgetData.name"
             :duration="minimizedWidgetData.duration"
+            :profile-photo-url="minimizedWidgetData.profilePhotoUrl"
             @expand-call="handleExpandCall"
             @end-call="handleEndCallFromWidget"
         />
@@ -375,12 +394,20 @@ onMounted(() => {
 
     <!-- ✅ INCOMING CALL MODAL UNTUK PERSONAL CALL -->
     <div v-if="incomingCallVoice" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg p-6 w-96 text-center">
-            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
+    <div class="bg-white rounded-lg p-6 w-96 text-center">
+        <div class="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl overflow-hidden">
+            <img 
+                v-if="incomingCallVoice.caller?.profile_photo_url" 
+                :src="incomingCallVoice.caller.profile_photo_url" 
+                :alt="incomingCallVoice.caller?.name" 
+                class="w-full h-full object-cover"
+            >
+            <div v-else class="w-full h-full bg-blue-500 flex items-center justify-center">
                 {{ incomingCallVoice.caller?.name?.charAt(0).toUpperCase() || '?' }}
             </div>
-            <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
-            <p class="text-gray-600 mb-4">{{ incomingCallVoice.caller?.name || 'Unknown' }} sedang menelpon Anda</p>
+        </div>
+        <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+        <p class="text-gray-600 mb-4">{{ incomingCallVoice.caller?.name || 'Unknown' }} menelpon Anda</p>
 
             <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
                 Berakhir dalam {{ callTimeoutCountdown }} detik
@@ -408,10 +435,17 @@ onMounted(() => {
 <div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling' && outgoingCallVoice.callee" 
      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white rounded-lg p-6 w-96 text-center">
-        <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl">
-            {{ outgoingCallVoice.callee.name?.charAt(0).toUpperCase() || '?' }}
+        <div class="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-2xl overflow-hidden">
+            <img 
+                v-if="outgoingCallVoice.callee.profile_photo_url" 
+                :src="outgoingCallVoice.callee.profile_photo_url" 
+                :alt="outgoingCallVoice.callee.name" 
+                class="w-full h-full object-cover"
+            >
+            <div v-else class="w-full h-full bg-blue-500 flex items-center justify-center">
+                {{ outgoingCallVoice.callee.name?.charAt(0).toUpperCase() || '?' }}
+            </div>
         </div>
-
         <p class="text-gray-600 mb-4">{{ outgoingCallVoice.callee.name || 'Unknown' }}</p>
         <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
 

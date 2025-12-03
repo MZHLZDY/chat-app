@@ -4,6 +4,7 @@ import { PhoneForwarded, Maximize2 } from 'lucide-vue-next';
 defineProps({
   name: { type: String, required: true },
   duration: { type: String, default: '00:00' },
+  profilePhotoUrl: { type: String, default: null },
 });
 
 defineEmits(['expand-call', 'end-call']);
@@ -16,8 +17,16 @@ defineEmits(['expand-call', 'end-call']);
            bg-gray-800 text-white rounded-lg shadow-2xl p-3 flex items-center justify-between animate-fade-in-down"
   >
     <div class="flex items-center gap-3 overflow-hidden">
-      <div class="flex-shrink-0 w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-lg font-bold">
-        {{ name.charAt(0).toUpperCase() }}
+      <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold overflow-hidden">
+        <img 
+          v-if="profilePhotoUrl" 
+          :src="profilePhotoUrl" 
+          :alt="name" 
+          class="w-full h-full object-cover"
+        >
+        <div v-else class="w-full h-full bg-blue-600 flex items-center justify-center">
+          {{ name.charAt(0).toUpperCase() }}
+        </div>
       </div>
       <div class="truncate">
         <p class="font-bold text-sm leading-tight truncate">{{ name }}</p>

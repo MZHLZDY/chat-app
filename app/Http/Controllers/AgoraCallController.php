@@ -56,13 +56,12 @@ class AgoraCallController extends Controller
             ]);
 
             // 4. ✅ PERUBAHAN UTAMA: Buat CallEvent dan Pesan Penanda
-            $this->createCallEventAndMessage(
-             channel: $channel,
-             callerId: $caller->id,
-             calleeId: $callee->id,
-             status: 'calling',
-             callType: $request->call_type,
-             callId: $callId
+            $this->createOrUpdateCallEventAndMessage(
+                channel: $channel,
+                callerId: $caller->id,
+                calleeId: $callee->id,
+                status: 'calling',
+                callType: $request->call_type
             );
 
             // 5. Kirim notifikasi & event (kode Anda sudah benar)
@@ -136,14 +135,13 @@ public function answerCall(Request $request)
         ]);
 
         // ✅ PERBAIKAN: Update CallEvent dengan error handling
-        $callEvent = $this->createCallEventAndMessage(
-          channel: $call->channel_name,
-          callerId: $caller->id,
-          calleeId: $callee->id,
-          status: $request->accepted ? 'accepted' : 'rejected',
-          callType: $call->call_type,
-          reason: $request->accepted ? null : ($request->reason ?? 'Ditolak'),
-          callId: $request->call_id
+        $callEvent = $this->createOrUpdateCallEventAndMessage(
+            channel: $call->channel_name,
+            callerId: $caller->id,
+            calleeId: $callee->id,
+            status: $request->accepted ? 'accepted' : 'rejected',
+            callType: $call->call_type,
+            reason: $request->accepted ? null : ($request->reason ?? 'Ditolak')
         );
 
         // ✅ PERBAIKAN: Trigger events dengan proper error handling
@@ -546,74 +544,63 @@ public function endCall(Request $request)
 
 // file: app/Http/Controllers/AgoraCallController.php
 
-private function createCallEventAndMessage($channel, $callerId, $calleeId, $status, $callType = 'voice', $duration = null, $reason = null, $callId = null)
+private function createOrUpdateCallEventAndMessage($channel, $callerId, $calleeId, $status, $callType = 'voice', $duration = null, $reason = null)
 {
     try {
-        DB::beginTransaction();
+        DB::beginTransaction(); // <-- Tambahkan transaksi untuk keamanan data
 
-        // ✅ 1. SELALU BUAT CALL EVENT BARU (tidak pakai firstOrNew)
-        $callEvent = CallEvent::create([
-            'channel' => $channel,
-            'caller_id' => $callerId,
-            'callee_id' => $calleeId,
-            'call_type' => $callType,
-            'status' => $status,
-            'duration' => $duration,
-            'reason' => $reason,
-            'started_at' => in_array($status, ['calling', 'accepted']) ? now() : null,
-            'answered_at' => $status === 'accepted' ? now() : null,
-            'ended_at' => in_array($status, ['rejected', 'ended', 'missed', 'cancelled']) ? now() : null,
-        ]);
+        // Cari atau buat CallEvent berdasarkan channel yang unik
+        $callEvent = CallEvent::firstOrNew(['channel' => $channel]);
 
-        Log::info('📞 CallEvent created:', [
-            'id' => $callEvent->id,
-            'channel' => $channel,
+        // Isi atau update data CallEvent
+        $callEvent->caller_id = $callEvent->caller_id ?? $callerId;
+        $callEvent->callee_id = $callEvent->callee_id ?? $calleeId;
+        $callEvent->call_type = $callEvent->call_type ?? $callType;
+        $callEvent->status = $status;
+        if ($duration !== null) $callEvent->duration = $duration;
+        if ($reason !== null) $callEvent->reason = $reason;
+        $callEvent->save();
+
+        // --- PERUBAHAN UTAMA DI SINI ---
+        // Gunakan relasi untuk mencari atau membuat ChatMessage.
+        // Ini menjamin hanya ada SATU chat message per call event.
+        $chatMessage = $callEvent->chatMessage()->firstOrCreate(
+            [], // Tidak perlu kondisi pencarian tambahan
+            [   // Data ini hanya akan digunakan jika message BARU dibuat
+                'sender_id' => $callerId,
+                'receiver_id' => $calleeId,
+                'type' => 'call_event',
+                'message' => '...'
+            ]
+        );
+        
+        // Ambil teks status terbaru dari model CallEvent
+        $updatedText = $callEvent->getCallMessageText();
+        
+        // Update kolom 'message' di tabel chat_messages
+        $chatMessage->update(['message' => $updatedText]);
+        
+        // Muat relasi untuk broadcast
+        $chatMessage->load('sender', 'callEvent');
+
+        // Broadcast HANYA SEKALI ke semua channel (termasuk pengirim)
+        broadcast(new MessageSent($chatMessage));
+
+        Log::info("Call event state changed", [
+            'channel' => $channel, 
             'status' => $status,
-            'call_type' => $callType,
+            'message_id' => $chatMessage->id,
             'caller_id' => $callerId,
             'callee_id' => $calleeId
         ]);
-
-        // ✅ 2. BUAT CHAT MESSAGE YANG TERKAIT
-        $messageText = $callEvent->getCallMessageText();
         
-        $chatMessage = ChatMessage::create([
-            'call_event_id' => $callEvent->id,
-            'sender_id' => $callerId,
-            'receiver_id' => $calleeId,
-            'type' => 'call_event',
-            'message' => $messageText,
-        ]);
+        DB::commit(); // <-- Selesaikan transaksi
 
-        // ✅ 3. LOAD RELATIONSHIPS UNTUK BROADCAST
-        $chatMessage->load('sender', 'callEvent');
-
-        Log::info('💬 ChatMessage created:', [
-            'message_id' => $chatMessage->id,
-            'message_text' => $messageText,
-            'call_event_id' => $callEvent->id
-        ]);
-
-        // ✅ 4. BROADCAST KE CHANNEL CHAT YANG SESUAI
-        // Tentukan channel chat berdasarkan caller dan callee
-        $participants = [$callerId, $calleeId];
-        sort($participants);
-        $chatChannel = 'chat.' . implode('.', $participants);
-        
-        broadcast(new MessageSent($chatMessage))->toOthers();
-
-        Log::info('📡 Message broadcasted:', [
-            'chat_channel' => $chatChannel,
-            'message_id' => $chatMessage->id
-        ]);
-
-        DB::commit();
-
-        return $callEvent;
+        return $callEvent->setRelation('chatMessage', $chatMessage);
 
     } catch (\Exception $e) {
-        DB::rollBack();
-        Log::error('❌ Failed to create call event message: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        DB::rollBack(); // <-- Batalkan jika ada error
+        Log::error('Failed to create or update call event message: ' . $e->getMessage());
         return null;
     }
 }

@@ -7,6 +7,7 @@ import AgoraRTC from 'agora-rtc-sdk-ng';
 import type { Chat, User, Contact, AppPageProps } from '@/types/index';
 import { echo } from '../echo.js';
 import { useCallNotification } from '@/composables/useCallNotification';
+import { useContacts } from './useContacts';
 import { useCallEventFormatter } from './useCallEventFormatter';
 
 declare global {
@@ -24,7 +25,7 @@ interface PageProps {
 }
 
 // State Global (Singleton)
-const contacts = ref<Contact[]>([]);
+const { contacts, loadContacts } = useContacts();
 const allUsers = ref<User[]>([]);
 const activeContact = ref<Chat | null>(null);
 const voiceCallType = ref<'voice' | null>(null);
@@ -43,6 +44,7 @@ let incomingCallTimeout: ReturnType<typeof setTimeout> | null = null;
 let personalCallListenersInitialized = false;
 const isMuted = ref(false);
 const audioContextUnlocked = ref(false);
+
 let notificationDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // ✅ PERBAIKAN: Simplified subscribed users management
@@ -900,8 +902,8 @@ const answerVoiceCall = async (accepted: boolean, reason?: string) => {
 
         if (accepted) {
             // Jika diterima, lanjutkan proses join channel
-            const callerContact = contacts.value.find(contact => contact.id === callData.caller.id);
-            const callerData = callerContact || callData.caller;
+            // const callerContact = contacts.value.find(contact => contact.id === callData.caller.id);
+            const callerData = callData.caller;
 
             activeCallData.value = {
               callId: callData.callId,
@@ -1049,6 +1051,7 @@ const joinCallAsCaller = async (): Promise<boolean> => {
 
     // ✅ Event listeners (keep existing implementation)
     const initializePersonalCallListeners = () => {
+        loadContacts();
     if (personalCallListenersInitialized) {
         console.log('⚠️ Personal call listeners sudah terpasang, skip...');
         return;
@@ -1101,8 +1104,6 @@ privateChannel.listen('.incoming-call', (data: any) => {
     // Asumsi: contacts.value sudah berisi list kontak yang lengkap dengan 'profile_photo_url'
     const callerUserFromContacts = contacts.value.find(c => c.id === data.caller.id);
     
-    // Buat objek caller yang lebih lengkap.
-    // data.caller (dari event) digabungkan/ditimpa oleh callerUserFromContacts (data lengkap).
     const fullCallerData = callerUserFromContacts 
         ? { 
             ...data.caller, 
