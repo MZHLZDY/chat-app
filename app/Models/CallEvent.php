@@ -33,10 +33,10 @@ class CallEvent extends Model
 
         switch ($this->status) {
             case 'calling':   $text .= ' • Memanggil'; break;
-            case 'accepted':  $text .= ' • Diterima'; break;
-            case 'rejected':  $text .= ' • Ditolak' ; break;
             case 'cancelled': $text .= ' • Dibatalkan'; break;
+            case 'rejected':  $text .= ' • Ditolak' ; break;
             case 'missed':    $text .= ' • Tak terjawab'; break;
+            case 'accepted':  $text .= ' • Diterima'; break;
             case 'ended':
                 // Menggunakan helper formatDuration dari controller
                 $durationText = app(\App\Http\Controllers\AgoraCallController::class)->formatDurationForPublic($this->duration);
