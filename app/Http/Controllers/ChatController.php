@@ -25,7 +25,7 @@ class ChatController extends Controller
     {
         try {
         $contacts = User::where('id', '!=', auth()->id())
-                        ->get(['id', 'name', 'last_seen', 'phone_number']);
+                        ->get(['id', 'name', 'last_seen', 'phone_number', 'profile_photo_path', 'updated_at']);
 
         $authId = auth()->id();
 
@@ -148,7 +148,7 @@ class ChatController extends Controller
     public function storeFile(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'file' => 'required|file|max:25600', // Batas 25MB
+            'file' => 'required|file|max:25600',
             'receiver_id' => 'required|exists:users,id',
         ]);
 

@@ -643,7 +643,11 @@ const handleNewMessage = (eventData: any) => {
                 time: formatTime(messageData.created_at),
                 created_at: messageData.created_at,
                 type: messageData.type,
-                call_event: messageData.call_event
+                call_event: messageData.call_event,
+                file_path: messageData.file_path,       
+                file_name: messageData.file_name,       
+                file_mime_type: messageData.file_mime_type, 
+                file_size: messageData.file_size
             });
           updateLatestMessage(messageData.sender_id, { text: messageData.message, sender_id: messageData.sender_id, sender: messageData.sender });
           if (activeContact.value?.type === 'user' && activeContact.value.id === messageData.sender_id) {
@@ -1580,7 +1584,7 @@ const currentCallContactName = computed(() => {
             leave-active-class="transition ease-in duration-100"
             leave-from-class="opacity-100"
             leave-to-class="opacity-0">
-            
+            <!-- Notification Section -->
             <div v-if="notificationData" class="fixed top-5 right-5 w-full max-w-sm z-50">
                 <div @click="handleNotificationClick" class="bg-white dark:bg-gray-800 shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden cursor-pointer">
                     <div class="p-4">
