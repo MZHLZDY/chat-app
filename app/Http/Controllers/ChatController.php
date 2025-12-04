@@ -148,7 +148,7 @@ class ChatController extends Controller
     public function storeFile(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'file' => 'required|file|max:25600', // Batas 25MB
+            'file' => 'required|file|max:25600',
             'receiver_id' => 'required|exists:users,id',
         ]);
 
