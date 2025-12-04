@@ -25,7 +25,7 @@ class ChatController extends Controller
     {
         try {
         $contacts = User::where('id', '!=', auth()->id())
-                        ->get(['id', 'name', 'last_seen', 'phone_number']);
+                        ->get(['id', 'name', 'last_seen', 'phone_number', 'profile_photo_path', 'updated_at']);
 
         $authId = auth()->id();
 

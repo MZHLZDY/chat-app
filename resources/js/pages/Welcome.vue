@@ -100,7 +100,7 @@ defineProps<{
                             <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
                             <div class="w-3 h-3 rounded-full bg-green-400"></div>
                         </div>
-                        <div class="ml-auto text-xs font-mono text-gray-400">ChatApp v1.0</div>
+                        <div class="ml-auto text-xs font-mono text-gray-400">ChatApp Demo v1.0</div>
                     </div>
                     
                     <!-- Fake Chat Bubbles -->
@@ -135,7 +135,7 @@ defineProps<{
         </main>
 
         <footer class="py-6 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-800">
-            &copy; 2024 ChatApp. Dibuat dengan santai sambil ngopi ☕
+            &copy; 2025 ChatApp 
         </footer>
     </div>
 </template>

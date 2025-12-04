@@ -4,34 +4,31 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Redirect;
 use App\Events\UserProfileUpdated;
 
-    class ProfileController extends Controller
+class ProfileController extends Controller
 {
     public function updatePhoto(Request $request)
     {
-        $request->validate(['photo' => ['required', 'image', 'max:2048']]);
-        $user = auth()->user();
+        $request->validate([
+            'photo' => ['required', 'image', 'max:10240']
+        ]);
+        
+        $user = $request->user();
 
-        // Hapus foto lama jika ada
-        if ($user->profile_photo_path) {
+        if ($user->profile_photo_path && Storage::disk('public')->exists($user->profile_photo_path)) {
             Storage::disk('public')->delete($user->profile_photo_path);
         }
 
-        // Simpan foto baru
         $path = $request->file('photo')->store('profile-photos', 'public');
-        
-        // Update database
-        $user->update(['profile_photo_path' => $path]);
-        
-        // Broadcast event (biarkan saja, bagus untuk realtime)
+    
+        $user->forceFill([
+            'profile_photo_path' => $path
+        ])->save();
         broadcast(new UserProfileUpdated($user->fresh()));
 
-        // --- UBAH BAGIAN INI (Return JSON) ---
-        return response()->json([
-            'message' => 'Foto profil berhasil diperbarui',
-            'profile_photo_url' => asset('storage/' . $path) // Kirim URL foto baru
-        ]);
+        return Redirect::back()->with('status', 'profile-photo-updated');
     }
 
     public function updateBackground(Request $request)
