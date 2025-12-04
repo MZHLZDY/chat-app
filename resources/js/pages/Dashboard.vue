@@ -65,7 +65,7 @@ const breadcrumbs = [
                         </div>
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Status Akun</p>
-                            <h3 class="text-lg font-bold text-green-600 dark:text-green-400">Online Active</h3>
+                            <h3 class="text-lg font-bold text-green-600 dark:text-green-400">Online</h3>
                         </div>
                     </div>
                 </div>

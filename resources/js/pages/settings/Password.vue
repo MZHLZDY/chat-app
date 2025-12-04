@@ -4,20 +4,12 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
-
-import HeadingSmall from '@/components/HeadingSmall.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { type BreadcrumbItem } from '@/types';
+import { Lock, KeyRound, Loader2, CheckCircle2 } from 'lucide-vue-next';
 
-const breadcrumbItems: BreadcrumbItem[] = [
-    {
-        title: 'Password settings',
-        href: '/settings/password',
-    },
-];
-
+// --- STATE ---
 const passwordInput = ref<HTMLInputElement | null>(null);
 const currentPasswordInput = ref<HTMLInputElement | null>(null);
 
@@ -27,23 +19,19 @@ const form = useForm({
     password_confirmation: '',
 });
 
+// --- ACTIONS ---
 const updatePassword = () => {
     form.put(route('password.update'), {
         preserveScroll: true,
         onSuccess: () => form.reset(),
-        onError: (errors: any) => {
-            if (errors.password) {
+        onError: () => {
+            if (form.errors.password) {
                 form.reset('password', 'password_confirmation');
-                if (passwordInput.value instanceof HTMLInputElement) {
-                    passwordInput.value.focus();
-                }
+                passwordInput.value?.focus();
             }
-
-            if (errors.current_password) {
+            if (form.errors.current_password) {
                 form.reset('current_password');
-                if (currentPasswordInput.value instanceof HTMLInputElement) {
-                    currentPasswordInput.value.focus();
-                }
+                currentPasswordInput.value?.focus();
             }
         },
     });
@@ -51,68 +39,101 @@ const updatePassword = () => {
 </script>
 
 <template>
-    <AppLayout :breadcrumbs="breadcrumbItems">
-        <Head title="Password settings" />
+    <Head title="Keamanan Akun" />
 
+    <AppLayout>
         <SettingsLayout>
-            <div class="space-y-6">
-                <HeadingSmall title="Update password" description="Ensure your account is using a long, random password to stay secure" />
+            <div class="space-y-6 max-w-2xl">
+                
+                <!-- HEADER SECTION -->
+                <div>
+                    <h3 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Password</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        Pastikan akun Anda menggunakan password yang panjang dan acak agar tetap aman.
+                    </p>
+                </div>
 
-                <form @submit.prevent="updatePassword" class="space-y-6">
-                    <div class="grid gap-2">
-                        <Label for="current_password">Current password</Label>
-                        <Input
-                            id="current_password"
-                            ref="currentPasswordInput"
-                            v-model="form.current_password"
-                            type="password"
-                            class="mt-1 block w-full"
-                            autocomplete="current-password"
-                            placeholder="Current password"
-                        />
-                        <InputError :message="form.errors.current_password" />
-                    </div>
+                <!-- FORM CARD -->
+                <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 sm:p-8 shadow-sm">
+                    <form @submit.prevent="updatePassword" class="space-y-6">
+                        
+                        <!-- Current Password -->
+                        <div class="space-y-2">
+                            <Label for="current_password">Password Saat Ini</Label>
+                            <div class="relative">
+                                <Lock class="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                                <Input 
+                                    id="current_password"
+                                    ref="currentPasswordInput"
+                                    v-model="form.current_password"
+                                    type="password"
+                                    class="pl-9 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900 transition-colors"
+                                    autocomplete="current-password"
+                                    placeholder="••••••••"
+                                />
+                            </div>
+                            <InputError :message="form.errors.current_password" />
+                        </div>
 
-                    <div class="grid gap-2">
-                        <Label for="password">New password</Label>
-                        <Input
-                            id="password"
-                            ref="passwordInput"
-                            v-model="form.password"
-                            type="password"
-                            class="mt-1 block w-full"
-                            autocomplete="new-password"
-                            placeholder="New password"
-                        />
-                        <InputError :message="form.errors.password" />
-                    </div>
+                        <!-- New Password -->
+                        <div class="space-y-2">
+                            <Label for="password">Password Baru</Label>
+                            <div class="relative">
+                                <KeyRound class="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                                <Input 
+                                    id="password"
+                                    ref="passwordInput"
+                                    v-model="form.password"
+                                    type="password"
+                                    class="pl-9 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900 transition-colors"
+                                    autocomplete="new-password"
+                                    placeholder="Minimal 8 karakter"
+                                />
+                            </div>
+                            <InputError :message="form.errors.password" />
+                        </div>
 
-                    <div class="grid gap-2">
-                        <Label for="password_confirmation">Confirm password</Label>
-                        <Input
-                            id="password_confirmation"
-                            v-model="form.password_confirmation"
-                            type="password"
-                            class="mt-1 block w-full"
-                            autocomplete="new-password"
-                            placeholder="Confirm password"
-                        />
-                        <InputError :message="form.errors.password_confirmation" />
-                    </div>
+                        <!-- Confirm Password -->
+                        <div class="space-y-2">
+                            <Label for="password_confirmation">Konfirmasi Password</Label>
+                            <div class="relative">
+                                <KeyRound class="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                                <Input 
+                                    id="password_confirmation"
+                                    v-model="form.password_confirmation"
+                                    type="password"
+                                    class="pl-9 bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 focus:bg-white dark:focus:bg-gray-900 transition-colors"
+                                    autocomplete="new-password"
+                                    placeholder="Ulangi password baru"
+                                />
+                            </div>
+                            <InputError :message="form.errors.password_confirmation" />
+                        </div>
 
-                    <div class="flex items-center gap-4">
-                        <Button :disabled="form.processing">Save password</Button>
+                        <!-- Actions -->
+                        <div class="flex items-center gap-4 pt-2">
+                            <Button :disabled="form.processing">
+                                <Loader2 v-if="form.processing" class="mr-2 h-4 w-4 animate-spin" />
+                                Simpan Password
+                            </Button>
 
-                        <Transition
-                            enter-active-class="transition ease-in-out"
-                            enter-from-class="opacity-0"
-                            leave-active-class="transition ease-in-out"
-                            leave-to-class="opacity-0"
-                        >
-                            <p v-show="form.recentlySuccessful" class="text-sm text-neutral-600">Saved.</p>
-                        </Transition>
-                    </div>
-                </form>
+                            <Transition
+                                enter-active-class="transition ease-in-out duration-300"
+                                enter-from-class="opacity-0 translate-y-2"
+                                enter-to-class="opacity-100 translate-y-0"
+                                leave-active-class="transition ease-in duration-200"
+                                leave-from-class="opacity-100"
+                                leave-to-class="opacity-0"
+                            >
+                                <p v-if="form.recentlySuccessful" class="text-sm text-green-600 font-medium flex items-center gap-2">
+                                    <CheckCircle2 class="w-4 h-4" />
+                                    Tersimpan.
+                                </p>
+                            </Transition>
+                        </div>
+                    </form>
+                </div>
+
             </div>
         </SettingsLayout>
     </AppLayout>
