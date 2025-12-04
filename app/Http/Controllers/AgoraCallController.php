@@ -399,74 +399,86 @@ public function endCall(Request $request)
 
     public function endGroupCall(Request $request) 
 {
-    DB::beginTransaction();
     try {
+        // 1. Validasi sederhana
         $request->validate([
             'call_id' => 'required|string', 
-            'group_id' => 'required|exists:groups,id', 
-            'reason' => 'nullable|string'
+            'group_id' => 'required|exists:groups,id'
         ]);
         
         $user = $request->user();
-        $group = Group::find($request->group_id);
+        $groupId = $request->group_id;
         
-        Log::info('📞 Group call ending initiated', [
+        Log::info('📞 [END GROUP CALL] Request received', [
             'call_id' => $request->call_id,
-            'group_id' => $group->id,
-            'ended_by_id' => $user->id,
-            'ended_by_name' => $user->name,
-            'reason' => $request->reason
+            'group_id' => $groupId,
+            'user_id' => $user->id,
+            'user_name' => $user->name
         ]);
 
-        // 1. Dapatkan semua anggota grup untuk broadcasting
-        $allMembers = $group->members()->pluck('users.id')->toArray();
+        // 2. Cari grup
+        $group = Group::with('members')->find($groupId);
         
-        // 2. Tambahkan user yang mengakhiri ke daftar memberIds jika belum ada
-        $memberIds = array_unique(array_merge($allMembers, [$user->id]));
+        if (!$group) {
+            Log::warning('Group not found', ['group_id' => $groupId]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Grup tidak ditemukan'
+            ], 404);
+        }
         
-        Log::info('📊 Members to notify about call ending', [
+        // 3. Dapatkan semua member grup
+        $allMembers = $group->members->pluck('id')->toArray();
+        
+        // 4. Pastikan user adalah member grup
+        if (!in_array($user->id, $allMembers)) {
+            Log::warning('User is not a group member', [
+                'user_id' => $user->id,
+                'group_members' => $allMembers
+            ]);
+            
+            // Tetapi tetap lanjutkan karena mungkin user adalah host yang valid
+        }
+        
+        // 5. Siapkan data untuk event
+        $callId = $request->call_id;
+        $reason = $request->reason ?? 'Panggilan dibubarkan oleh host';
+        $memberIds = array_unique(array_merge($allMembers, [$user->id])); // Pastikan host termasuk
+        
+        Log::info('📊 [END GROUP CALL] Broadcasting data', [
+            'call_id' => $callId,
             'total_members' => count($memberIds),
-            'member_ids' => $memberIds
+            'reason' => $reason
         ]);
 
-        // 3. ✅ BUAT PESAN CALL EVENT AKHIR UNTUK GRUP
-        $this->createGroupCallEventMessage(
-            groupId: $group->id,
-            callerId: $user->id,
-            status: 'ended',
-            duration: 0, // Default 0, bisa dihitung jika ada data durasi
-            channel: 'group-call-' . $request->call_id,
-            reason: $request->reason
-        );
-
-        // 4. ✅ TUTUP NOTIFIKASI UNTUK SEMUA PESERTA
-        foreach ($allMembers as $participantId) {
-            $this->closeCallNotification($request->call_id, 'group', $participantId);
+        // 6. Tutup notifikasi untuk semua member
+        foreach ($allMembers as $memberId) {
+            $this->closeCallNotification($callId, 'group', $memberId);
         }
 
-        // 5. ✅ PERBAIKAN BESAR: Panggil Event dengan parameter yang BENAR
-        // Sesuaikan dengan constructor GroupCallEnded
+        // broadcast(new GroupCallEnded($groupCall, $user))->toOthers();
+
+        // 7. Broadcast event ke semua user
         event(new GroupCallEnded(
-            $user->id,              // $userId
-            $group->id,             // $groupId  
-            $request->call_id,      // $callId
-            $request->reason ?? 'Dibubarkan oleh host', // $reason
-            0,                      // $duration (default 0)
-            $memberIds,             // $memberIds
-            $user                   // $endedBy (parameter tambahan jika ada)
+            $user->id,      // userId (siapa yang mengakhiri)
+            $groupId,       // groupId
+            $callId,        // callId
+            $reason,        // reason
+            0,              // duration (default 0)
+            $memberIds,     // semua member yang akan menerima event
+            $user           // endedBy (data user lengkap)
         ));
         
-        Log::info('✅ Group call ended event broadcasted successfully', [
-            'call_id' => $request->call_id,
-            'event_sent' => true
+        Log::info('✅ [END GROUP CALL] Event broadcasted successfully', [
+            'call_id' => $callId,
+            'broadcast_to' => count($memberIds) . ' members'
         ]);
 
-        DB::commit();
-
+        // 8. Response sukses
         return response()->json([
             'status' => 'success',
             'message' => 'Panggilan grup berhasil dibubarkan',
-            'call_id' => $request->call_id,
+            'call_id' => $callId,
             'ended_by' => [
                 'id' => $user->id,
                 'name' => $user->name
@@ -474,18 +486,18 @@ public function endCall(Request $request)
         ]);
 
     } catch (\Exception $e) {
-        DB::rollBack();
-        
-        Log::error('❌ Gagal membubarkan panggilan grup: ' . $e->getMessage(), [
+        Log::error('❌ [END GROUP CALL] Error: ' . $e->getMessage(), [
             'error_trace' => $e->getTraceAsString(),
-            'request_data' => $request->all()
+            'request' => $request->all()
         ]);
         
         return response()->json([
             'status' => 'error',
             'message' => 'Gagal membubarkan panggilan grup: ' . $e->getMessage()
         ], 500);
+        
     }
+    
 }
 
     public function cancelGroupCall(Request $request) {

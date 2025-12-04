@@ -724,6 +724,7 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
     const resetGroupCallState = () => {
         console.log('🔄 Resetting group call state...');
         stopGroupCallTimeout();
+        endGroupCall;
         leaveGroupChannel();
         leaveDynamicGroupChannel();
         isGroupVoiceCallActive.value = false;
@@ -947,29 +948,45 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
     };
 
     const endGroupCall = async (callId: string) => {
-        if (!groupVoiceCallData.value || !groupVoiceCallData.value.group) {
-            console.error('Tidak ada data panggilan grup untuk diakhiri, mereset secara lokal.');
-            resetGroupCallState();
-            return;
+    if (!groupVoiceCallData.value || !groupVoiceCallData.value.group) {
+        console.error('⚠️ Tidak ada data panggilan grup');
+        resetGroupCallState();
+        return;
+    }
+
+    try {
+        console.log('📞 Membubarkan panggilan grup:', callId);
+
+        const response = await axios.post('/group-call/end', {
+            call_id: callId,
+            group_id: groupVoiceCallData.value.group.id,
+            reason: 'Dibubarkan oleh host'
+        });
+
+        console.log('✅ Response dari server:', response.data);
+
+        // ✅ HOST: Tampilkan alert dan reset state
+        // if (isGroupCaller.value) {
+        //     alert('Anda telah membubarkan panggilan grup');
+        //     resetGroupCallState();
+        // }
+        
+        // NOTE: Participant akan dapat alert via event listener
+        
+    } catch (error: any) {
+        console.error('❌ Gagal membubarkan panggilan grup:', error);
+        
+        let errorMessage = 'Gagal membubarkan panggilan grup';
+        if (error.response?.data?.error) {
+            errorMessage = error.response.data.error;
         }
-
-        try {
-            console.log('📞 Membubarkan panggilan grup:', callId);
-
-            await axios.post('/group-call/end', {
-                call_id: callId,
-                group_id: groupVoiceCallData.value.group.id,
-                reason: 'Dibubarkan oleh host'
-            });
-
-            console.log('✅ Perintah bubarkan berhasil dikirim.');
-
-        } catch (error: any) {
-            console.error('❌ Gagal membubarkan panggilan grup:', error);
-            alert('Gagal membubarkan panggilan.');
-            resetGroupCallState();
-        }
-    };
+        
+        alert(errorMessage);
+        
+        // Reset state jika error
+        resetGroupCallState();
+    }
+};
 
     const cancelGroupCall = async (callId: string) => {
         if (!groupVoiceCallData.value || !groupVoiceCallData.value.participants) {
@@ -1352,14 +1369,25 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
 
     // 3. LISTENER: group-call-ended (Tidak perlu enrichment)
     groupChannel.listen('.group-call-ended', (data: any) => {
-        console.log('🚫 EVENT .group-call-ended RECEIVED:', data);
+        console.log('🚫 Group call ended event:', data);
         
-        if (groupVoiceCallData.value && groupVoiceCallData.value.callId === data.call_id) {
-            if (data.ended_by.id !== currentUserId.value) {
-                alert(`Panggilan dibubarkan oleh ${data.ended_by.name}`);
-            }
-            resetGroupCallState();
+        // Cek apakah ini panggilan yang sedang aktif
+        if (groupVoiceCallData.value?.callId !== data?.call_id) {
+            return;
         }
+        
+        // const endedByName = data.ended_by?.name || 'Host';
+        // const isHost = isGroupCaller.value;
+        
+        // ✅ OPSI 1: ALERT SEDERHANA
+        if (data.ended_by.id !== currentUserId.value) {
+            alert(`Panggilan dibubarkan oleh ${data.ended_by.name}`);
+        } else {
+            // Ini adalah Host
+            alert('Anda telah membubarkan panggilan grup');
+        }
+        // Reset state untuk semua user (termasuk host jika belum reset)
+        resetGroupCallState();
     });
 
     // 4. LISTENER: group-participant-left (Tidak perlu enrichment)

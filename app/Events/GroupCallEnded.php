@@ -21,7 +21,10 @@ class GroupCallEnded implements ShouldBroadcast
     public $memberIds;
     public $endedBy;
 
-    // ✅ PERBAIKAN: Tambahkan parameter $endedBy ke constructor
+    /**
+     * Constructor sederhana
+     * Parameter ke-7 ($endedBy) opsional untuk kompatibilitas
+     */
     public function __construct($userId, $groupId, $callId, $reason = 'ended', $duration = 0, $memberIds = [], $endedBy = null)
     {
         $this->userId = $userId;
@@ -30,42 +33,60 @@ class GroupCallEnded implements ShouldBroadcast
         $this->reason = $reason;
         $this->duration = $duration;
         $this->memberIds = $memberIds;
+        
+        // Jika $endedBy tidak dikirim, cari user berdasarkan userId
         $this->endedBy = $endedBy ?: User::find($userId);
+        
+        \Log::info('🎯 [GROUP CALL ENDED EVENT] Created', [
+            'call_id' => $this->callId,
+            'ended_by_id' => $this->endedBy->id ?? $userId,
+            'member_count' => count($this->memberIds)
+        ]);
     }
 
+    /**
+     * Broadcast ke masing-masing user channel
+     */
     public function broadcastOn(): array
     {
-        $channels = [];
-
-        // broadcast ke semua member individual
-        foreach ($this->memberIds as $memberId) {
-            $channels[] = new Channel('user.' . $memberId);
-        }
-
-        // ✅ OPSIONAL: Juga broadcast ke group channel
-        $channels[] = new Channel('group.' . $this->groupId);
-
-        return $channels;
+        return [
+            new PrivateChannel('group.' . $this->groupCall->group_id),
+        ];
     }
 
+    /**
+     * Nama event
+     */
     public function broadcastAs(): string
     {
         return 'group-call-ended';
     }
 
+    /**
+     * Data yang dikirim ke frontend
+     * SEDERHANA: hanya data yang diperlukan untuk alert
+     */
     public function broadcastWith(): array
     {
-        // ✅ PASTIKAN $this->endedBy adalah objek User
-        $endedByData = $this->endedBy instanceof User ? [
-            'id' => $this->endedBy->id,
-            'name' => $this->endedBy->name,
-            'profile_photo_url' => $this->endedBy->profile_photo_url
-        ] : [
-            'id' => $this->userId,
-            'name' => 'Host',
-            'profile_photo_url' => null
-        ];
+        // Siapkan data ended_by
+        $endedByData = [];
+        
+        if ($this->endedBy instanceof User) {
+            $endedByData = [
+                'id' => $this->endedBy->id,
+                'name' => $this->endedBy->name,
+                'profile_photo_url' => $this->endedBy->profile_photo_url
+            ];
+        } else {
+            // Fallback jika tidak ada data user
+            $endedByData = [
+                'id' => $this->userId,
+                'name' => 'Host',
+                'profile_photo_url' => null
+            ];
+        }
 
+        // Data SEDERHANA yang dikirim ke frontend
         return [
             'call_id' => $this->callId,
             'group_id' => $this->groupId,
