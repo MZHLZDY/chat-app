@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from 'vue';
+import { useGroupCall } from '@/composables/useGroupCall';
 import { PhoneForwarded, PhoneOff, Phone, PhoneCall, PhoneMissed, Mic, MicOff, Volume2, VolumeOff, Video, Minimize } from 'lucide-vue-next';
 
 // Interface
@@ -41,6 +42,7 @@ const isOngoingCall = computed(() => props.groupCallData?.status === 'accepted')
 const isOutgoingCall = computed(() => props.isCaller && props.groupCallData?.status === 'calling');
 const isCallEnded = computed(() => props.groupCallData?.status === 'ended');
 const callerId = computed(() => props.groupCallData?.caller?.id || null);
+const { initializeGlobalListeners } = useGroupCall();
 
 const callTitle = computed(() => {
   if (isIncomingCall.value) return 'Panggilan Grup Masuk';
@@ -140,6 +142,7 @@ watch(() => props.groupCallData, () => {
 // ✅ DEBUG: Log ketika component mounted
 onMounted(() => {
     console.log('🎯 VoiceCallGroup mounted');
+    initializeGlobalListeners;
 });
 
 // Methods

@@ -4,6 +4,7 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -21,10 +22,6 @@ class GroupCallEnded implements ShouldBroadcast
     public $memberIds;
     public $endedBy;
 
-    /**
-     * Constructor sederhana
-     * Parameter ke-7 ($endedBy) opsional untuk kompatibilitas
-     */
     public function __construct($userId, $groupId, $callId, $reason = 'ended', $duration = 0, $memberIds = [], $endedBy = null)
     {
         $this->userId = $userId;
@@ -39,8 +36,11 @@ class GroupCallEnded implements ShouldBroadcast
         
         \Log::info('🎯 [GROUP CALL ENDED EVENT] Created', [
             'call_id' => $this->callId,
+            'group_id' => $this->groupId,
             'ended_by_id' => $this->endedBy->id ?? $userId,
-            'member_count' => count($this->memberIds)
+            'member_ids' => $this->memberIds,
+            'member_count' => count($this->memberIds),
+            'reason' => $this->reason
         ]);
     }
 
@@ -49,22 +49,42 @@ class GroupCallEnded implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('group.' . $this->groupCall->group_id),
-        ];
+        $channels = [];
+        
+        // ✅ PERBAIKAN: Pastikan semua member mendapat event
+        foreach ($this->memberIds as $memberId) {
+            $channels[] = new PrivateChannel('user.' . $memberId);
+        }
+        
+        // ✅ PERBAIKAN: Tambahkan host juga jika belum termasuk
+        if (!in_array($this->userId, $this->memberIds)) {
+            $channels[] = new PrivateChannel('user.' . $this->userId);
+            \Log::info('➕ [GROUP CALL ENDED] Added host channel:', ['host_id' => $this->userId]);
+        }
+        
+        \Log::info('📡 [GROUP CALL ENDED] Broadcasting to channels:', [
+            'total_channels' => count($channels),
+            'member_ids' => $this->memberIds,
+            'host_id' => $this->userId,
+            'all_channels' => array_map(function($channel) {
+                return $channel->name;
+            }, $channels)
+        ]);
+        
+        return $channels;
     }
 
     /**
-     * Nama event
+     * Nama event - HARUS SESUAI DENGAN FRONTEND
      */
     public function broadcastAs(): string
     {
+        // ✅ PERBAIKAN: Gunakan format dengan titik di depan
         return 'group-call-ended';
     }
 
     /**
      * Data yang dikirim ke frontend
-     * SEDERHANA: hanya data yang diperlukan untuk alert
      */
     public function broadcastWith(): array
     {
@@ -75,7 +95,7 @@ class GroupCallEnded implements ShouldBroadcast
             $endedByData = [
                 'id' => $this->endedBy->id,
                 'name' => $this->endedBy->name,
-                'profile_photo_url' => $this->endedBy->profile_photo_url
+                'profile_photo_url' => $this->endedBy->profile_photo_url ?? null
             ];
         } else {
             // Fallback jika tidak ada data user
@@ -86,13 +106,14 @@ class GroupCallEnded implements ShouldBroadcast
             ];
         }
 
-        // Data SEDERHANA yang dikirim ke frontend
         return [
             'call_id' => $this->callId,
             'group_id' => $this->groupId,
             'reason' => $this->reason,
             'duration' => $this->duration,
-            'ended_by' => $endedByData
+            'ended_by' => $endedByData,
+            'timestamp' => now()->toISOString(),
+            'event_type' => 'group_call_ended'
         ];
     }
 }

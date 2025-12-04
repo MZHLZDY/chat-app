@@ -22,8 +22,8 @@ Broadcast::channel('group.{groupId}', function ($user, $groupId) {
 });
 
 // Channel untuk event privat user (seperti update profil & panggilan)
-Broadcast::channel('user.{userId}', function ($user, $userId) {
-    return (int)$user->id === (int)$userId;
+Broadcast::channel('user.{id}', function ($user, $userId) {
+    return (int) $user->id === (int) $userId;
 });
 
 // Channel untuk private calls (alternatif)

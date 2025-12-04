@@ -447,7 +447,7 @@ onMounted(() => {
             </div>
         </div>
         <p class="text-gray-600 mb-4">{{ outgoingCallVoice.callee.name || 'Unknown' }}</p>
-        <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+        <h3 class="text font-bold mb-2">Panggilan Suara</h3>
 
         <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
             Berakhir dalam {{ callTimeoutCountdown }} detik
@@ -473,7 +473,7 @@ onMounted(() => {
         </div>
 
         <p class="text-gray-600 mb-4">Menghubungi...</p>
-        <h3 class="text-xl font-bold mb-2">Panggilan Suara</h3>
+        <h3 class="text font-bold mb-2">Panggilan Suara</h3>
 
         <div v-if="callTimeoutCountdown !== null" class="text-red-500 font-semibold mb-2 animate-pulse">
             Berakhir dalam {{ callTimeoutCountdown }} detik

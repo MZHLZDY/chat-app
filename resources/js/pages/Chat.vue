@@ -75,7 +75,7 @@ let activeGroupChannel: any = null;
 
 // --- Call State ---
 const { startVoiceCall, isInVoiceCall } = usePersonalCall();
-const { startGroupVoiceCall, isGroupVoiceCallActive } = useGroupCall();
+const { startGroupVoiceCall, isGroupVoiceCallActive, initializeGlobalListeners } = useGroupCall();
 const isAnyCallInProgress = computed(() => isInVoiceCall.value || isGroupVoiceCallActive.value);
 const { formatCallEventText, formatCallDuration, formatForDisplay } = useCallEventFormatter();
 
@@ -1473,6 +1473,7 @@ onMounted(() => {
   loadAllUsers();
   loadUnreadCounts();
   setupGlobalListeners();
+  initializeGlobalListeners();
 
   // Listener untuk menambahkan pesan panggilan suara dari usePersonalCall.ts
   const handleAddOptimisticMessage = (event: Event) => {

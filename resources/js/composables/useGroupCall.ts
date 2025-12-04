@@ -965,13 +965,11 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
 
         console.log('✅ Response dari server:', response.data);
 
-        // ✅ HOST: Tampilkan alert dan reset state
-        // if (isGroupCaller.value) {
-        //     alert('Anda telah membubarkan panggilan grup');
-        //     resetGroupCallState();
-        // }
+        // HOST: Tampilkan alert dan reset state
+        // Alert sudah ditangani oleh server melalui event
         
-        // NOTE: Participant akan dapat alert via event listener
+        // Reset state host
+        resetGroupCallState();
         
     } catch (error: any) {
         console.error('❌ Gagal membubarkan panggilan grup:', error);
@@ -1245,6 +1243,48 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
             }
         });
 
+        privateChannel.listen('.group-call-ended', (data: any) => {
+        console.log('🚫 [GLOBAL] Group call ended event received:', {
+            event: 'group-call-ended',
+            data: data,
+            currentCallId: groupVoiceCallData.value?.callId,
+            currentUserId: currentUserId.value,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Cek apakah ini panggilan yang sedang aktif
+        if (groupVoiceCallData.value?.callId !== data?.call_id) {
+            console.log('⚠️ Not current call, ignoring event for call_id:', data?.call_id);
+            return;
+        }
+        
+        const endedByName = data.ended_by?.name || 'Host';
+        const isEndedByMe = data.ended_by?.id === currentUserId.value;
+        
+        // ✅ Reset state terlebih dahulu
+        resetGroupCallState();
+        
+        // ✅ Tampilkan alert untuk SEMUA participant (termasuk host)
+        setTimeout(() => {
+            if (isEndedByMe) {
+                // Host melihat alert ini (tapi mungkin juga dapat alert dari fungsi endGroupCall)
+                alert('✅ Anda telah membubarkan panggilan grup');
+            } else {
+                // Participant melihat alert ini
+                alert(`📞 Panggilan grup telah dibubarkan oleh ${endedByName}`);
+            }
+            
+            // Log untuk debugging
+            console.log('✅ Alert shown for group call end:', {
+                callId: data.call_id,
+                endedBy: endedByName,
+                isEndedByMe: isEndedByMe,
+                reason: data.reason,
+                currentUserId: currentUserId.value
+            });
+        }, 300);
+    });
+
         globalListenersInitialized = true;
     };
 
@@ -1368,27 +1408,29 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
     });
 
     // 3. LISTENER: group-call-ended (Tidak perlu enrichment)
-    groupChannel.listen('.group-call-ended', (data: any) => {
-        console.log('🚫 Group call ended event:', data);
-        
-        // Cek apakah ini panggilan yang sedang aktif
-        if (groupVoiceCallData.value?.callId !== data?.call_id) {
-            return;
-        }
-        
-        // const endedByName = data.ended_by?.name || 'Host';
-        // const isHost = isGroupCaller.value;
-        
-        // ✅ OPSI 1: ALERT SEDERHANA
-        if (data.ended_by.id !== currentUserId.value) {
-            alert(`Panggilan dibubarkan oleh ${data.ended_by.name}`);
-        } else {
-            // Ini adalah Host
-            alert('Anda telah membubarkan panggilan grup');
-        }
-        // Reset state untuk semua user (termasuk host jika belum reset)
-        resetGroupCallState();
-    });
+    // Di dalam setupDynamicGroupListeners
+// groupChannel.listen('.group-call-ended', (data: any) => {
+//     console.log('🚫 Group call ended event:', data);
+    
+//     // Cek apakah ini panggilan yang sedang aktif
+//     if (groupVoiceCallData.value?.callId !== data?.call_id) {
+//         console.log('⚠️ Not current call, ignoring:', data.call_id);
+//         return;
+//     }
+    
+//     const endedByName = data.ended_by?.name || 'Host';
+    
+//     // Reset state terlebih dahulu
+//     resetGroupCallState();
+    
+//     // Tampilkan alert untuk semua participant (kecuali host jika dia yang mengakhiri)
+//     if (data.ended_by.id !== currentUserId.value) {
+//         setTimeout(() => {
+//             alert(`Panggilan grup telah dibubarkan oleh ${endedByName}`);
+//         }, 500);
+//     }
+//     // Note: Host sudah dapat alert di fungsi endGroupCall
+// });
 
     // 4. LISTENER: group-participant-left (Tidak perlu enrichment)
     groupChannel.listen('.group-participant-left', (data: any) => {
