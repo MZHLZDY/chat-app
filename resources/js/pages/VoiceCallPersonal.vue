@@ -172,58 +172,48 @@ const switchToVideo = () => {
 
 <template>
   <div v-if="isVisible" 
-       class="fixed inset-0 z-[200] text-white
-              flex items-center justify-center 
-              sm:bg-black sm:bg-opacity-70 sm:p-8">
+       class="fixed inset-0 z-[200] flex items-center justify-center p-4
+              bg-white bg-opacity-70 dark:bg-black dark:bg-opacity-70">
 
-    <div class="relative bg-gray-800 w-full h-full
-                flex flex-col justify-between
-                sm:rounded-lg sm:max-w-lg sm:h-auto">
+    <div class="w-full h-full 
+                bg-gradient-to-br from-white-500/90 to-blue-500/90 text-black 
+                dark:from-gray-900/90 dark:to-blue-900/90 dark:text-white 
+                shadow-2xl flex flex-col justify-between p-6 transition-all duration-300
+                md:rounded-none rounded-[2rem] md:max-w-full md:max-h-full max-w-sm max-h-[85vh] relative">
 
       <button
         v-if="isConnected"
         @click="$emit('minimize-call')"
-        class="absolute top-4 left-4 text-gray-300 hover:text-white transition-opacity"
+        class="absolute top-4 left-4 text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white transition-opacity"
         title="Mode Minimize Panggilan">
         <Minimize2 class="w-6 h-6" />
       </button>
       
-      <div class="flex flex-col items-center justify-center text-center flex-grow">
-        <!-- ✅ PERBAIKAN BESAR: Enhanced photo display dengan better fallback -->
+      <div class="flex flex-col items-center justify-center text-center flex-grow mt-10">
         <div class="flex flex-col items-center justify-center space-y-4">
-          <!-- Debug info (sementara untuk troubleshooting) -->
-          <div class="text-xs text-gray-400 bg-black bg-opacity-50 p-2 rounded" v-if="false">
-            <div>Photo URL: {{ contactPhotoUrl }}</div>
-            <div>Show Photo: {{ shouldShowPhoto }}</div>
-            <div>Image Error: {{ imageError }}</div>
-            <div>Contact: {{ contactName }}</div>
-          </div>
           
-          <!-- Container untuk foto profil dengan fallback -->
           <div class="relative w-32 h-32">
-            <!-- Foto profil - hanya tampilkan jika URL tersedia dan tidak error -->
             <img 
               v-if="shouldShowPhoto"
               :src="contactPhotoUrl" 
               :alt="contactName" 
-              class="w-full h-full rounded-full object-cover border-4 border-white shadow-lg"
+              class="w-full h-full rounded-full object-cover border-4 border-black/20 dark:border-white shadow-lg"
               @error="handleImageError"
               @load="handleImageLoad"
             />
 
-            <!-- Fallback avatar - tampilkan jika tidak ada foto atau error -->
             <div 
               v-else
-              :class="['w-full h-full rounded-full flex items-center justify-center text-white text-4xl font-bold border-4 border-white shadow-lg', contactAvatarClass]"
+              :class="['w-full h-full rounded-full flex items-center justify-center dark:text-white text-black text-4xl font-bold border-4 border-black/20 dark:border-white shadow-lg', contactAvatarClass]"
             >
               {{ contactInitial }}
             </div>
           </div>
 
-          <h2 class="text-3xl font-bold text-white">{{ contactName }}</h2>
+          <h2 class="text-3xl font-bold">{{ contactName }}</h2>
         </div>
         
-        <p v-if="isConnected" class="text-gray-300">
+        <p v-if="isConnected" class="text-gray-700 dark:text-gray-300">
           Panggilan terhubung
         </p>
 
@@ -231,7 +221,7 @@ const switchToVideo = () => {
           {{ formattedDuration }}
         </div>
         
-        <div v-else class="text-yellow-400 animate-pulse mt-2">
+        <div v-else class="text-red-500 dark:text-yellow-400 animate-pulse mt-2">
           Menghubungkan...
         </div>
       </div>
@@ -241,9 +231,10 @@ const switchToVideo = () => {
           <button 
             @click="toggleMute"
             :class="['w-14 h-14 rounded-full flex items-center justify-center', 
-                     isMuted ? 'bg-red-500 text-white' : 'bg-gray-700', 
+                     isMuted ? 'bg-red-500 text-white' : 'bg-gray-300 dark:bg-gray-700 text-black dark:text-white', 
                      !isConnected && 'opacity-50 cursor-not-allowed']"
-            :disabled="!isConnected">
+            :disabled="!isConnected"
+            title="Mute">
             <MicOff v-if="isMuted" class="w-8 h-8"/>
             <Mic v-else class="w-8 h-8"/>
           </button>
@@ -251,23 +242,25 @@ const switchToVideo = () => {
           <button 
             @click="endCall" 
             class="w-14 h-14 bg-red-600 text-white rounded-full hover:bg-red-700 flex items-center justify-center transform hover:scale-105 transition-transform"
-            :disabled="!isConnected">
+            title="Akhiri Panggilan">
             <PhoneForwarded class="w-8 h-8"/>
           </button>
 
           <button 
             @click="toggleSpeaker"
             :class="['w-14 h-14 rounded-full flex items-center justify-center', 
-                     isSpeakerOn ? 'bg-blue-500 text-white' : 'bg-gray-700', 
+                     isSpeakerOn ? 'bg-blue-500 text-white' : 'bg-gray-300 dark:bg-gray-700 text-black dark:text-white', 
                      !isConnected && 'opacity-50 cursor-not-allowed']"
-            :disabled="!isConnected">
+            :disabled="!isConnected"
+            title="Speaker">
             <Volume2 v-if="isSpeakerOn" class="w-8 h-8"/>
             <VolumeOff v-else class="w-8 h-8"/>
           </button>
 
           <button 
             @click="switchToVideo" 
-            class="w-14 h-14 bg-gray-700 text-white rounded-full hover:bg-green-800 flex items-center justify-center transform hover:scale-105 transition-transform"
+            :class="['w-14 h-14 rounded-full flex items-center justify-center transform hover:scale-105 transition-transform',
+                     !isConnected ? 'opacity-50 cursor-not-allowed bg-gray-300 dark:bg-gray-700 text-black dark:text-white' : 'bg-gray-300 dark:bg-gray-700 text-black dark:text-white hover:bg-green-600 hover:text-white dark:hover:bg-green-800']"
             :disabled="!isConnected"
             title="Beralih ke Video Call">
             <Video class="w-8 h-8"/>

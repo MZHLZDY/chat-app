@@ -444,9 +444,9 @@ onMounted(() => {
         </div>
     </div>
 
+    <!-- ✅ OUTGOING CALL MODAL UNTUK PERSONAL CALL -->
     <div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" class="fixed inset-0 bg-white bg-opacity-70 dark:bg-black dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
         <div class="w-full h-full bg-gradient-to-br from-white-200/90 to-blue-500/90 text-black dark:from-gray-900/90 dark:to-blue-900/90 dark:text-white shadow-2xl flex flex-col items-center justify-between p-6 transition-all duration-300 md:rounded-none rounded-[2rem] md:max-w-full md:max-h-full max-w-sm max-h-[85vh]">
-            
             <div class="flex flex-col items-center mt-10">
                 <div class="w-36 h-36 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl overflow-hidden shadow-lg">
                     <img 
