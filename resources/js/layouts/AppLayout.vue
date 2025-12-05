@@ -393,11 +393,11 @@ onMounted(() => {
     </div>
 
     <!-- ✅ INCOMING CALL MODAL UNTUK PERSONAL CALL -->
-    <div v-if="incomingCallVoice" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-        <div class="w-full max-w-sm h-full max-h-[85vh] bg-gradient-to-br from-gray-900/90 to-blue-900/90 rounded-[2rem] shadow-2xl flex flex-col items-center justify-between p-6 text-white transition-all duration-300">
+    <div v-if="incomingCallVoice" class="fixed inset-0 bg-white bg-opacity-70 dark:bg-black dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div class="w-full h-full bg-gradient-to-br from-white-200/90 to-blue-500/90 text-black dark:from-gray-900/90 dark:to-blue-900/90 dark:text-white shadow-2xl flex flex-col items-center justify-between p-6 transition-all duration-300 md:rounded-none rounded-[2rem] md:max-w-full md:max-h-full max-w-sm max-h-[85vh]">
             
             <div class="flex flex-col items-center mt-10">
-                <div class="w-24 h-24 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl overflow-hidden shadow-lg">
+                <div class="w-36 h-36 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl overflow-hidden shadow-lg">
                     <img 
                         v-if="incomingCallVoice.caller?.profile_photo_url" 
                         :src="incomingCallVoice.caller.profile_photo_url" 
@@ -411,13 +411,13 @@ onMounted(() => {
                 <h1 class="text-3xl font-extrabold text-white text-shadow-lg mb-1">
                     {{ incomingCallVoice.caller?.name || 'Unknown' }}
                 </h1>
-                <p class="text-gray-300 text-lg mb-6">Panggilan Suara</p>
+                <p class="text-white text-shadow-lg font-bold mb-7">Panggilan Suara Masuk</p>
                 <div v-if="callTimeoutCountdown !== null" class="text-yellow-400 font-semibold mb-2 animate-pulse text-sm">
                     Berakhir dalam {{ callTimeoutCountdown }} detik
                 </div>
             </div>
 
-            <div class="w-full flex justify-around mb-8">
+            <div class="w-full flex justify-around mb-8 max-w-xs">
                 <div class="flex flex-col items-center">
                     <button 
                       @click="answerVoiceCall(false, 'Ditolak')"
@@ -426,7 +426,7 @@ onMounted(() => {
                     >
                       <PhoneOff class="w-8 h-8"/>
                     </button>
-                    <span class="mt-2 text-sm font-medium text-gray-200">Tolak</span>
+                    <span class="mt-2 text-sm text-shadow-lg font-medium text-white">Tolak</span>
                 </div>
                 
                 <div class="flex flex-col items-center">
@@ -437,90 +437,85 @@ onMounted(() => {
                     >
                         <PhoneCall class="w-8 h-8"/>
                     </button>
-                    <span class="mt-2 text-sm font-medium text-gray-200">Terima</span>
+                    <span class="mt-2 text-sm text-shadow-lg font-medium text-white">Terima</span>
                 </div>
             </div>
             
         </div>
     </div>
 
-    <div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" 
-     class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-    
-    <div class="w-full max-w-sm h-full max-h-[85vh] bg-gradient-to-br from-gray-900/90 to-blue-900/90 rounded-[2rem] shadow-2xl flex flex-col items-center justify-between p-6 text-white transition-all duration-300">
-        
-        <div class="flex flex-col items-center mt-10">
-            <div class="w-24 h-24 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl overflow-hidden shadow-lg">
-                <img 
-                    v-if="outgoingCallVoice.callee?.profile_photo_url" 
-                    :src="outgoingCallVoice.callee.profile_photo_url" 
-                    :alt="outgoingCallVoice.callee.name" 
-                    class="w-full h-full object-cover"
-                >
-                <div v-else class="w-full h-full bg-blue-500/80 flex items-center justify-center font-bold">
-                    {{ outgoingCallVoice.callee?.name?.charAt(0).toUpperCase() || '?' }}
+    <div v-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" class="fixed inset-0 bg-white bg-opacity-70 dark:bg-black dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div class="w-full h-full bg-gradient-to-br from-white-200/90 to-blue-500/90 text-black dark:from-gray-900/90 dark:to-blue-900/90 dark:text-white shadow-2xl flex flex-col items-center justify-between p-6 transition-all duration-300 md:rounded-none rounded-[2rem] md:max-w-full md:max-h-full max-w-sm max-h-[85vh]">
+            
+            <div class="flex flex-col items-center mt-10">
+                <div class="w-36 h-36 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl overflow-hidden shadow-lg">
+                    <img 
+                        v-if="outgoingCallVoice.callee?.profile_photo_url" 
+                        :src="outgoingCallVoice.callee.profile_photo_url" 
+                        :alt="outgoingCallVoice.callee.name" 
+                        class="w-full h-full object-cover"
+                    >
+                    <div v-else class="w-full h-full bg-blue-500/80 flex items-center justify-center font-bold">
+                        {{ outgoingCallVoice.callee?.name?.charAt(0).toUpperCase() || '?' }}
+                    </div>
+                </div>
+                <h1 class="text-3xl font-extrabold text-white text-shadow-lg mb-1">
+                    {{ outgoingCallVoice.callee?.name || 'Unknown' }}
+                </h1>
+                <p class="text-white font-bold text-shadow-lg mb-7">Panggilan Suara</p>
+
+                <div v-if="callTimeoutCountdown !== null" class="text-yellow-300 font-bold mb-4 animate-pulse text-sm text-shadow-lg">
+                    Berakhir dalam {{ callTimeoutCountdown }} detik
+                </div>
+
+                <div class="animate-pulse text-white text-shadow-lg mb-4 text-xl font-medium">Memanggil...</div>
+            </div>
+
+            <div class="w-full flex justify-center mb-8 max-w-xs">
+                <div class="flex flex-col items-center">
+                    <button 
+                        @click="endVoiceCallWithReason('Dibatalkan')"
+                        class="bg-red-500 text-white p-4 rounded-full shadow-xl hover:bg-red-600 transition-transform transform hover:scale-105"
+                        aria-label="Batalkan Panggilan"
+                    >
+                        <PhoneMissed class="w-8 h-8"/>
+                    </button>
+                    <span class="mt-2 text-sm font-medium text-white">Batalkan</span>
                 </div>
             </div>
-            <h1 class="text-3xl font-extrabold text-white text-shadow-lg mb-1">
-                {{ outgoingCallVoice.callee?.name || 'Unknown' }}
-            </h1>
-            <p class="text-gray-300 text-lg mb-6">Panggilan Suara</p>
+        </div>
+    </div>
 
-            <div v-if="callTimeoutCountdown !== null" class="text-yellow-400 font-semibold mb-2 animate-pulse text-sm">
-                Berakhir dalam {{ callTimeoutCountdown }} detik
+    <div v-else-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" class="fixed inset-0 bg-white bg-opacity-70 dark:bg-black dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div class="w-full h-full bg-gradient-to-br from-white-200/90 to-blue-500/90 text-black dark:from-gray-900/90 dark:to-blue-900/90 dark:text-white shadow-2xl flex flex-col items-center justify-between p-6 transition-all duration-300 md:rounded-none rounded-[2rem] md:max-w-full md:max-h-full max-w-sm max-h-[85vh]">
+            <div class="flex flex-col items-center mt-10">
+                <div class="w-24 h-24 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl font-bold bg-blue-500/80 shadow-lg">
+                    ?
+                </div>
+                <h1 class="text-3xl font-extrabold text-white text-shadow-lg mb-1">Unknown</h1>
+                <p class="text-white font-bold text-shadow-lg mb-7">Panggilan Suara</p>
+
+                <div v-if="callTimeoutCountdown !== null" class="text-yellow-200 font-bold text-shadow-lg mb-2 animate-pulse text-sm">
+                    Berakhir dalam {{ callTimeoutCountdown }} detik
+                </div>
+
+                <div class="animate-pulse text-blue-400 text-shadow-lg mb-4 text-xl font-medium">Memanggil...</div>
             </div>
 
-            <div class="animate-pulse text-blue-400 mb-4 text-xl font-medium">Memanggil...</div>
-        </div>
-
-        <div class="w-full flex justify-center mb-8">
-            <div class="flex flex-col items-center">
-                <button 
-                    @click="endVoiceCallWithReason('Dibatalkan')"
-                    class="bg-red-500 text-white p-4 rounded-full shadow-xl hover:bg-red-600 transition-transform transform hover:scale-105"
-                    aria-label="Batalkan Panggilan"
-                >
-                    <PhoneMissed class="w-8 h-8"/>
-                </button>
-                <span class="mt-2 text-sm font-medium text-gray-200">Batalkan</span>
+            <div class="w-full flex justify-center mb-8 max-w-xs">
+                <div class="flex flex-col items-center">
+                    <button 
+                        @click="endVoiceCallWithReason('Dibatalkan')"
+                        class="bg-red-500 text-white p-4 rounded-full shadow-xl hover:bg-red-600 transition-transform transform hover:scale-105"
+                        aria-label="Batalkan Panggilan"
+                    >
+                        <PhoneMissed class="w-8 h-8"/>
+                    </button>
+                    <span class="mt-2 text-sm text-shadow-lg font-medium text-gray-200">Batalkan</span>
+                </div>
             </div>
         </div>
     </div>
-</div>
-
-<div v-else-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" 
-     class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-    
-    <div class="w-full max-w-sm h-full max-h-[85vh] bg-gradient-to-br from-gray-900/90 to-blue-900/90 rounded-[2rem] shadow-2xl flex flex-col items-center justify-between p-6 text-white transition-all duration-300">
-
-        <div class="flex flex-col items-center mt-10">
-            <div class="w-24 h-24 rounded-full mb-4 ring-4 ring-white/30 flex items-center justify-center text-white text-3xl font-bold bg-blue-500/80 shadow-lg">
-                ?
-            </div>
-            <h1 class="text-3xl font-extrabold text-white text-shadow-lg mb-1">Unknown</h1>
-            <p class="text-gray-300 text-lg mb-6">Panggilan Suara</p>
-
-            <div v-if="callTimeoutCountdown !== null" class="text-yellow-400 font-semibold mb-2 animate-pulse text-sm">
-                Berakhir dalam {{ callTimeoutCountdown }} detik
-            </div>
-
-            <div class="animate-pulse text-blue-400 mb-4 text-xl font-medium">Memanggil...</div>
-        </div>
-
-        <div class="w-full flex justify-center mb-8">
-            <div class="flex flex-col items-center">
-                <button 
-                    @click="endVoiceCallWithReason('Dibatalkan')"
-                    class="bg-red-500 text-white p-4 rounded-full shadow-xl hover:bg-red-600 transition-transform transform hover:scale-105"
-                    aria-label="Batalkan Panggilan"
-                >
-                    <PhoneMissed class="w-8 h-8"/>
-                </button>
-                <span class="mt-2 text-sm font-medium text-gray-200">Batalkan</span>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- ✅ FALLBACK UI JIKA DATA TIDAK LENGKAP -->
 <div v-else-if="outgoingCallVoice && outgoingCallVoice.status === 'calling'" 
