@@ -45,26 +45,30 @@ class GroupCallEnded implements ShouldBroadcast
     }
 
     /**
-     * Broadcast ke masing-masing user channel
+     * ✅ PERBAIKAN UTAMA: Broadcast ke KEDUA channel (user + group)
      */
     public function broadcastOn(): array
     {
         $channels = [];
         
-        // ✅ PERBAIKAN: Pastikan semua member mendapat event
+        // 1. ✅ Broadcast ke semua USER CHANNELS (untuk global listener)
         foreach ($this->memberIds as $memberId) {
             $channels[] = new PrivateChannel('user.' . $memberId);
         }
         
-        // ✅ PERBAIKAN: Tambahkan host juga jika belum termasuk
+        // 2. ✅ Tambahkan host jika belum termasuk
         if (!in_array($this->userId, $this->memberIds)) {
             $channels[] = new PrivateChannel('user.' . $this->userId);
             \Log::info('➕ [GROUP CALL ENDED] Added host channel:', ['host_id' => $this->userId]);
         }
         
+        // 3. ✅ PERBAIKAN BESAR: Broadcast juga ke GROUP CHANNEL (untuk dynamic listener)
+        $channels[] = new PrivateChannel('group.' . $this->groupId);
+        
         \Log::info('📡 [GROUP CALL ENDED] Broadcasting to channels:', [
             'total_channels' => count($channels),
             'member_ids' => $this->memberIds,
+            'group_id' => $this->groupId,
             'host_id' => $this->userId,
             'all_channels' => array_map(function($channel) {
                 return $channel->name;
@@ -79,7 +83,7 @@ class GroupCallEnded implements ShouldBroadcast
      */
     public function broadcastAs(): string
     {
-        // ✅ PERBAIKAN: Gunakan format dengan titik di depan
+        // ✅ Format dengan titik di depan
         return 'group-call-ended';
     }
 

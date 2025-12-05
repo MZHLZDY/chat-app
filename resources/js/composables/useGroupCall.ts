@@ -1409,28 +1409,28 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
 
     // 3. LISTENER: group-call-ended (Tidak perlu enrichment)
     // Di dalam setupDynamicGroupListeners
-// groupChannel.listen('.group-call-ended', (data: any) => {
-//     console.log('🚫 Group call ended event:', data);
+groupChannel.listen('.group-call-ended', (data: any) => {
+    console.log('🚫 Group call ended event:', data);
     
-//     // Cek apakah ini panggilan yang sedang aktif
-//     if (groupVoiceCallData.value?.callId !== data?.call_id) {
-//         console.log('⚠️ Not current call, ignoring:', data.call_id);
-//         return;
-//     }
+    // Cek apakah ini panggilan yang sedang aktif
+    if (groupVoiceCallData.value?.callId !== data?.call_id) {
+        console.log('⚠️ Not current call, ignoring:', data.call_id);
+        return;
+    }
     
-//     const endedByName = data.ended_by?.name || 'Host';
+    const endedByName = data.ended_by?.name || 'Host';
     
-//     // Reset state terlebih dahulu
-//     resetGroupCallState();
+    // Reset state terlebih dahulu
+    resetGroupCallState();
     
-//     // Tampilkan alert untuk semua participant (kecuali host jika dia yang mengakhiri)
-//     if (data.ended_by.id !== currentUserId.value) {
-//         setTimeout(() => {
-//             alert(`Panggilan grup telah dibubarkan oleh ${endedByName}`);
-//         }, 500);
-//     }
-//     // Note: Host sudah dapat alert di fungsi endGroupCall
-// });
+    // Tampilkan alert untuk semua participant (kecuali host jika dia yang mengakhiri)
+    if (data.ended_by.id !== currentUserId.value) {
+        setTimeout(() => {
+            alert(`Panggilan grup telah dibubarkan oleh ${endedByName}`);
+        }, 500);
+    }
+    // Note: Host sudah dapat alert di fungsi endGroupCall
+});
 
     // 4. LISTENER: group-participant-left (Tidak perlu enrichment)
     groupChannel.listen('.group-participant-left', (data: any) => {
