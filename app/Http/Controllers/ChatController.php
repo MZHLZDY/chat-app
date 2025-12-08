@@ -88,7 +88,6 @@ class ChatController extends Controller
 
         $message->load('sender', 'callEvent');
 
-        // broadcast to others (sender will update UI optimistically)
         broadcast(new MessageSent($message));
 
         return response()->json($message);
