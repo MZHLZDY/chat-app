@@ -1222,36 +1222,58 @@ privateChannel.listen('.call-accepted', async (data: any) => {
         
         // Call ended listener
         privateChannel.listen('.voice-call-ended', (data: any) => {
-            console.log('📞 CALL ENDED EVENT DITERIMA:', data);
+    console.log('📞 VOICE CALL ENDED EVENT DITERIMA:', data);
 
-            closeNotification(data.call_id, 'personal');
-            stopCallTimeout();
-            
-            if (incomingCallTimeout) {
-                clearTimeout(incomingCallTimeout);
-                incomingCallTimeout = null;
+    // ✅ PERBAIKAN: Update pesan yang sudah ada dengan durasi
+    if (data.message) {
+        window.dispatchEvent(new CustomEvent('update-call-message', {
+            detail: {
+                messageId: data.message.id,
+                newText: data.message.message,
+                callEvent: data.message.call_event
             }
+        }));
+    }
 
-            console.log('🔄 Reset state karena call-ended event');
-            resetVoiceCallState();
+    closeNotification(data.call_id, 'personal');
+    stopCallTimeout();
+    
+    if (incomingCallTimeout) {
+        clearTimeout(incomingCallTimeout);
+        incomingCallTimeout = null;
+    }
 
-            if (data.ended_by && data.ended_by.id !== currentUserId.value) {
-                const endedByName = data.ended_by.name || `User ${data.ended_by.id}`;
-                alert(`Panggilan diakhiri oleh ${endedByName}`);
-            }
-        });
+    console.log('🔄 Reset state karena call-ended event');
+    resetVoiceCallState();
+
+    if (data.ended_by && data.ended_by.id !== currentUserId.value) {
+        const endedByName = data.ended_by.name || `User ${data.ended_by.id}`;
+        alert(`Panggilan diakhiri oleh ${endedByName}`);
+    }
+});
         
         // Call rejected listener
         privateChannel.listen('.call-rejected', (data: any) => {
-    console.log('❌ EVENT .call-rejected DITERIMA oleh CALLER:', data);
+    console.log('❌ EVENT .call-rejected DITERIMA:', data);
     
-    // Cukup pastikan state di-reset. Pembaruan pesan akan datang dari .MessageSent
+    // ✅ PERBAIKAN: Update pesan yang sudah ada di chat
+    if (data.message) {
+        window.dispatchEvent(new CustomEvent('update-call-message', {
+            detail: {
+                messageId: data.message.id,
+                newText: data.message.message,
+                callEvent: data.message.call_event
+            }
+        }));
+    }
+    
+    // Reset state
     const currentOutgoingCall = outgoingCallVoice.value;
     if (currentOutgoingCall && currentOutgoingCall.callId === data.call_id) {
         console.log('🔄 Reset state karena panggilan keluar ditolak.');
         resetVoiceCallState();
     }
-})
+});
 
         privateChannel.listen('.MessageSent', (eventData: any) => {
             const messageData = eventData.message || eventData;

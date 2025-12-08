@@ -26,21 +26,52 @@ const groupRemoteAudioTracks = ref<{ [uid: number]: any }>({});
 // ✅ TAMBAHKAN: State untuk manual subscribe management
 const groupSubscribedUsers = ref<Set<number>>(new Set());
 
+// ✅ PERBAIKAN: Enhanced enrichUserData dengan logging yang lebih baik
 const enrichUserData = (user: any): any => {
-    if (!user || !user.id) return user;
+    if (!user || !user.id) {
+        console.warn('⚠️ enrichUserData: Invalid user data:', user);
+        return user;
+    }
     
-    // Cari data lengkap dari contacts.value (yang dijamin punya profile_photo_url)
+    // Cari data lengkap dari contacts.value
     const contactData = contacts.value.find(c => c.id === user.id);
     
-    // Gabungkan data mentah dengan data kontak lengkap
     if (contactData) {
-        return {
-            ...user, // Data mentah (misalnya dari event)
-            ...contactData, // Timpa dengan data lengkap (name, profile_photo_url, dll.)
-            profile_photo_url: contactData.profile_photo_url // Pastikan properti ini diambil
+        // ✅ PERBAIKAN: Gabungkan dengan prioritas yang jelas
+        const enriched = {
+            ...user, // Data mentah dari parameter
+            ...contactData, // Timpa dengan data lengkap dari contacts
+            // ✅ PASTIKAN properti kritis tidak hilang
+            id: user.id,
+            name: contactData.name || user.name,
+            profile_photo_url: contactData.profile_photo_url || user.profile_photo_url
         };
+        
+        console.log('✅ User data enriched from contacts:', {
+            userId: enriched.id,
+            userName: enriched.name,
+            hasProfilePhoto: !!enriched.profile_photo_url,
+            profilePhotoUrl: enriched.profile_photo_url,
+            originalHadPhoto: !!user.profile_photo_url,
+            contactHadPhoto: !!contactData.profile_photo_url
+        });
+        
+        return enriched;
     }
-
+    
+    // ✅ PERBAIKAN: Jika tidak ada di contacts, gunakan data asli tapi buat fallback URL
+    console.warn('⚠️ User not found in contacts, using original data:', {
+        userId: user.id,
+        userName: user.name,
+        hasProfilePhoto: !!user.profile_photo_url
+    });
+    
+    // Jika tidak ada profile_photo_url, buat fallback
+    if (!user.profile_photo_url && user.name) {
+        user.profile_photo_url = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random&color=fff&bold=true&size=128`;
+        console.log('✅ Created fallback avatar URL:', user.profile_photo_url);
+    }
+    
     return user;
 };
 
@@ -644,13 +675,34 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
     }
 
     try {
+        // ✅ PERBAIKAN KRITIS: Load contacts SEBELUM memanggil API
+        const { loadContacts } = useContacts();
+        await loadContacts();
+        
+        // ✅ VERIFIKASI: Log jumlah contacts yang ter-load
+        console.log('✅ Contacts loaded before call:', {
+            totalContacts: contacts.value.length,
+            sampleContact: contacts.value[0] ? {
+                id: contacts.value[0].id,
+                name: contacts.value[0].name,
+                hasProfilePhoto: !!contacts.value[0].profile_photo_url
+            } : null
+        });
+        
         console.log('🚀 Starting group voice call to group:', group.name);
         
         // Mendapatkan data user saat ini (Host) dari state Inertia.js
         const currentUserData = usePage<AppPageProps>().props.auth.user;
+        
         // 1. ✅ PERKAYA DATA CALLER (HOST)
-        // Meskipun ini data diri sendiri, kita ingin memastikan profile_photo_url ada
         const enrichedCaller = enrichUserData(currentUserData); 
+        
+        console.log('📸 Enriched caller data:', {
+            callerId: enrichedCaller.id,
+            callerName: enrichedCaller.name,
+            hasProfilePhoto: !!enrichedCaller.profile_photo_url,
+            profilePhotoUrl: enrichedCaller.profile_photo_url
+        });
 
         const response = await axios.post('/group-call/invite', {
             group_id: group.id,
@@ -658,8 +710,16 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
         });
         
         // 2. ✅ PERKAYA DATA PARTICIPANTS yang dikirim balik oleh API
-        const enrichedParticipants = response.data.participants.map(enrichUserData);
-
+        const enrichedParticipants = response.data.participants.map((p: any) => {
+            const enriched = enrichUserData(p);
+            console.log('📸 Enriched participant:', {
+                participantId: enriched.id,
+                participantName: enriched.name,
+                hasProfilePhoto: !!enriched.profile_photo_url,
+                profilePhotoUrl: enriched.profile_photo_url
+            });
+            return enriched;
+        });
 
         groupVoiceCallData.value = {
             callId: response.data.call_id,
@@ -669,7 +729,7 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
             caller: { 
                 id: enrichedCaller.id, 
                 name: enrichedCaller.name, 
-                profile_photo_url: enrichedCaller.profile_photo_url // JAMINAN FOTO HOST
+                profile_photo_url: enrichedCaller.profile_photo_url
             }, 
             
             callType: 'voice',
@@ -689,20 +749,25 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
                 await joinGroupChannel(response.data.channel);
                 console.log('🎉 Host successfully joined group channel');
                 
-                // UPDATE HOST STATUS TO 'accepted' (dan pastikan data host di participants juga lengkap)
+                // UPDATE HOST STATUS TO 'accepted'
                 const hostParticipantIndex = groupVoiceCallData.value.participants?.findIndex(
                     (p: any) => p.id === currentUserId.value
                 );
                 
                 if (hostParticipantIndex !== undefined && hostParticipantIndex !== -1 && groupVoiceCallData.value.participants) {
-                    // Pastikan entri host di participants diperbarui dengan data lengkap
                     groupVoiceCallData.value.participants[hostParticipantIndex] = {
                          ...groupVoiceCallData.value.participants[hostParticipantIndex],
                          ...enrichedCaller, // Timpa dengan data lengkap host
                          status: 'accepted',
-                         isLocal: true, // Tambahkan properti ini
+                         isLocal: true,
                          isMuted: false 
                     };
+                    
+                    console.log('✅ Host participant updated with enriched data:', {
+                        hostId: currentUserId.value,
+                        hasProfilePhoto: !!groupVoiceCallData.value.participants[hostParticipantIndex].profile_photo_url,
+                        profilePhotoUrl: groupVoiceCallData.value.participants[hostParticipantIndex].profile_photo_url
+                    });
                 }
             } catch (error) {
                 console.error('❌ Failed to join channel as host:', error);
@@ -718,7 +783,7 @@ const joinGroupChannel = async (channelName: string): Promise<boolean> => {
         console.error('❌ Failed to start group call:', error);
         alert('Failed to start group call: ' + (error.response?.data?.error || error.message));
     }
-  };
+};
 
     // --- IMPROVED GROUP CALL STATE MANAGEMENT ---
     const resetGroupCallState = () => {
@@ -1304,75 +1369,112 @@ const ensureDisconnectedState = async (): Promise<boolean> => {
     const groupChannel = echo.private(newChannelName);
 
     // 1. LISTENER: group-call-answered (Memperkaya data saat status berubah)
-    groupChannel.listen('.group-call-answered', (data: any) => {
-        console.log('✅ EVENT .group-call-answered RECEIVED:', data);
+    // ✅ PERBAIKAN: Listener group-call-answered dengan enrichment yang lebih baik
+groupChannel.listen('.group-call-answered', (data: any) => {
+    console.log('✅ EVENT .group-call-answered RECEIVED:', data);
 
-        if (!groupVoiceCallData.value || groupVoiceCallData.value.callId !== data.call_id) {
-            return;
-        }
-        
-        // ✅ PERKAYA DATA USER DARI EVENT
-        const enrichedUser = enrichUserData(data.user);
-
-        const participantIndex = groupVoiceCallData.value.participants?.findIndex(
-            (p: any) => p.id === data.user.id
-        );
-        
-        if (participantIndex !== undefined && participantIndex > -1 && groupVoiceCallData.value.participants) {
-            // Gabungkan data yang sudah ada dengan data yang diperkaya
-            groupVoiceCallData.value.participants[participantIndex] = {
-                ...groupVoiceCallData.value.participants[participantIndex],
-                ...enrichedUser, // ✅ Timpa dengan data lengkap (profile_photo_url)
-                status: data.accepted ? 'accepted' : 'rejected', // Update status
-                reason: data.reason || null,
-            };
-        }
-
-        if (data.accepted) {
-            if (isGroupCaller.value && groupVoiceCallData.value.status === 'calling') {
-                console.log('🎉 Participant joined! Changing host status to "accepted"');
-                stopGroupCallTimeout();
-                groupVoiceCallData.value.status = 'accepted';
-            }
-            
-            if (!isGroupCaller.value && data.user.id === currentUserId.value) {
-                console.log('🎉 Participant accepting call, joining channel...');
-                stopGroupCallTimeout();
-                
-                if (groupVoiceCallData.value.channel) {
-                    // ... (logika joinGroupChannel tetap sama)
-                    joinGroupChannel(groupVoiceCallData.value.channel)
-                        .then((success) => {
-                            if (success) {
-                                console.log('✅ Participant successfully joined group channel');
-                                groupVoiceCallData.value.status = 'accepted';
-                            } else {
-                                console.warn('⚠️ Join returned false, but participant might still be connected');
-                                if (groupClient.value.connectionState === 'CONNECTED') {
-                                    groupVoiceCallData.value.status = 'accepted';
-                                    console.log('✅ Participant connected despite join returning false');
-                                }
-                            }
-                        })
-                        .catch(error => {
-                            console.error('❌ Participant failed to join channel:', error);
-                            if (!error.message?.includes('OPERATION_ABORTED') && 
-                                !error.message?.includes('cancel token canceled')) {
-                                resetGroupCallState();
-                            }
-                        });
-                }
-            }
-        }
-
-        const acceptedParticipants = groupVoiceCallData.value.participants?.filter(
-            (p: any) => p.status === 'accepted'
-        );
-        
-        if (acceptedParticipants && acceptedParticipants.length > 0) {
-            stopGroupCallTimeout();
-        }
+    if (!groupVoiceCallData.value || groupVoiceCallData.value.callId !== data.call_id) {
+        return;
+    }
+    
+    // ✅ PERBAIKAN KRITIS: Double enrichment untuk memastikan foto profil ada
+    // 1. Pertama ambil data dari event (yang sudah diperbaiki dari backend)
+    let enrichedUser = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        profile_photo_url: data.user.profile_photo_url // Dari backend
+    };
+    
+    // 2. Kedua, timpa dengan data dari contacts jika ada (untuk jaminan ganda)
+    const contactData = contacts.value.find(c => c.id === data.user.id);
+    if (contactData) {
+        enrichedUser = {
+            ...enrichedUser,
+            ...contactData, // Timpa dengan data lengkap dari contacts
+            profile_photo_url: contactData.profile_photo_url // Prioritaskan dari contacts
+        };
+    }
+    
+    // ✅ LOGGING untuk debug
+    console.log('📸 Enriched user data:', {
+        userId: enrichedUser.id,
+        userName: enrichedUser.name,
+        hasProfilePhoto: !!enrichedUser.profile_photo_url,
+        profilePhotoUrl: enrichedUser.profile_photo_url,
+        source: contactData ? 'contacts' : 'event'
     });
+
+    const participantIndex = groupVoiceCallData.value.participants?.findIndex(
+        (p: any) => p.id === data.user.id
+    );
+    
+    if (participantIndex !== undefined && participantIndex > -1 && groupVoiceCallData.value.participants) {
+        // ✅ PERBAIKAN: Update dengan data yang sudah diperkaya
+        groupVoiceCallData.value.participants[participantIndex] = {
+            ...groupVoiceCallData.value.participants[participantIndex], // Data lama
+            ...enrichedUser, // Data baru yang diperkaya
+            status: data.accepted ? 'accepted' : 'rejected',
+            reason: data.reason || null,
+            // ✅ PASTIKAN properti penting tidak tertimpa
+            id: enrichedUser.id,
+            name: enrichedUser.name,
+            profile_photo_url: enrichedUser.profile_photo_url
+        };
+        
+        console.log('✅ Participant updated:', {
+            index: participantIndex,
+            participantId: enrichedUser.id,
+            participantName: enrichedUser.name,
+            hasPhoto: !!groupVoiceCallData.value.participants[participantIndex].profile_photo_url,
+            photoUrl: groupVoiceCallData.value.participants[participantIndex].profile_photo_url
+        });
+    }
+
+    if (data.accepted) {
+        if (isGroupCaller.value && groupVoiceCallData.value.status === 'calling') {
+            console.log('🎉 Participant joined! Changing host status to "accepted"');
+            stopGroupCallTimeout();
+            groupVoiceCallData.value.status = 'accepted';
+        }
+        
+        if (!isGroupCaller.value && data.user.id === currentUserId.value) {
+            console.log('🎉 Participant accepting call, joining channel...');
+            stopGroupCallTimeout();
+            
+            if (groupVoiceCallData.value.channel) {
+                joinGroupChannel(groupVoiceCallData.value.channel)
+                    .then((success) => {
+                        if (success) {
+                            console.log('✅ Participant successfully joined group channel');
+                            groupVoiceCallData.value.status = 'accepted';
+                        } else {
+                            console.warn('⚠️ Join returned false, but participant might still be connected');
+                            if (groupClient.value.connectionState === 'CONNECTED') {
+                                groupVoiceCallData.value.status = 'accepted';
+                                console.log('✅ Participant connected despite join returning false');
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('❌ Participant failed to join channel:', error);
+                        if (!error.message?.includes('OPERATION_ABORTED') && 
+                            !error.message?.includes('cancel token canceled')) {
+                            resetGroupCallState();
+                        }
+                    });
+            }
+        }
+    }
+
+    const acceptedParticipants = groupVoiceCallData.value.participants?.filter(
+        (p: any) => p.status === 'accepted'
+    );
+    
+    if (acceptedParticipants && acceptedParticipants.length > 0) {
+        stopGroupCallTimeout();
+    }
+});
     
     // 2. LISTENER: group-participant-joined (Jika ada yang bergabung, data harus lengkap)
     groupChannel.listen('.group-participant-joined', (data: any) => {

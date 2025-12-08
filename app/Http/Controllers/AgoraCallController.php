@@ -111,15 +111,6 @@ public function answerCall(Request $request)
             return response()->json(['error' => 'Caller not found'], 404);
         }
 
-        Log::info('Answer call request:', [
-            'call_id' => $request->call_id,
-            'caller_id' => $caller->id,
-            'callee_id' => $callee->id,
-            'accepted' => $request->accepted,
-            'reason' => $request->reason
-        ]);
-
-        // ✅ PERBAIKAN: Cari dan update personal call
         $call = PersonalCall::where('call_id', $request->call_id)->first();
         
         if (!$call) {
@@ -159,20 +150,21 @@ public function answerCall(Request $request)
                 'caller_id' => $caller->id
             ]);
         } else {
-            // ✅ PERBAIKAN: Pastikan CallRejected di-trigger dengan data yang benar
+            // ✅ PERBAIKAN KRITIS: Pastikan CallRejected di-trigger dengan benar
             event(new CallRejected(
                 callId: $request->call_id, 
                 callerId: $caller->id,
                 reason: $request->reason ?? 'Ditolak', 
                 calleeId: $callee->id, 
                 callType: $call->call_type,
-                message: $callEvent?->chatMessage
+                message: $callEvent?->chatMessage // ✅ Kirim message object
             ));
             
-            Log::info('Call rejected event triggered', [
+            Log::info('✅ Call rejected event triggered with message', [
                 'call_id' => $request->call_id,
                 'caller_id' => $caller->id,
-                'reason' => $request->reason
+                'reason' => $request->reason,
+                'message_id' => $callEvent?->chatMessage?->id
             ]);
         }
 
@@ -185,7 +177,7 @@ public function answerCall(Request $request)
 
     } catch (\Exception $e) {
         DB::rollBack();
-        Log::error('Error in answerCall: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        Log::error('Error in answerCall: ' . $e->getMessage());
         return response()->json([
             'error' => 'Internal server error',
             'message' => $e->getMessage()
@@ -195,7 +187,6 @@ public function answerCall(Request $request)
 
 public function endCall(Request $request)
 {
-    // 1. Validasi request
     $validated = $request->validate([
         'call_id' => 'required|string|exists:personal_calls,call_id',
         'reason' => 'nullable|string',
@@ -206,7 +197,6 @@ public function endCall(Request $request)
     $callId = $validated['call_id'];
     $duration = $validated['duration'] ?? 0;
 
-    // 2. Ambil data panggilan dari database
     $call = PersonalCall::where('call_id', $callId)->first();
 
     if (!$call) {
@@ -214,42 +204,40 @@ public function endCall(Request $request)
         return response()->json(['message' => 'Call not found'], 404);
     }
     
-    // 3. Dapatkan daftar peserta dan tipe panggilan
     $participantIds = [$call->caller_id, $call->callee_id];
     $callType = $call->call_type;
 
-    // 4. Update status panggilan di database
     $call->update([
         'status' => 'ended',
         'ended_at' => now(),
         'duration_seconds' => $duration,
     ]);
     
-    // 5. Tutup notifikasi untuk semua peserta
     foreach ($participantIds as $participantId) {
         $this->closeCallNotification($callId, 'personal', $participantId);
     }
     
-    // 6. Update atau buat pesan event di chat
-    $this->createOrUpdateCallEventAndMessage(
+    // ✅ PERBAIKAN: Update message dengan durasi
+    $callEvent = $this->createOrUpdateCallEventAndMessage(
         channel: $call->channel_name,
         callerId: $call->caller_id,
         calleeId: $call->callee_id,
-        status: 'ended', // <-- Status baru
-        duration: $duration, // <-- Teruskan durasi
+        status: 'ended',
+        duration: $duration,
         callType: $callType,
         reason: $validated['reason'] ?? 'Panggilan diakhiri'
     );
 
-    // 7. Broadcast event 'CallEnded' ke semua peserta
+    // ✅ PERBAIKAN: Broadcast event dengan message object
     event(new CallEnded(
       callId: $callId,
       participantIds: $participantIds,
       endedBy: $user->id,
       endedByName: $user->name,
-      reason: $validated['reason'] ?? null, // ✅ PERBAIKAN 2: Akses 'reason' dengan aman
+      reason: $validated['reason'] ?? null,
       duration: $duration,
-      callType: $callType
+      callType: $callType,
+      message: $callEvent?->chatMessage // ✅ Kirim message object
     ));
 
     return response()->json([
@@ -351,51 +339,63 @@ public function endCall(Request $request)
     }
 
     public function answerGroupCall(Request $request) {
-        $request->validate([
-            'call_id' => 'required|string', 
-            'group_id' => 'required|exists:groups,id', 
-            'accepted' => 'required|boolean', 
-            'reason' => 'nullable|string'
-        ]);
-        
-        $user = $request->user();
-        $group = Group::find($request->group_id);
+    $request->validate([
+        'call_id' => 'required|string', 
+        'group_id' => 'required|exists:groups,id', 
+        'accepted' => 'required|boolean', 
+        'reason' => 'nullable|string'
+    ]);
+    
+    $user = $request->user();
+    $group = Group::find($request->group_id);
 
-        // ✅ BUAT PESAN CALL EVENT UNTUK GRUP
-        if ($request->accepted) {
-            $this->createGroupCallEventMessage(
-                groupId: $group->id,
-                callerId: $user->id,
-                status: 'accepted',
-                duration: null,
-                channel: 'group-call-' . $request->call_id
-            );
-        } else {
-            $this->createGroupCallEventMessage(
-                groupId: $group->id,
-                callerId: $user->id,
-                status: 'rejected',
-                duration: null,
-                channel: 'group-call-' . $request->call_id,
-                reason: $request->reason
-            );
-        }
+    // ✅ PERBAIKAN KRITIS: Load relasi profile_photo_url sebelum broadcast
+    // Pastikan User model memiliki accessor profile_photo_url
+    $user->load([]); // Trigger accessor jika ada
+    
+    Log::info('✅ User data before broadcast:', [
+        'user_id' => $user->id,
+        'user_name' => $user->name,
+        'profile_photo_url' => $user->profile_photo_url, // ✅ Verifikasi data ada
+        'accepted' => $request->accepted
+    ]);
 
-        // ✅ TUTUP NOTIFIKASI JIKA DIJAWAB
-        if ($request->accepted) {
-            $this->closeCallNotification($request->call_id, 'group', $user->id);
-        }
-
-        event(new GroupCallAnswered(
-            $request->call_id, 
-            $group, 
-            $user, 
-            $request->boolean('accepted'), 
-            $request->reason
-        ));
-        
-        return response()->json(['status' => 'success']);
+    // ✅ BUAT PESAN CALL EVENT UNTUK GRUP
+    if ($request->accepted) {
+        $this->createGroupCallEventMessage(
+            groupId: $group->id,
+            callerId: $user->id,
+            status: 'accepted',
+            duration: null,
+            channel: 'group-call-' . $request->call_id
+        );
+    } else {
+        $this->createGroupCallEventMessage(
+            groupId: $group->id,
+            callerId: $user->id,
+            status: 'rejected',
+            duration: null,
+            channel: 'group-call-' . $request->call_id,
+            reason: $request->reason
+        );
     }
+
+    // ✅ TUTUP NOTIFIKASI JIKA DIJAWAB
+    if ($request->accepted) {
+        $this->closeCallNotification($request->call_id, 'group', $user->id);
+    }
+
+    // ✅ BROADCAST dengan data user yang LENGKAP
+    event(new GroupCallAnswered(
+        $request->call_id, 
+        $group, 
+        $user, // User model dengan accessor profile_photo_url sudah ter-load
+        $request->boolean('accepted'), 
+        $request->reason
+    ));
+    
+    return response()->json(['status' => 'success']);
+}
 
     public function endGroupCall(Request $request) 
 {

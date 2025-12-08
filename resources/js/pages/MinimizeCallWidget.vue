@@ -14,7 +14,7 @@ defineEmits(['expand-call', 'end-call']);
   <div 
     class="fixed top-4 right-4 w-72 z-[101] 
            sm:top-5 sm:left-1/2 sm:-translate-x-1/2 sm:right-auto sm:w-[90%] sm:max-w-sm 
-           bg-gray-800 text-white rounded-lg shadow-2xl p-3 flex items-center justify-between animate-fade-in-down"
+           bg-gray-600 text-white rounded-lg shadow-2xl p-3 flex items-center justify-between animate-fade-in-down"
   >
     <div class="flex items-center gap-3 overflow-hidden">
       <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold overflow-hidden">

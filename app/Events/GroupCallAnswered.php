@@ -16,15 +16,14 @@ class GroupCallAnswered implements ShouldBroadcast
     public function __construct(
         public string $callId,
         public Group $group,
-        public User $user, // User yang menjawab
+        public User $user,
         public bool $accepted,
-        public ?string $reason
+        public ?string $reason = null
     ) {}
 
     public function broadcastOn(): array
     {
-        // Siarkan ke channel utama grup agar semua anggota tahu
-        return [ new PrivateChannel('group.' . $this->group->id) ];
+        return [new PrivateChannel('group.' . $this->group->id)];
     }
 
     public function broadcastAs(): string
@@ -34,9 +33,15 @@ class GroupCallAnswered implements ShouldBroadcast
 
     public function broadcastWith(): array
     {
+        // ✅ PERBAIKAN: Kirim data user yang LENGKAP termasuk profile_photo_url
         return [
             'call_id' => $this->callId,
-            'user' => ['id' => $this->user->id, 'name' => $this->user->name],
+            'user' => [
+                'id' => $this->user->id,
+                'name' => $this->user->name,
+                'email' => $this->user->email,
+                'profile_photo_url' => $this->user->profile_photo_url, // ✅ KUNCI: Pastikan ini dikirim
+            ],
             'accepted' => $this->accepted,
             'reason' => $this->reason,
         ];

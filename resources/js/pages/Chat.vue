@@ -1476,19 +1476,41 @@ onMounted(() => {
   initializeGlobalListeners();
 
   // Listener untuk menambahkan pesan panggilan suara dari usePersonalCall.ts
+  const handleUpdateCallMessage = (event: Event) => {
+    if (event instanceof CustomEvent) {
+      const { messageId, newText, callEvent } = event.detail;
+      console.log('🔄 Updating call message:', { messageId, newText, callEvent });
+      
+      // Cari dan update pesan di array messages
+      const messageIndex = messages.value.findIndex(m => m.id === messageId);
+      if (messageIndex !== -1) {
+        messages.value[messageIndex].text = newText;
+        messages.value[messageIndex].message = newText;
+        messages.value[messageIndex].call_event = callEvent;
+        
+        // Force reactivity
+        messages.value = [...messages.value];
+        
+        console.log('✅ Message updated successfully');
+      } else {
+        console.warn('⚠️ Message not found in array:', messageId);
+      }
+    }
+  };
+
+  window.addEventListener('update-call-message', handleUpdateCallMessage);
+
+  // Existing listeners...
   const handleAddOptimisticMessage = (event: Event) => {
-    // Pastikan event adalah CustomEvent sebelum mengakses detail
     if (event instanceof CustomEvent) {
       console.log('📢 Menerima event untuk menambah pesan panggilan suara:', event.detail);
       addMessage(event.detail);
     }
   };
 
-  // Listener untuk menghapus pesan jika panggilan suara gagal dimulai
   const handleRemoveOptimisticMessage = (event: Event) => {
     if (event instanceof CustomEvent) {
       console.log('🗑️ Menerima event untuk menghapus pesan panggilan suara:', event.detail);
-      // Hapus pesan dari array berdasarkan ID sementara (tempId)
       messages.value = messages.value.filter(m => m.id !== event.detail.id);
     }
   };
@@ -1504,6 +1526,7 @@ onMounted(() => {
   onUnmounted(() => {
     clearInterval(pollingInterval);
 
+    window.removeEventListener('update-call-message', handleUpdateCallMessage);
     window.removeEventListener('add-optimistic-message', handleAddOptimisticMessage);
     window.removeEventListener('remove-optimistic-message', handleRemoveOptimisticMessage);
   });

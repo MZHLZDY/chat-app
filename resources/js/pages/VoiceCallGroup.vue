@@ -381,7 +381,7 @@ const toggleSpeaker = () => { isSpeakerOn.value = !isSpeakerOn.value; emit('togg
                 title="Keluar Panggilan">
                 <PhoneForwarded class="w-7 h-7"/>
               </button>
-              <span class="text-xs text-gray-300">{{ isCaller ? 'Akhiri' : 'Keluar' }}</span>
+              <span class="text-xs text-gray-300">{{ isCaller ? 'Bubarkan' : 'Keluar' }}</span>
             </div>
 
             <!-- Switch to Video -->

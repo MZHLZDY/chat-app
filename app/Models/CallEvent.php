@@ -28,24 +28,41 @@ class CallEvent extends Model
 
     // Method untuk menerjemahkan status menjadi teks yang ramah pengguna
     public function getCallMessageText(): string
-    {
-        $text = $this->call_type === 'video' ? 'Panggilan Video' : 'Panggilan Suara';
+{
+    $text = $this->call_type === 'video' ? 'Panggilan Video' : 'Panggilan Suara';
 
-        switch ($this->status) {
-            case 'calling':   $text .= ' • Memanggil'; break;
-            case 'cancelled': $text .= ' • Dibatalkan'; break;
-            case 'rejected':  $text .= ' • Ditolak' ; break;
-            case 'missed':    $text .= ' • Tak terjawab'; break;
-            case 'accepted':  $text .= ' • Diterima'; break;
-            case 'ended':
-                // Menggunakan helper formatDuration dari controller
-                $durationText = app(\App\Http\Controllers\AgoraCallController::class)->formatDurationForPublic($this->duration);
-                $text .= $this->duration > 0 ? ' • ' . $durationText : ' • Selesai';
-                break;
-            default:
+    switch ($this->status) {
+        case 'calling':   
+            $text .= ' • Memanggil'; 
+            break;
+        case 'cancelled': 
+            $text .= ' • Dibatalkan'; 
+            break;
+        case 'rejected':  
+            $text .= ' • Ditolak';
+            if ($this->reason && $this->reason !== 'Ditolak') {
+                $text .= ' - ' . $this->reason;
+            }
+            break;
+        case 'missed':    
+            $text .= ' • Tak terjawab'; 
+            break;
+        case 'accepted':  
+            $text .= ' • Diterima'; 
+            break;
+        case 'ended':
+            if ($this->duration > 0) {
+                $durationText = app(\App\Http\Controllers\AgoraCallController::class)
+                    ->formatDurationForPublic($this->duration);
+                $text .= ' • ' . $durationText;
+            } else {
                 $text .= ' • Selesai';
-        }
-
-        return $text;
+            }
+            break;
+        default:
+            $text .= ' • Selesai';
     }
+
+    return $text;
+}
 }
