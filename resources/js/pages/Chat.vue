@@ -704,11 +704,10 @@ const updateLatestGroupMessage = (groupId: number, message: any) => {
     const groupIndex = groups.value.findIndex(g => g.id === groupId);
 
     if (groupIndex !== -1) {
-        contacts.value[groupIndex].latest_message = message;
-        contacts.value[groupIndex].updated_at = new Date().toISOString();
+        groups.value[groupIndex].latest_message = message;
 
-        const updatedGroup = contacts.value.splice(groupIndex, 1)[0];
-        contacts.value.unshift(updatedGroup);
+        const updatedGroup = groups.value.splice(groupIndex, 1)[0];
+        groups.value.unshift(updatedGroup);
     }
 };
 
