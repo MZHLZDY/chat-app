@@ -573,7 +573,16 @@ const onFileSelected = async (event: Event) => {
             },
         });
 
+        const newMessage = response.data;
         addMessage(response.data);
+
+    if (activeContact.value) {
+            if (activeContact.value.type === 'group') {
+                updateLatestGroupMessage(activeContact.value.id, newMessage);
+            } else {
+                updateLatestMessage(activeContact.value.id, newMessage);
+            }
+        }
         
     } catch (error) {
         console.error('Gagal mengirim file:', error);
@@ -678,43 +687,52 @@ const addMessage = (message: any) => {
     scrollToBottom();
 };
 
-const updateLatestMessage = (contactId: number, message: { text: string, sender_id: number, sender: { id: number, name: string } }) => {
-    const contactIndex = contacts.value.findIndex(c => c.id === contactId);
+const updateLatestMessage = (userId: number, message: any) => {
+    const contactIndex = contacts.value.findIndex(c => c.id === userId);
+    
     if (contactIndex !== -1) {
-        contacts.value[contactIndex].latest_message = {
-            message: message.text,
-            sender: message.sender,
-            sender_id: message.sender_id
-        };
+        contacts.value[contactIndex].latest_message = message;
+        
+        contacts.value[contactIndex].updated_at = new Date().toISOString();
+
+        const updatedContact = contacts.value.splice(contactIndex, 1)[0];
+        contacts.value.unshift(updatedContact);
     }
 };
 
-  const updateLatestGroupMessage = (groupId: number, message: any) => {
+const updateLatestGroupMessage = (groupId: number, message: any) => {
     const groupIndex = groups.value.findIndex(g => g.id === groupId);
+
     if (groupIndex !== -1) {
-        groups.value[groupIndex].latest_message = {
-            message: message.message,
-            sender_id: message.sender_id,
-            sender: message.sender
-        };
+        contacts.value[groupIndex].latest_message = message;
+        contacts.value[groupIndex].updated_at = new Date().toISOString();
+
+        const updatedGroup = contacts.value.splice(groupIndex, 1)[0];
+        contacts.value.unshift(updatedGroup);
     }
 };
 
 const getLatestMessagePreview = (message: any) => {
-    if (!message) {
-        return '';
+    if (!message) return '';
+
+    if (message.type === 'image') return '📷 Foto';
+    if (message.type === 'video') return '📹 Video';
+    if (message.type === 'file')  return '📎 File';
+
+    if (message.file_mime_type) {
+        if (message.file_mime_type.startsWith('image/')) return '📷 Foto';
+        if (message.file_mime_type.startsWith('video/')) return '📹 Video';
+        return '📎 File';
     }
 
-    switch (message.type) {
-        case 'image':
-            return '📷 Foto';
-        case 'video':
-            return '📹 Video';
-        case 'file':
-            return '📎 File';
-        default:
-            return message.message || '';
+    if (message.file_path) {
+        const ext = message.file_path.split('.').pop()?.toLowerCase();
+        if (['jpg','jpeg','png','gif','webp'].includes(ext || '')) return '📷 Foto';
+        if (['mp4','mov','avi','webm'].includes(ext || '')) return '📹 Video';
+        return '📎 File';
     }
+
+    return message.message || '';
 };
 
 const truncate = (text: string, length: number) => {
@@ -1270,15 +1288,7 @@ const setupGlobalListeners = () => {
         const messageData = eventData.message;
         if (Number(messageData.sender_id) === Number(user.value.id)) { return;}
         const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
-        if (messageData.group_id) {
-            updateLatestGroupMessage(messageData.group_id, messageData);
-        } else {
-            updateLatestMessage(messageData.sender_id, { 
-                text: messageData.message, 
-                sender_id: messageData.sender_id, 
-                sender: messageData.sender 
-            });
-        }
+        updateLatestMessage(messageData.sender_id, messageData);
 
         if (!isChatCurrentlyActive) {
             const unreadChatId = messageData.group_id ? `group-${messageData.group_id}` : `user-${messageData.sender_id}`;
@@ -1297,28 +1307,60 @@ const setupGlobalListeners = () => {
             }
         }
     })
-    .listen('.GroupMessageSent', (eventData: any) => {
+    .listen('.GroupFileMessageSent', (eventData: any) => {
         const messageData = eventData.message ? eventData.message : eventData;
-        const isGroupChatCurrentlyActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;
-        
-        if (messageData.sender_id === currentUserId.value) return;
+
+        if (Number(messageData.sender_id) === Number(user.value.id)) return;
 
         updateLatestGroupMessage(messageData.group_id, messageData);
+        const isGroupActive = activeContact.value?.type === 'group' && activeContact.value?.id === messageData.group_id;
+        
+        if (!isGroupActive) {
+            const unreadId = `group-${messageData.group_id}`;
+            unreadCounts.value[unreadId] = (unreadCounts.value[unreadId] || 0) + 1;
 
-        if (!isGroupChatCurrentlyActive) {
-            const unreadChatId = `group-${messageData.group_id}`;
-            const currentCount = unreadCounts.value[unreadChatId] || 0;
-            unreadCounts.value[unreadChatId] = currentCount + 1;
+            const senderName = messageData.sender ? messageData.sender.name : 'Anggota';
+            let contentText = '📎 Mengirim file';
+            if (messageData.type === 'image') contentText = '📷 Mengirim foto';
+            if (messageData.type === 'video') contentText = '📹 Mengirim video';
 
-            showNotification(messageData);
+            showNotification({
+                ...messageData,
+                message: `${senderName}: ${contentText}`
+            });
         }
-    })  
+    })
     .listen('.MessageRead', (eventData: any) => {
         if (activeContact.value && activeContact.value.id === eventData.readerId) {
             messages.value.forEach(msg => {
                 if (msg.sender_id === currentUserId.value && !msg.read_at) {
                     msg.read_at = new Date().toISOString();
                 }
+            });
+        }
+    })
+    .listen('.FileMessageSent', (eventData: any) => {
+        const messageData = eventData.message; 
+        
+        if (Number(messageData.sender_id) === Number(user.value.id)) return;
+
+        updateLatestMessage(messageData.sender_id, messageData); 
+
+        const isChatCurrentlyActive = activeContact.value?.type === 'user' && activeContact.value?.id === messageData.sender_id;
+        
+        if (!isChatCurrentlyActive) {
+            const unreadChatId = `user-${messageData.sender_id}`;
+            const currentCount = unreadCounts.value[unreadChatId] || 0;
+            unreadCounts.value[unreadChatId] = currentCount + 1;
+
+            let notifText = '📎 Mengirim file';
+            if (messageData.type === 'image') notifText = '📷 Mengirim foto';
+            if (messageData.type === 'video') notifText = '📹 Mengirim video';
+
+            showNotification({ 
+                ...messageData, 
+                message: notifText,
+                time: formatTime(messageData.created_at) 
             });
         }
     });
@@ -1909,13 +1951,13 @@ const currentCallContactName = computed(() => {
                                     <div class="inline-flex items-center gap-2 bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-full text-sm text-gray-600 dark:text-gray-300">
                                       <Video v-if="m.call_event?.call_type === 'video'" class="w-4 h-4" />
                                       <Phone v-else class="w-4 h-4" />
-
                                       <span>
                                        {{ getCallEventText(m) }}
                                       </span>
                                     </div>
                                   </div>
-                                   
+                                  <!-- End --> 
+
                                   <div v-if="m.type === 'image'" class="flex flex-col space-y-2">
                                     <a :href="`/storage/${m.file_path}`" target="_blank">
                                       <img v-if="m.file_path" :src="`/storage/${m.file_path}`" class="w-full rounded-lg cursor-pointer">

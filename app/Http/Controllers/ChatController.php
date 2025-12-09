@@ -2,7 +2,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\CallEvent;
 use App\Models\ChatMessage;
 use App\Events\MessageSent;
 use App\Events\MessageRead;
@@ -24,28 +23,31 @@ class ChatController extends Controller
     public function contacts()
     {
         try {
-        $contacts = User::where('id', '!=', auth()->id())
-                        ->get(['id', 'name', 'last_seen', 'phone_number', 'profile_photo_path', 'updated_at']);
+            $contacts = User::where('id', '!=', auth()->id())
+                ->get(['id', 'name', 'last_seen', 'phone_number', 'profile_photo_path', 'updated_at']);
 
-        $authId = auth()->id();
+            $authId = auth()->id();
 
-        foreach ($contacts as $contact) {
-            $contact->latest_message = ChatMessage::where(function ($query) use ($authId, $contact) {
-                $query->where('sender_id', $authId)
-                      ->where('receiver_id', $contact->id);
-            })->orWhere(function ($query) use ($authId, $contact) {
-                $query->where('sender_id', $contact->id)
-                      ->where('receiver_id', $authId);
-            })
-            ->latest()
-            ->first();
-        }
+            foreach ($contacts as $contact) {
+                $contact->latest_message = ChatMessage::where(function ($query) use ($authId, $contact) {
+                    $query->where('sender_id', $authId)
+                          ->where('receiver_id', $contact->id);
+                })->orWhere(function ($query) use ($authId, $contact) {
+                    $query->where('sender_id', $contact->id)
+                          ->where('receiver_id', $authId);
+                })
+                ->latest()
+                ->first();
+            }
 
-        return response()->json($contacts);
+            return response()->json($contacts);
 
         } catch (\Exception $e) {
             report($e);
-            return response()->json(['message' => 'Terjadi error di method contacts()', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'message' => 'Terjadi error di method contacts()', 
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -65,10 +67,18 @@ class ChatController extends Controller
             ->whereDoesntHave('hiddenForUsers', function ($query) use ($authId) {
                 $query->where('user_id', $authId);
             })
-            
-            ->with('sender:id,name', 'parentMessage.sender:id,name', 'callEvent')
+            ->with('sender:id,name', 'parentMessage.sender:id,name')
             ->orderByDesc('created_at')
             ->simplePaginate(50);
+
+        // ✅ BARU: Transform messages untuk frontend
+        $messages->getCollection()->transform(function ($message) {
+            // Pastikan call_event attribute tersedia
+            if ($message->type === 'call_event') {
+                $message->makeVisible(['call_event']);
+            }
+            return $message;
+        });
 
         return response()->json($messages);
     }
@@ -86,30 +96,32 @@ class ChatController extends Controller
             'message' => $request->message
         ]);
 
-        $message->load('sender', 'callEvent');
+        $message->load('sender');
 
-        // broadcast to others (sender will update UI optimistically)
         broadcast(new MessageSent($message));
 
         return response()->json($message);
     }
 
-    public function MarkAsRead(Request $request){
+    public function MarkAsRead(Request $request)
+    {
         $request->validate(['sender_id' => 'required|integer']);
+        
         ChatMessage::where('sender_id', $request->sender_id)
-        ->where('receiver_id', auth()->id())
-        ->whereNull('read_at')
-        ->update(['read_at' => now()]);
+            ->where('receiver_id', auth()->id())
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);
 
         broadcast(new MessageRead(auth()->id(), $request->sender_id));
 
-    return response()->json(['status' => 'success']);
+        return response()->json(['status' => 'success']);
     }
 
     public function getUnreadCounts(): JsonResponse
     {
         try {
             $userId = auth()->id();
+            
             $userUnreads = DB::table('chat_messages')
                 ->select('sender_id', DB::raw('count(*) as messages_count'))
                 ->where('receiver_id', $userId)
@@ -117,23 +129,30 @@ class ChatController extends Controller
                 ->whereNull('deleted_at')
                 ->groupBy('sender_id')
                 ->get();
+                
             $unreadCounts = [];
+            
             foreach ($userUnreads as $unread) {
                 $key = 'user-' . $unread->sender_id;
                 $unreadCounts[$key] = $unread->messages_count;
             }
+            
             return response()->json($unreadCounts);
 
         } catch (\Exception $e) {
             report($e);
-            return response()->json(['message' => 'Gagal memuat jumlah pesan belum dibaca.'], 500);
+            return response()->json([
+                'message' => 'Gagal memuat jumlah pesan belum dibaca.'
+            ], 500);
         }
     }
 
     public function destroy(ChatMessage $message)
     {
         if ($message->sender_id !== auth()->id()) {
-            return response()->json(['error' => 'Anda tidak memiliki izin untuk menghapus pesan ini.'], 403);
+            return response()->json([
+                'error' => 'Anda tidak memiliki izin untuk menghapus pesan ini.'
+            ], 403);
         }
 
         $message->delete();
@@ -166,6 +185,7 @@ class ChatController extends Controller
         } elseif (str_starts_with($mime, 'video/')) {
             $type = 'video';
         }
+        
         $message = ChatMessage::create([
             'sender_id'      => auth()->id(),
             'receiver_id'    => $request->input('receiver_id'),
